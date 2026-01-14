@@ -254,8 +254,7 @@ impl ChatScreenState {
             .handle_key(key, &self.message_pane_data)
         {
             match action {
-                MessagePaneAction::ClearSelection => {}
-                MessagePaneAction::SelectMessage(_) => {}
+                MessagePaneAction::ClearSelection | MessagePaneAction::SelectMessage(_) => {}
                 MessagePaneAction::Reply {
                     message_id,
                     mention,

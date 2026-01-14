@@ -144,10 +144,10 @@ impl DiscordClient {
             message = message.with_attachments(attachments);
         }
 
-        if let Some(edited) = response.edited_timestamp {
-            if let Ok(edited_ts) = edited.parse::<DateTime<Utc>>() {
-                message = message.with_edited_timestamp(edited_ts);
-            }
+        if let Some(edited) = response.edited_timestamp
+            && let Ok(edited_ts) = edited.parse::<DateTime<Utc>>()
+        {
+            message = message.with_edited_timestamp(edited_ts);
         }
 
         if let Some(reference) = response.message_reference {
@@ -159,10 +159,10 @@ impl DiscordClient {
             ));
         }
 
-        if let Some(referenced) = response.referenced_message {
-            if let Some(ref_message) = Self::parse_message_response(*referenced, channel_id) {
-                message = message.with_referenced_message(ref_message);
-            }
+        if let Some(referenced) = response.referenced_message
+            && let Some(ref_message) = Self::parse_message_response(*referenced, channel_id)
+        {
+            message = message.with_referenced(ref_message);
         }
 
         Some(message)

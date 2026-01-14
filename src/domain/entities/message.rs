@@ -34,10 +34,11 @@ impl From<&str> for MessageId {
 }
 
 /// Discord message type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[repr(u8)]
 #[allow(missing_docs)]
 pub enum MessageKind {
+    #[default]
     Default = 0,
     RecipientAdd = 1,
     RecipientRemove = 2,
@@ -69,12 +70,6 @@ pub enum MessageKind {
     StageSpeaker = 29,
     StageTopic = 31,
     GuildApplicationPremiumSubscription = 32,
-}
-
-impl Default for MessageKind {
-    fn default() -> Self {
-        Self::Default
-    }
 }
 
 impl From<u8> for MessageKind {
@@ -312,7 +307,7 @@ pub struct Message {
     kind: MessageKind,
     attachments: Vec<Attachment>,
     reference: Option<MessageReference>,
-    referenced_message: Option<Box<Message>>,
+    referenced: Option<Box<Message>>,
     pinned: bool,
 }
 
@@ -336,7 +331,7 @@ impl Message {
             kind: MessageKind::Default,
             attachments: Vec::new(),
             reference: None,
-            referenced_message: None,
+            referenced: None,
             pinned: false,
         }
     }
@@ -360,8 +355,8 @@ impl Message {
     }
 
     #[must_use]
-    pub fn with_referenced_message(mut self, message: Message) -> Self {
-        self.referenced_message = Some(Box::new(message));
+    pub fn with_referenced(mut self, message: Message) -> Self {
+        self.referenced = Some(Box::new(message));
         self
     }
 
@@ -423,8 +418,8 @@ impl Message {
     }
 
     #[must_use]
-    pub fn referenced_message(&self) -> Option<&Message> {
-        self.referenced_message.as_deref()
+    pub fn referenced(&self) -> Option<&Message> {
+        self.referenced.as_deref()
     }
 
     #[must_use]
@@ -487,10 +482,10 @@ mod tests {
         let referenced = Message::new(1_u64, 100_u64, author.clone(), "Original", timestamp);
         let reply = Message::new(2_u64, 100_u64, author, "Reply", timestamp)
             .with_kind(MessageKind::Reply)
-            .with_referenced_message(referenced);
+            .with_referenced(referenced);
 
         assert!(reply.is_reply());
-        assert!(reply.referenced_message().is_some());
+        assert!(reply.referenced().is_some());
     }
 
     #[test]

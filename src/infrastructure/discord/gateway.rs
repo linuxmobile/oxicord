@@ -130,7 +130,9 @@ impl DiscordGateway {
         }
     }
 
-    pub async fn connect(
+    /// # Errors
+    /// Returns error if gateway connection fails.
+    pub fn connect(
         &self,
         token: &AuthToken,
     ) -> Result<mpsc::UnboundedReceiver<GatewayEvent>, AuthError> {
@@ -152,6 +154,7 @@ impl DiscordGateway {
         Ok(event_rx)
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn run_gateway_loop(
         token: String,
         event_tx: mpsc::UnboundedSender<GatewayEvent>,
@@ -163,7 +166,6 @@ impl DiscordGateway {
 
         let (mut write, mut read) = ws_stream.split();
         let mut sequence: Option<u64> = None;
-        let mut heartbeat_interval_ms: u64 = 45000;
         let mut zlib_buffer = Vec::new();
 
         while connected.load(Ordering::SeqCst) {
@@ -176,67 +178,79 @@ impl DiscordGateway {
                             if data.ends_with(&[0x00, 0x00, 0xff, 0xff]) {
                                 let mut decoder = ZlibDecoder::new(&zlib_buffer[..]);
                                 let mut decompressed = String::new();
-                                if decoder.read_to_string(&mut decompressed).is_ok() {
-                                    if let Ok(payload) = serde_json::from_str::<GatewayReceive>(&decompressed) {
-                                        if let Some(s) = payload.s {
-                                            sequence = Some(s);
-                                        }
+                                if decoder.read_to_string(&mut decompressed).is_ok()
+                                    && let Ok(payload) =
+                                        serde_json::from_str::<GatewayReceive>(&decompressed)
+                                {
+                                    if let Some(s) = payload.s {
+                                        sequence = Some(s);
+                                    }
 
-                                        match payload.op {
-                                            10 => {
-                                                if let Some(d) = payload.d {
-                                                    if let Ok(hello) = serde_json::from_value::<HelloPayload>(d) {
-                                                        heartbeat_interval_ms = hello.heartbeat_interval;
-                                                        debug!(interval = heartbeat_interval_ms, "Received Hello");
+                                    match payload.op {
+                                        10 => {
+                                            if let Some(d) = payload.d
+                                                && let Ok(hello) =
+                                                    serde_json::from_value::<HelloPayload>(d)
+                                            {
+                                                let heartbeat_interval_ms =
+                                                    hello.heartbeat_interval;
+                                                debug!(
+                                                    interval = heartbeat_interval_ms,
+                                                    "Received Hello"
+                                                );
 
-                                                        let identify = GatewayPayload {
-                                                            op: 2,
-                                                            d: serde_json::to_value(IdentifyPayload {
-                                                                token: token.clone(),
-                                                                properties: IdentifyProperties {
-                                                                    os: "linux".to_string(),
-                                                                    browser: "discordo".to_string(),
-                                                                    device: "discordo".to_string(),
-                                                                },
-                                                                compress: true,
-                                                                large_threshold: 250,
-                                                                intents: GATEWAY_INTENTS,
-                                                            }).unwrap_or(Value::Null),
-                                                        };
+                                                let identify = GatewayPayload {
+                                                    op: 2,
+                                                    d: serde_json::to_value(IdentifyPayload {
+                                                        token: token.clone(),
+                                                        properties: IdentifyProperties {
+                                                            os: "linux".to_string(),
+                                                            browser: "discordo".to_string(),
+                                                            device: "discordo".to_string(),
+                                                        },
+                                                        compress: true,
+                                                        large_threshold: 250,
+                                                        intents: GATEWAY_INTENTS,
+                                                    })
+                                                    .unwrap_or(Value::Null),
+                                                };
 
-                                                        if let Ok(msg) = serde_json::to_string(&identify) {
-                                                            let _ = write.send(WsMessage::Text(msg.into())).await;
-                                                        }
-
-                                                        let tx = event_tx.clone();
-                                                        let seq = sequence;
-                                                        tokio::spawn(Self::heartbeat_loop(heartbeat_interval_ms, tx, seq));
-                                                    }
+                                                if let Ok(msg) = serde_json::to_string(&identify) {
+                                                    let _ =
+                                                        write.send(WsMessage::Text(msg.into())).await;
                                                 }
+
+                                                let tx = event_tx.clone();
+                                                let seq = sequence;
+                                                tokio::spawn(Self::heartbeat_loop(
+                                                    heartbeat_interval_ms,
+                                                    tx,
+                                                    seq,
+                                                ));
                                             }
-                                            0 => {
-                                                if let Some(event_name) = payload.t.as_deref() {
-                                                    Self::handle_dispatch_event(
-                                                        event_name,
-                                                        payload.d,
-                                                        &event_tx,
-                                                    );
-                                                }
-                                            }
-                                            11 => {
-                                                debug!("Heartbeat acknowledged");
-                                            }
-                                            7 => {
-                                                info!("Gateway requested reconnect");
-                                                let _ = event_tx.send(GatewayEvent::Reconnecting);
-                                            }
-                                            9 => {
-                                                warn!("Session invalidated");
-                                                let _ = event_tx.send(GatewayEvent::Disconnected);
-                                                return Ok(());
-                                            }
-                                            _ => {}
                                         }
+                                        0 => {
+                                            if let Some(event_name) = payload.t.as_deref() {
+                                                Self::handle_dispatch_event(
+                                                    event_name,
+                                                    payload.d,
+                                                    &event_tx,
+                                                );
+                                            }
+                                        }
+                                        11 => {
+                                            debug!("Heartbeat acknowledged");
+                                        }
+                                        7 => {
+                                            info!("Gateway requested reconnect");
+                                            let _ = event_tx.send(GatewayEvent::Reconnecting);
+                                        }
+                                        9 => {
+                                            warn!("Session invalidated");
+                                            let _ = event_tx.send(GatewayEvent::Disconnected);
+                                            return Ok(());
+                                        }
+                                        _ => {}
                                     }
                                 }
                                 zlib_buffer.clear();
@@ -299,32 +313,31 @@ impl DiscordGateway {
                 }
             }
             "MESSAGE_CREATE" => {
-                if let Ok(msg_payload) = serde_json::from_value::<MessagePayload>(data) {
-                    if let Some(message) = Self::parse_message_payload(msg_payload) {
-                        debug!(message_id = %message.id(), "Received new message");
-                        let _ = event_tx.send(GatewayEvent::MessageCreate { message });
-                    }
+                if let Ok(msg_payload) = serde_json::from_value::<MessagePayload>(data)
+                    && let Some(message) = Self::parse_message_payload(msg_payload)
+                {
+                    debug!(message_id = %message.id(), "Received new message");
+                    let _ = event_tx.send(GatewayEvent::MessageCreate { message });
                 }
             }
             "MESSAGE_UPDATE" => {
-                if let Ok(msg_payload) = serde_json::from_value::<MessagePayload>(data) {
-                    if let Some(message) = Self::parse_message_payload(msg_payload) {
-                        debug!(message_id = %message.id(), "Message updated");
-                        let _ = event_tx.send(GatewayEvent::MessageUpdate { message });
-                    }
+                if let Ok(msg_payload) = serde_json::from_value::<MessagePayload>(data)
+                    && let Some(message) = Self::parse_message_payload(msg_payload)
+                {
+                    debug!(message_id = %message.id(), "Message updated");
+                    let _ = event_tx.send(GatewayEvent::MessageUpdate { message });
                 }
             }
             "MESSAGE_DELETE" => {
-                if let Ok(delete) = serde_json::from_value::<MessageDeletePayload>(data) {
-                    if let (Ok(msg_id), Ok(ch_id)) =
+                if let Ok(delete) = serde_json::from_value::<MessageDeletePayload>(data)
+                    && let (Ok(msg_id), Ok(ch_id)) =
                         (delete.id.parse::<u64>(), delete.channel_id.parse::<u64>())
-                    {
-                        debug!(message_id = msg_id, "Message deleted");
-                        let _ = event_tx.send(GatewayEvent::MessageDelete {
-                            message_id: MessageId(msg_id),
-                            channel_id: ChannelId(ch_id),
-                        });
-                    }
+                {
+                    debug!(message_id = msg_id, "Message deleted");
+                    let _ = event_tx.send(GatewayEvent::MessageDelete {
+                        message_id: MessageId(msg_id),
+                        channel_id: ChannelId(ch_id),
+                    });
                 }
             }
             _ => {
@@ -365,10 +378,10 @@ impl DiscordGateway {
             message = message.with_attachments(attachments);
         }
 
-        if let Some(edited) = payload.edited_timestamp {
-            if let Ok(edited_ts) = edited.parse::<DateTime<Utc>>() {
-                message = message.with_edited_timestamp(edited_ts);
-            }
+        if let Some(edited) = payload.edited_timestamp
+            && let Ok(edited_ts) = edited.parse::<DateTime<Utc>>()
+        {
+            message = message.with_edited_timestamp(edited_ts);
         }
 
         if let Some(reference) = payload.message_reference {
@@ -380,10 +393,10 @@ impl DiscordGateway {
             ));
         }
 
-        if let Some(referenced) = payload.referenced_message {
-            if let Some(ref_message) = Self::parse_message_payload(*referenced) {
-                message = message.with_referenced_message(ref_message);
-            }
+        if let Some(referenced) = payload.referenced_message
+            && let Some(ref_message) = Self::parse_message_payload(*referenced)
+        {
+            message = message.with_referenced(ref_message);
         }
 
         Some(message)

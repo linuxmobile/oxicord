@@ -113,7 +113,7 @@ mod tests {
     #[test]
     fn test_debug_does_not_leak_token() {
         let token = AuthToken::new_unchecked(make_valid_token());
-        let debug_output = format!("{:?}", token);
+        let debug_output = format!("{token:?}");
 
         assert!(!debug_output.contains(&make_valid_token()));
     }

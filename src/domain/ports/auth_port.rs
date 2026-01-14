@@ -29,6 +29,7 @@ pub mod mock {
 
     impl MockAuthPort {
         /// Creates new mock.
+        #[must_use]
         pub fn new(should_succeed: bool) -> Self {
             Self {
                 should_succeed: Arc::new(AtomicBool::new(should_succeed)),

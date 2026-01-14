@@ -131,6 +131,7 @@ pub struct MessageReferenceResponse {
 #[derive(Debug, Deserialize)]
 pub struct MessageResponse {
     pub id: String,
+    #[allow(dead_code)]
     pub channel_id: String,
     pub author: MessageAuthorResponse,
     pub content: String,

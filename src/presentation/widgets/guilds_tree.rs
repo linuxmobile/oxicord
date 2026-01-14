@@ -610,8 +610,8 @@ mod tests {
     #[test]
     fn test_large_guild_list() {
         let mut data = GuildsTreeData::new();
-        let guilds: Vec<Guild> = (0..100)
-            .map(|i| Guild::new(i as u64, format!("Guild {i}")))
+        let guilds: Vec<Guild> = (0u64..100)
+            .map(|i| Guild::new(i, format!("Guild {i}")))
             .collect();
 
         data.set_guilds(guilds.clone());

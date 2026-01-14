@@ -121,7 +121,7 @@ mod tests {
 
     #[test]
     fn test_guild_id_display() {
-        let id = GuildId(123456789);
+        let id = GuildId(123_456_789);
         assert_eq!(format!("{id}"), "123456789");
     }
 }

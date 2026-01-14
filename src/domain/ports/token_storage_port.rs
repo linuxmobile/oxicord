@@ -36,6 +36,7 @@ pub mod mock {
 
     impl MockTokenStorage {
         /// Creates empty mock storage.
+        #[must_use]
         pub fn new() -> Self {
             Self {
                 token: Arc::new(RwLock::new(None)),
@@ -43,6 +44,7 @@ pub mod mock {
         }
 
         /// Creates mock storage with token.
+        #[must_use]
         pub fn with_token(token: AuthToken) -> Self {
             Self {
                 token: Arc::new(RwLock::new(Some(token))),

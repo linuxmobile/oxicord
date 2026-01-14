@@ -3,7 +3,7 @@
 //! This crate provides a terminal-based Discord client with clean architecture,
 //! implementing authentication, token management, and a TUI interface.
 
-#![warn(missing_docs)]
+#![allow(missing_docs)]
 #![warn(clippy::all)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]

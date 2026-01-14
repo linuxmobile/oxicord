@@ -339,7 +339,7 @@ impl MessagePaneState {
             (KeyCode::Char('s'), KeyModifiers::NONE) => self
                 .get_selected_message(data)
                 .and_then(|m| m.reference())
-                .and_then(|r| r.message_id())
+                .and_then(crate::domain::entities::MessageReference::message_id)
                 .map(MessagePaneAction::JumpToReply),
             _ => None,
         }
@@ -348,7 +348,7 @@ impl MessagePaneState {
     fn get_selected_message_id(&self, data: &MessagePaneData) -> Option<MessageId> {
         self.selected_index
             .and_then(|idx| data.messages().get(idx))
-            .map(|m| m.id())
+            .map(crate::domain::entities::Message::id)
     }
 
     fn get_selected_message<'a>(&self, data: &'a MessagePaneData) -> Option<&'a Message> {
@@ -441,14 +441,14 @@ impl<'a> MessagePane<'a> {
         self.data
             .messages()
             .iter()
-            .map(|m| self.calculate_message_height(m, width))
+            .map(|m| Self::calculate_message_height(m, width))
             .sum()
     }
 
-    fn calculate_message_height(&self, message: &Message, width: u16) -> u16 {
+    fn calculate_message_height(message: &Message, width: u16) -> u16 {
         let content_width = width.saturating_sub(MESSAGE_CONTENT_PADDING);
         let content_lines = if content_width > 0 {
-            let content_len = message.content().len() as u16;
+            let content_len = u16::try_from(message.content().len()).unwrap_or(u16::MAX);
             (content_len / content_width).max(1)
         } else {
             1
@@ -456,12 +456,12 @@ impl<'a> MessagePane<'a> {
 
         let mut height = MESSAGE_HEIGHT_BASE + content_lines;
 
-        if message.is_reply() && message.referenced_message().is_some() {
+        if message.is_reply() && message.referenced().is_some() {
             height += 1;
         }
 
         if message.has_attachments() {
-            height += message.attachments().len() as u16;
+            height += u16::try_from(message.attachments().len()).unwrap_or(u16::MAX);
         }
 
         height
@@ -482,18 +482,18 @@ impl<'a> MessagePane<'a> {
             Style::default()
         };
 
-        if message.is_reply() {
-            if let Some(referenced) = message.referenced_message() {
-                let reply_text = format!(
-                    "↳ {} {}",
-                    referenced.author().display_name(),
-                    truncate_string(referenced.content(), 50)
-                );
-                let reply_line = Line::from(Span::styled(reply_text, self.style.reply_style));
-                let reply_para = Paragraph::new(reply_line).style(base_style);
-                scroll_view.render_widget(reply_para, Rect::new(0, current_y, width, 1));
-                current_y += 1;
-            }
+        if message.is_reply()
+            && let Some(referenced) = message.referenced()
+        {
+            let reply_text = format!(
+                "↳ {} {}",
+                referenced.author().display_name(),
+                truncate_string(referenced.content(), 50)
+            );
+            let reply_line = Line::from(Span::styled(reply_text, self.style.reply_style));
+            let reply_para = Paragraph::new(reply_line).style(base_style);
+            scroll_view.render_widget(reply_para, Rect::new(0, current_y, width, 1));
+            current_y += 1;
         }
 
         let mut header_spans = vec![
