@@ -12,9 +12,9 @@ use crate::domain::entities::{ChannelId, Message, MessageId};
 
 const MESSAGE_CONTENT_PADDING: u16 = 2;
 const SCROLL_AMOUNT: u16 = 3;
-const CHANNEL_NAME_PREFIX: &str = "[#-";
+const CHANNEL_NAME_PREFIX: &str = "[";
 const CHANNEL_NAME_SUFFIX: &str = "]";
-const DM_CHANNEL_PREFIX: &str = "[@-";
+const DM_CHANNEL_PREFIX: &str = "[";
 
 #[derive(Debug, Clone)]
 pub enum MessagePaneAction {
@@ -632,7 +632,7 @@ impl<'a> MessagePane<'a> {
 
         if let Some(topic) = self.data.channel_topic() {
             let truncated_topic = truncate_string(topic, 60);
-            block = block.title_bottom(
+            block = block.title(
                 Line::from(Span::styled(truncated_topic, self.style.topic_style))
                     .alignment(Alignment::Right),
             );
