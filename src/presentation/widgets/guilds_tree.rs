@@ -237,6 +237,8 @@ pub struct GuildsTreeStyle {
     pub border_style_focused: Style,
     pub title_style: Style,
     pub selected_style: Style,
+    pub active_guild_style: Style,
+    pub active_channel_style: Style,
     pub guild_style: Style,
     pub guild_unread_style: Style,
     pub channel_style: Style,
@@ -255,6 +257,13 @@ impl Default for GuildsTreeStyle {
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
             selected_style: Style::default().bg(Color::DarkGray).fg(Color::White),
+            active_guild_style: Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+            active_channel_style: Style::default()
+                .fg(Color::Cyan)
+                .bg(Color::Rgb(30, 40, 50))
+                .add_modifier(Modifier::BOLD),
             guild_style: Style::default().fg(Color::White),
             guild_unread_style: Style::default()
                 .fg(Color::White)
@@ -279,6 +288,9 @@ pub struct GuildsTreeData {
     guilds: Vec<Guild>,
     channels_by_guild: std::collections::HashMap<GuildId, Vec<Channel>>,
     dm_users: Vec<(String, String)>,
+    active_guild_id: Option<GuildId>,
+    active_channel_id: Option<ChannelId>,
+    active_dm_user_id: Option<String>,
 }
 
 impl GuildsTreeData {
@@ -289,6 +301,9 @@ impl GuildsTreeData {
             guilds: Vec::new(),
             channels_by_guild: std::collections::HashMap::new(),
             dm_users: Vec::new(),
+            active_guild_id: None,
+            active_channel_id: None,
+            active_dm_user_id: None,
         }
     }
 
@@ -329,6 +344,39 @@ impl GuildsTreeData {
     #[must_use]
     pub fn dm_users(&self) -> &[(String, String)] {
         &self.dm_users
+    }
+
+    /// Sets the active guild.
+    pub fn set_active_guild(&mut self, guild_id: Option<GuildId>) {
+        self.active_guild_id = guild_id;
+    }
+
+    /// Sets the active channel.
+    pub fn set_active_channel(&mut self, channel_id: Option<ChannelId>) {
+        self.active_channel_id = channel_id;
+    }
+
+    /// Sets the active DM user.
+    pub fn set_active_dm_user(&mut self, user_id: Option<String>) {
+        self.active_dm_user_id = user_id;
+    }
+
+    /// Returns the active guild ID.
+    #[must_use]
+    pub fn active_guild_id(&self) -> Option<GuildId> {
+        self.active_guild_id
+    }
+
+    /// Returns the active channel ID.
+    #[must_use]
+    pub fn active_channel_id(&self) -> Option<ChannelId> {
+        self.active_channel_id
+    }
+
+    /// Returns the active DM user ID.
+    #[must_use]
+    pub fn active_dm_user_id(&self) -> Option<&str> {
+        self.active_dm_user_id.as_deref()
     }
 }
 
@@ -388,9 +436,15 @@ impl<'a> GuildsTree<'a> {
             .dm_users
             .iter()
             .map(|(id, name)| {
+                let is_active = self.data.active_dm_user_id() == Some(id.as_str());
+                let style = if is_active {
+                    self.style.active_channel_style
+                } else {
+                    self.style.dm_style
+                };
                 let text = Line::from(vec![
-                    Span::styled("@", self.style.dm_style),
-                    Span::styled(name.clone(), self.style.dm_style),
+                    Span::styled("@", style),
+                    Span::styled(name.clone(), style),
                 ]);
                 TreeItem::new_leaf(TreeNodeId::DirectMessageUser(id.clone()), text)
             })
@@ -403,7 +457,10 @@ impl<'a> GuildsTree<'a> {
     }
 
     fn build_guild_node(&self, guild: &Guild) -> TreeItem<'static, TreeNodeId> {
-        let guild_style = if guild.has_unread() {
+        let is_active = self.data.active_guild_id() == Some(guild.id());
+        let guild_style = if is_active {
+            self.style.active_guild_style
+        } else if guild.has_unread() {
             self.style.guild_unread_style
         } else {
             self.style.guild_style
@@ -485,7 +542,10 @@ impl<'a> GuildsTree<'a> {
             return None;
         }
 
-        let style = if channel.has_unread() {
+        let is_active = self.data.active_channel_id() == Some(channel.id());
+        let style = if is_active {
+            self.style.active_channel_style
+        } else if channel.has_unread() {
             self.style.channel_unread_style
         } else {
             self.style.channel_style

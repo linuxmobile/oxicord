@@ -1,5 +1,3 @@
-//! Chat screen with guilds tree and messages pane.
-
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     buffer::Buffer,
@@ -11,21 +9,18 @@ use ratatui::{
 
 use crate::domain::entities::{Channel, ChannelId, ChannelKind, Guild, GuildId, Message, User};
 use crate::presentation::widgets::{
-    GuildsTree, GuildsTreeAction, GuildsTreeData, GuildsTreeState, MessagePane, MessagePaneAction,
-    MessagePaneData, MessagePaneState,
+    ConnectionStatus, FocusContext, FooterBar, GuildsTree, GuildsTreeAction, GuildsTreeData,
+    GuildsTreeState, HeaderBar, MessagePane, MessagePaneAction, MessagePaneData, MessagePaneState,
 };
+use crate::{NAME, VERSION};
 
 const GUILDS_TREE_WIDTH_PERCENT: u16 = 25;
 const GUILDS_TREE_MIN_WIDTH: u16 = 20;
 
-/// Focus target within the chat screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChatFocus {
-    /// Guilds/channels tree panel.
     GuildsTree,
-    /// Messages list panel.
     MessagesList,
-    /// Message input field.
     MessageInput,
 }
 
@@ -59,9 +54,17 @@ impl ChatFocus {
             }
         }
     }
+
+    #[must_use]
+    pub fn to_focus_context(self) -> FocusContext {
+        match self {
+            Self::GuildsTree => FocusContext::GuildsTree,
+            Self::MessagesList => FocusContext::MessagesList,
+            Self::MessageInput => FocusContext::MessageInput,
+        }
+    }
 }
 
-/// Represents a stored DM channel for lookup.
 #[derive(Debug, Clone)]
 pub struct DmChannelInfo {
     channel_id: ChannelId,
@@ -88,7 +91,6 @@ impl DmChannelInfo {
     }
 }
 
-/// State for the chat screen.
 pub struct ChatScreenState {
     user: User,
     focus: ChatFocus,
@@ -100,10 +102,10 @@ pub struct ChatScreenState {
     selected_guild: Option<GuildId>,
     selected_channel: Option<Channel>,
     dm_channels: std::collections::HashMap<String, DmChannelInfo>,
+    connection_status: ConnectionStatus,
 }
 
 impl ChatScreenState {
-    /// Creates a new chat screen state for the given user.
     #[must_use]
     pub fn new(user: User) -> Self {
         let mut guilds_tree_state = GuildsTreeState::new();
@@ -120,44 +122,52 @@ impl ChatScreenState {
             selected_guild: None,
             selected_channel: None,
             dm_channels: std::collections::HashMap::new(),
+            connection_status: ConnectionStatus::Disconnected,
         }
     }
 
-    /// Returns the current user.
     #[must_use]
     pub fn user(&self) -> &User {
         &self.user
     }
 
-    /// Returns the current focus target.
     #[must_use]
     pub fn focus(&self) -> ChatFocus {
         self.focus
     }
 
-    /// Returns whether the guilds tree is visible.
     #[must_use]
     pub fn is_guilds_tree_visible(&self) -> bool {
         self.guilds_tree_visible
     }
 
-    /// Returns the currently selected channel.
     #[must_use]
     pub fn selected_channel(&self) -> Option<&Channel> {
         self.selected_channel.as_ref()
     }
 
-    /// Sets the guilds list.
+    #[must_use]
+    pub fn selected_guild(&self) -> Option<GuildId> {
+        self.selected_guild
+    }
+
+    #[must_use]
+    pub fn connection_status(&self) -> ConnectionStatus {
+        self.connection_status
+    }
+
+    pub fn set_connection_status(&mut self, status: ConnectionStatus) {
+        self.connection_status = status;
+    }
+
     pub fn set_guilds(&mut self, guilds: Vec<Guild>) {
         self.guilds_tree_data.set_guilds(guilds);
     }
 
-    /// Sets the channels for a specific guild.
     pub fn set_channels(&mut self, guild_id: GuildId, channels: Vec<Channel>) {
         self.guilds_tree_data.set_channels(guild_id, channels);
     }
 
-    /// Sets the DM users list and stores channel info for lookup.
     pub fn set_dm_users(&mut self, users: Vec<(String, String)>) {
         self.dm_channels.clear();
         for (channel_id_str, recipient_name) in &users {
@@ -169,7 +179,6 @@ impl ChatScreenState {
         self.guilds_tree_data.set_dm_users(users);
     }
 
-    /// Toggles the visibility of the guilds tree.
     pub fn toggle_guilds_tree(&mut self) {
         self.guilds_tree_visible = !self.guilds_tree_visible;
         if !self.guilds_tree_visible && self.focus == ChatFocus::GuildsTree {
@@ -177,30 +186,25 @@ impl ChatScreenState {
         }
     }
 
-    /// Focuses the guilds tree panel.
     pub fn focus_guilds_tree(&mut self) {
         if self.guilds_tree_visible {
             self.set_focus(ChatFocus::GuildsTree);
         }
     }
 
-    /// Focuses the messages list panel.
     pub fn focus_messages_list(&mut self) {
         self.set_focus(ChatFocus::MessagesList);
     }
 
-    /// Focuses the message input field.
     pub fn focus_message_input(&mut self) {
         self.set_focus(ChatFocus::MessageInput);
     }
 
-    /// Moves focus to the next panel.
     pub fn focus_next(&mut self) {
         let new_focus = self.focus.next(self.guilds_tree_visible);
         self.set_focus(new_focus);
     }
 
-    /// Moves focus to the previous panel.
     pub fn focus_previous(&mut self) {
         let new_focus = self.focus.previous(self.guilds_tree_visible);
         self.set_focus(new_focus);
@@ -214,7 +218,6 @@ impl ChatScreenState {
             .set_focused(focus == ChatFocus::MessagesList);
     }
 
-    /// Handles a key event and returns the result.
     pub fn handle_key(&mut self, key: KeyEvent) -> ChatKeyResult {
         if let Some(result) = self.handle_global_key(key) {
             return result;
@@ -328,18 +331,29 @@ impl ChatScreenState {
     }
 
     fn handle_message_input_key(&mut self, _key: KeyEvent) -> ChatKeyResult {
-        let _ = self; // Suppress unused_self warning until implementation
+        let _ = self;
         ChatKeyResult::Consumed
     }
 
     fn on_channel_selected(&mut self, channel_id: ChannelId) -> Option<ChatKeyResult> {
-        if let Some(guild_id) = self.selected_guild
+        let channel_info = if let Some(guild_id) = self.selected_guild
             && let Some(channels) = self.guilds_tree_data.channels(guild_id)
             && let Some(channel) = channels.iter().find(|c| c.id() == channel_id)
         {
+            Some((channel.clone(), channel.topic().map(String::from)))
+        } else {
+            None
+        };
+
+        if let Some((channel, topic)) = channel_info {
             self.selected_channel = Some(channel.clone());
+            self.guilds_tree_data.set_active_channel(Some(channel_id));
+            self.guilds_tree_data.set_active_dm_user(None);
             let channel_name = channel.display_name();
             self.message_pane_data.set_channel(channel_id, channel_name);
+            if let Some(topic) = topic {
+                self.message_pane_data.set_channel_topic(Some(topic));
+            }
             return Some(ChatKeyResult::LoadChannelMessages(channel_id));
         }
         None
@@ -347,10 +361,9 @@ impl ChatScreenState {
 
     fn on_guild_selected(&mut self, guild_id: GuildId) -> Option<ChatKeyResult> {
         self.selected_guild = Some(guild_id);
+        self.guilds_tree_data.set_active_guild(Some(guild_id));
 
-        // Check if channels are already loaded for this guild
         if self.guilds_tree_data.channels(guild_id).is_none() {
-            // Request lazy loading of channels
             return Some(ChatKeyResult::LoadGuildChannels(guild_id));
         }
 
@@ -365,6 +378,10 @@ impl ChatScreenState {
             let dm_channel = Channel::new(channel_id, recipient_name.clone(), ChannelKind::Dm);
             self.selected_channel = Some(dm_channel);
             self.selected_guild = None;
+            self.guilds_tree_data.set_active_guild(None);
+            self.guilds_tree_data.set_active_channel(None);
+            self.guilds_tree_data
+                .set_active_dm_user(Some(dm_channel_id.to_string()));
 
             let display_name = format!("@{recipient_name}");
             self.message_pane_data.set_channel(channel_id, display_name);
@@ -377,104 +394,79 @@ impl ChatScreenState {
         None
     }
 
-    /// Returns a reference to the guilds tree data.
     #[must_use]
     pub fn guilds_tree_data(&self) -> &GuildsTreeData {
         &self.guilds_tree_data
     }
 
-    /// Returns a mutable reference to the guilds tree state.
     pub fn guilds_tree_state_mut(&mut self) -> &mut GuildsTreeState {
         &mut self.guilds_tree_state
     }
 
-    /// Returns mutable references to both tree data and state.
     pub fn guilds_tree_parts_mut(&mut self) -> (&GuildsTreeData, &mut GuildsTreeState) {
         (&self.guilds_tree_data, &mut self.guilds_tree_state)
     }
 
-    /// Sets the messages for the current channel.
     pub fn set_messages(&mut self, messages: Vec<Message>) {
         self.message_pane_data.set_messages(messages);
     }
 
-    /// Adds a new message to the current channel.
     pub fn add_message(&mut self, message: Message) {
         self.message_pane_data.add_message(message);
         self.message_pane_state.on_new_message();
     }
 
-    /// Updates an existing message in the current channel.
     pub fn update_message(&mut self, message: Message) {
         self.message_pane_data.update_message(message);
     }
 
-    /// Removes a message from the current channel.
     pub fn remove_message(&mut self, message_id: crate::domain::entities::MessageId) {
         self.message_pane_data.remove_message(message_id);
     }
 
-    /// Sets an error state for message loading.
     pub fn set_message_error(&mut self, error: String) {
         self.message_pane_data.set_error(error);
     }
 
-    /// Returns a reference to the message pane data.
     #[must_use]
     pub fn message_pane_data(&self) -> &MessagePaneData {
         &self.message_pane_data
     }
 
-    /// Returns mutable references to message pane data and state.
+    pub fn message_pane_data_mut(&mut self) -> &mut MessagePaneData {
+        &mut self.message_pane_data
+    }
+
     pub fn message_pane_parts_mut(&mut self) -> (&MessagePaneData, &mut MessagePaneState) {
         (&self.message_pane_data, &mut self.message_pane_state)
     }
 }
 
-/// Result of handling a key event in the chat screen.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatKeyResult {
-    /// Event was consumed, no further action needed.
     Consumed,
-    /// User requested to quit.
     Quit,
-    /// User requested to log out.
     Logout,
-    /// User requested to copy text to clipboard.
     CopyToClipboard(String),
-    /// Request to load channels for a guild (lazy loading).
     LoadGuildChannels(GuildId),
-    /// Request to load messages for a channel.
     LoadChannelMessages(ChannelId),
-    /// Request to load messages for a DM channel.
     LoadDmMessages {
-        /// The DM channel ID.
         channel_id: ChannelId,
-        /// The recipient's display name.
         recipient_name: String,
     },
-    /// Request to reply to a message.
     ReplyToMessage {
-        /// The message ID to reply to.
         message_id: crate::domain::entities::MessageId,
-        /// Whether to mention the author.
         mention: bool,
     },
-    /// Request to edit a message.
     EditMessage(crate::domain::entities::MessageId),
-    /// Request to delete a message.
     DeleteMessage(crate::domain::entities::MessageId),
-    /// Request to open attachments for a message.
     OpenAttachments(crate::domain::entities::MessageId),
-    /// Request to jump to a specific message.
     JumpToMessage(crate::domain::entities::MessageId),
 }
 
-/// Chat screen widget.
 pub struct ChatScreen;
 
 impl ChatScreen {
-    /// Creates a new chat screen widget.
     #[must_use]
     pub fn new() -> Self {
         Self
@@ -491,27 +483,66 @@ impl StatefulWidget for ChatScreen {
     type State = ChatScreenState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        if state.guilds_tree_visible {
-            let content_layout = Layout::horizontal([
-                Constraint::Percentage(GUILDS_TREE_WIDTH_PERCENT),
-                Constraint::Min(0),
-            ]);
-            let [guilds_area, messages_area] = content_layout.areas(area);
+        let main_layout = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Min(5),
+            Constraint::Length(1),
+        ]);
+        let [header_area, content_area, footer_area] = main_layout.areas(area);
 
-            let guilds_area = if guilds_area.width < GUILDS_TREE_MIN_WIDTH {
-                Rect {
-                    width: GUILDS_TREE_MIN_WIDTH,
-                    ..guilds_area
-                }
+        render_header_bar(state, header_area, buf);
+        render_content_area(state, content_area, buf);
+        render_footer_bar(state, footer_area, buf);
+    }
+}
+
+fn render_header_bar(state: &ChatScreenState, area: Rect, buf: &mut Buffer) {
+    let header = HeaderBar::new(NAME, VERSION).connection_status(state.connection_status());
+    header.render(area, buf);
+}
+
+fn render_footer_bar(state: &ChatScreenState, area: Rect, buf: &mut Buffer) {
+    let focus_context = state.focus().to_focus_context();
+    let message_count = state.message_pane_data().message_count();
+
+    let right_info = if message_count > 0 {
+        format!("{message_count} messages")
+    } else {
+        String::new()
+    };
+
+    let footer =
+        FooterBar::new()
+            .focus_context(focus_context)
+            .right_info(if right_info.is_empty() {
+                None
             } else {
-                guilds_area
-            };
+                Some(Box::leak(right_info.into_boxed_str()))
+            });
+    footer.render(area, buf);
+}
 
-            render_guilds_tree(state, guilds_area, buf);
-            render_messages_area(state, messages_area, buf);
+fn render_content_area(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) {
+    if state.guilds_tree_visible {
+        let content_layout = Layout::horizontal([
+            Constraint::Percentage(GUILDS_TREE_WIDTH_PERCENT),
+            Constraint::Min(0),
+        ]);
+        let [guilds_area, messages_area] = content_layout.areas(area);
+
+        let guilds_area = if guilds_area.width < GUILDS_TREE_MIN_WIDTH {
+            Rect {
+                width: GUILDS_TREE_MIN_WIDTH,
+                ..guilds_area
+            }
         } else {
-            render_messages_area(state, area, buf);
-        }
+            guilds_area
+        };
+
+        render_guilds_tree(state, guilds_area, buf);
+        render_messages_area(state, messages_area, buf);
+    } else {
+        render_messages_area(state, area, buf);
     }
 }
 
@@ -632,5 +663,21 @@ mod tests {
 
         state.set_guilds(guilds);
         assert_eq!(state.guilds_tree_data().guilds().len(), 2);
+    }
+
+    #[test]
+    fn test_focus_to_context_conversion() {
+        assert_eq!(
+            ChatFocus::GuildsTree.to_focus_context(),
+            FocusContext::GuildsTree
+        );
+        assert_eq!(
+            ChatFocus::MessagesList.to_focus_context(),
+            FocusContext::MessagesList
+        );
+        assert_eq!(
+            ChatFocus::MessageInput.to_focus_context(),
+            FocusContext::MessageInput
+        );
     }
 }

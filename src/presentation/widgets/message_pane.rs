@@ -1,9 +1,7 @@
-//! Message pane widget for displaying channel messages.
-
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     buffer::Buffer,
-    layout::{Rect, Size},
+    layout::{Alignment, Rect, Size},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, StatefulWidget, Widget},
@@ -12,9 +10,11 @@ use tui_scrollview::{ScrollView, ScrollViewState, ScrollbarVisibility};
 
 use crate::domain::entities::{ChannelId, Message, MessageId};
 
-const MESSAGE_HEIGHT_BASE: u16 = 2;
 const MESSAGE_CONTENT_PADDING: u16 = 2;
 const SCROLL_AMOUNT: u16 = 3;
+const CHANNEL_NAME_PREFIX: &str = "[#-";
+const CHANNEL_NAME_SUFFIX: &str = "]";
+const DM_CHANNEL_PREFIX: &str = "[@-";
 
 #[derive(Debug, Clone)]
 pub enum MessagePaneAction {
@@ -44,9 +44,13 @@ pub enum LoadingState {
 pub struct MessagePaneData {
     channel_id: Option<ChannelId>,
     channel_name: Option<String>,
+    channel_topic: Option<String>,
+    channel_icon: Option<String>,
+    online_count: Option<u32>,
     messages: Vec<Message>,
     loading_state: LoadingState,
     error_message: Option<String>,
+    is_dm: bool,
 }
 
 impl MessagePaneData {
@@ -55,18 +59,35 @@ impl MessagePaneData {
         Self {
             channel_id: None,
             channel_name: None,
+            channel_topic: None,
+            channel_icon: None,
+            online_count: None,
             messages: Vec::new(),
             loading_state: LoadingState::Idle,
             error_message: None,
+            is_dm: false,
         }
     }
 
     pub fn set_channel(&mut self, channel_id: ChannelId, channel_name: String) {
+        self.is_dm = channel_name.starts_with('@');
         self.channel_id = Some(channel_id);
         self.channel_name = Some(channel_name);
         self.messages.clear();
         self.loading_state = LoadingState::Loading;
         self.error_message = None;
+    }
+
+    pub fn set_channel_topic(&mut self, topic: Option<String>) {
+        self.channel_topic = topic;
+    }
+
+    pub fn set_channel_icon(&mut self, icon: Option<String>) {
+        self.channel_icon = icon;
+    }
+
+    pub fn set_online_count(&mut self, count: Option<u32>) {
+        self.online_count = count;
     }
 
     pub fn set_messages(&mut self, messages: Vec<Message>) {
@@ -99,9 +120,13 @@ impl MessagePaneData {
     pub fn clear(&mut self) {
         self.channel_id = None;
         self.channel_name = None;
+        self.channel_topic = None;
+        self.channel_icon = None;
+        self.online_count = None;
         self.messages.clear();
         self.loading_state = LoadingState::Idle;
         self.error_message = None;
+        self.is_dm = false;
     }
 
     #[must_use]
@@ -112,6 +137,21 @@ impl MessagePaneData {
     #[must_use]
     pub fn channel_name(&self) -> Option<&str> {
         self.channel_name.as_deref()
+    }
+
+    #[must_use]
+    pub fn channel_topic(&self) -> Option<&str> {
+        self.channel_topic.as_deref()
+    }
+
+    #[must_use]
+    pub fn channel_icon(&self) -> Option<&str> {
+        self.channel_icon.as_deref()
+    }
+
+    #[must_use]
+    pub fn online_count(&self) -> Option<u32> {
+        self.online_count
     }
 
     #[must_use]
@@ -132,6 +172,23 @@ impl MessagePaneData {
     #[must_use]
     pub fn message_count(&self) -> usize {
         self.messages.len()
+    }
+
+    #[must_use]
+    pub fn is_dm(&self) -> bool {
+        self.is_dm
+    }
+
+    #[must_use]
+    pub fn formatted_channel_title(&self) -> Option<String> {
+        self.channel_name.as_ref().map(|name| {
+            let display_name = name.trim_start_matches('@').to_uppercase();
+            if self.is_dm {
+                format!("{DM_CHANNEL_PREFIX}{display_name}{CHANNEL_NAME_SUFFIX}")
+            } else {
+                format!("{CHANNEL_NAME_PREFIX}{display_name}{CHANNEL_NAME_SUFFIX}")
+            }
+        })
     }
 }
 
@@ -373,6 +430,7 @@ pub struct MessagePaneStyle {
     pub border_style: Style,
     pub border_style_focused: Style,
     pub title_style: Style,
+    pub topic_style: Style,
     pub author_style: Style,
     pub bot_badge_style: Style,
     pub timestamp_style: Style,
@@ -395,6 +453,7 @@ impl Default for MessagePaneStyle {
             title_style: Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
+            topic_style: Style::default().fg(Color::DarkGray),
             author_style: Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
@@ -421,7 +480,6 @@ impl Default for MessagePaneStyle {
     }
 }
 
-/// Widget for displaying channel messages.
 #[allow(missing_docs)]
 pub struct MessagePane<'a> {
     data: &'a MessagePaneData,
@@ -451,16 +509,12 @@ impl<'a> MessagePane<'a> {
             .sum()
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn calculate_message_height(message: &Message, width: u16) -> u16 {
         let content_width = width.saturating_sub(MESSAGE_CONTENT_PADDING);
-        let content_lines = if content_width > 0 {
-            let content_len = u16::try_from(message.content().len()).unwrap_or(u16::MAX);
-            (content_len / content_width).max(1)
-        } else {
-            1
-        };
+        let content_lines = wrap_text(message.content(), content_width as usize).len() as u16;
 
-        let mut height = MESSAGE_HEIGHT_BASE + content_lines;
+        let mut height = 1 + content_lines;
 
         if message.is_reply() && message.referenced().is_some() {
             height += 1;
@@ -469,6 +523,8 @@ impl<'a> MessagePane<'a> {
         if message.has_attachments() {
             height += u16::try_from(message.attachments().len()).unwrap_or(u16::MAX);
         }
+
+        height += 1;
 
         height
     }
@@ -558,28 +614,39 @@ impl<'a> MessagePane<'a> {
         current_y += 1;
         current_y - y_offset
     }
-}
 
-impl StatefulWidget for MessagePane<'_> {
-    type State = MessagePaneState;
-
-    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+    fn build_block(&self, state: &MessagePaneState) -> Block<'_> {
         let border_style = if state.is_focused() {
             self.style.border_style_focused
         } else {
             self.style.border_style
         };
 
-        let title = match self.data.channel_name() {
-            Some(name) => format!(" #{name} "),
-            None => " Messages ".to_string(),
-        };
-
-        let block = Block::default()
+        let mut block = Block::default()
             .borders(Borders::ALL)
-            .border_style(border_style)
-            .title(Span::styled(title, self.style.title_style));
+            .border_style(border_style);
 
+        if let Some(title) = self.data.formatted_channel_title() {
+            block = block.title(Line::from(Span::styled(title, self.style.title_style)));
+        }
+
+        if let Some(topic) = self.data.channel_topic() {
+            let truncated_topic = truncate_string(topic, 60);
+            block = block.title_bottom(
+                Line::from(Span::styled(truncated_topic, self.style.topic_style))
+                    .alignment(Alignment::Right),
+            );
+        }
+
+        block
+    }
+}
+
+impl StatefulWidget for MessagePane<'_> {
+    type State = MessagePaneState;
+
+    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+        let block = self.build_block(state);
         let inner_area = block.inner(area);
         block.render(area, buf);
 
@@ -782,5 +849,22 @@ mod tests {
 
         let empty_lines = wrap_text("", 10);
         assert_eq!(empty_lines.len(), 1);
+    }
+
+    #[test]
+    fn test_formatted_channel_title() {
+        let mut data = MessagePaneData::new();
+        data.set_channel(ChannelId(100), "general".to_string());
+        assert_eq!(
+            data.formatted_channel_title(),
+            Some("[#-GENERAL]".to_string())
+        );
+
+        let mut dm_data = MessagePaneData::new();
+        dm_data.set_channel(ChannelId(200), "@username".to_string());
+        assert_eq!(
+            dm_data.formatted_channel_title(),
+            Some("[@-USERNAME]".to_string())
+        );
     }
 }
