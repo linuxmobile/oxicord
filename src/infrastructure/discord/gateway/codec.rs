@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, Utc};
 use flate2::{Decompress, FlushDecompress, Status};
 
 use super::constants::ZLIB_SUFFIX;
@@ -573,9 +573,15 @@ impl EventParser {
             payload.author.bot,
         );
 
-        let mut message = Message::new(id, channel_id, author, payload.content, timestamp)
-            .with_kind(MessageKind::from(payload.kind))
-            .with_pinned(payload.pinned);
+        let mut message = Message::new(
+            id,
+            channel_id,
+            author,
+            payload.content,
+            timestamp.with_timezone(&Local),
+        )
+        .with_kind(MessageKind::from(payload.kind))
+        .with_pinned(payload.pinned);
 
         if !payload.attachments.is_empty() {
             let attachments: Vec<Attachment> = payload
@@ -595,7 +601,7 @@ impl EventParser {
         if let Some(edited) = payload.edited_timestamp
             && let Ok(edited_ts) = edited.parse::<DateTime<Utc>>()
         {
-            message = message.with_edited_timestamp(edited_ts);
+            message = message.with_edited_timestamp(edited_ts.with_timezone(&Local));
         }
 
         if let Some(reference) = payload.message_reference {

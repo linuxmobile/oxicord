@@ -1,7 +1,7 @@
 //! Discord API HTTP client.
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, Utc};
 use reqwest::{Client, StatusCode, header};
 use tracing::{debug, warn};
 
@@ -133,9 +133,15 @@ impl DiscordClient {
 
         let timestamp: DateTime<Utc> = response.timestamp.parse().ok()?;
 
-        let mut message = Message::new(id, channel_id, author, response.content, timestamp)
-            .with_kind(MessageKind::from(response.kind))
-            .with_pinned(response.pinned);
+        let mut message = Message::new(
+            id,
+            channel_id,
+            author,
+            response.content,
+            timestamp.with_timezone(&Local),
+        )
+        .with_kind(MessageKind::from(response.kind))
+        .with_pinned(response.pinned);
 
         if !response.attachments.is_empty() {
             let attachments = response
@@ -158,7 +164,7 @@ impl DiscordClient {
         if let Some(edited) = response.edited_timestamp
             && let Ok(edited_ts) = edited.parse::<DateTime<Utc>>()
         {
-            message = message.with_edited_timestamp(edited_ts);
+            message = message.with_edited_timestamp(edited_ts.with_timezone(&Local));
         }
 
         if let Some(reference) = response.message_reference {

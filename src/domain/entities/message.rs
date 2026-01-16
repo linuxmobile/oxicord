@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
 use super::{ChannelId, User};
@@ -306,8 +306,8 @@ pub struct Message {
     channel_id: ChannelId,
     author: MessageAuthor,
     content: String,
-    timestamp: DateTime<Utc>,
-    edited_timestamp: Option<DateTime<Utc>>,
+    timestamp: DateTime<Local>,
+    edited_timestamp: Option<DateTime<Local>>,
     kind: MessageKind,
     attachments: Vec<Attachment>,
     reference: Option<MessageReference>,
@@ -325,7 +325,7 @@ impl Message {
         channel_id: impl Into<ChannelId>,
         author: MessageAuthor,
         content: impl Into<String>,
-        timestamp: DateTime<Utc>,
+        timestamp: DateTime<Local>,
     ) -> Self {
         Self {
             id: id.into(),
@@ -368,7 +368,7 @@ impl Message {
     }
 
     #[must_use]
-    pub const fn with_edited_timestamp(mut self, timestamp: DateTime<Utc>) -> Self {
+    pub const fn with_edited_timestamp(mut self, timestamp: DateTime<Local>) -> Self {
         self.edited_timestamp = Some(timestamp);
         self
     }
@@ -406,12 +406,12 @@ impl Message {
     }
 
     #[must_use]
-    pub const fn timestamp(&self) -> DateTime<Utc> {
+    pub const fn timestamp(&self) -> DateTime<Local> {
         self.timestamp
     }
 
     #[must_use]
-    pub const fn edited_timestamp(&self) -> Option<DateTime<Utc>> {
+    pub const fn edited_timestamp(&self) -> Option<DateTime<Local>> {
         self.edited_timestamp
     }
 
@@ -482,7 +482,7 @@ mod tests {
     #[test]
     fn test_message_creation() {
         let author = create_test_author();
-        let timestamp = Utc::now();
+        let timestamp = Local::now();
         let message = Message::new(1_u64, 100_u64, author, "Hello, world!", timestamp);
 
         assert_eq!(message.id().as_u64(), 1);
@@ -496,7 +496,7 @@ mod tests {
     #[test]
     fn test_message_with_reply() {
         let author = create_test_author();
-        let timestamp = Utc::now();
+        let timestamp = Local::now();
         let referenced = Message::new(1_u64, 100_u64, author.clone(), "Original", timestamp);
         let reply = Message::new(2_u64, 100_u64, author, "Reply", timestamp)
             .with_kind(MessageKind::Reply)

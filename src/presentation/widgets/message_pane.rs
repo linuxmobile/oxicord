@@ -1052,11 +1052,11 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::domain::entities::MessageAuthor;
-    use chrono::Utc;
+    use chrono::Local;
 
     fn create_test_message(id: u64, content: &str) -> Message {
         let author = MessageAuthor::new("1", "testuser", "0", None, false);
-        Message::new(id, 100_u64, author, content, Utc::now())
+        Message::new(id, 100_u64, author, content, Local::now())
     }
 
     #[test]
