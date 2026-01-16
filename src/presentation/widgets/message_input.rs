@@ -13,19 +13,14 @@ const MAX_MESSAGE_LENGTH: usize = 2000;
 const PLACEHOLDER_TEXT: &str = "Type a message...";
 const PLACEHOLDER_NO_CHANNEL: &str = "Select a channel first";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum MessageInputMode {
+    #[default]
     Normal,
     Reply {
         message_id: MessageId,
         author: String,
     },
-}
-
-impl Default for MessageInputMode {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,7 +42,7 @@ pub struct MessageInputState<'a> {
     has_channel: bool,
 }
 
-impl<'a> MessageInputState<'a> {
+impl MessageInputState<'_> {
     #[must_use]
     pub fn new() -> Self {
         let textarea = TextArea::default();
@@ -237,13 +232,13 @@ impl<'a> MessageInputState<'a> {
             if i >= inner.height as usize {
                 break;
             }
-            let y = inner.y + i as u16;
+            let y = inner.y + u16::try_from(i).unwrap_or(0);
 
             for (j, ch) in line.chars().enumerate() {
                 if j >= inner.width as usize {
                     break;
                 }
-                let x = inner.x + j as u16;
+                let x = inner.x + u16::try_from(j).unwrap_or(0);
 
                 let style = if self.focused
                     && !self.value().is_empty()
@@ -266,24 +261,24 @@ impl<'a> MessageInputState<'a> {
                 && i == cursor_row
                 && cursor_col >= line.len()
             {
-                let x = inner.x + line.len() as u16;
-                if x < inner.x + inner.width {
-                    if let Some(cell) = buf.cell_mut((x, y)) {
-                        cell.set_symbol(" ");
-                        cell.set_style(Style::default().bg(Color::White).fg(Color::Black));
-                    }
+                let x = inner.x + u16::try_from(line.len()).unwrap_or(0);
+                if x < inner.x + inner.width
+                    && let Some(cell) = buf.cell_mut((x, y))
+                {
+                    cell.set_symbol(" ");
+                    cell.set_style(Style::default().bg(Color::White).fg(Color::Black));
                 }
             }
         }
 
         if self.focused && self.value().is_empty() {
         } else if self.focused && !self.value().is_empty() && cursor_row >= lines.len() {
-            let y = inner.y + cursor_row as u16;
-            if y < inner.y + inner.height {
-                if let Some(cell) = buf.cell_mut((inner.x, y)) {
-                    cell.set_symbol(" ");
-                    cell.set_style(Style::default().bg(Color::White).fg(Color::Black));
-                }
+            let y = inner.y + u16::try_from(cursor_row).unwrap_or(0);
+            if y < inner.y + inner.height
+                && let Some(cell) = buf.cell_mut((inner.x, y))
+            {
+                cell.set_symbol(" ");
+                cell.set_style(Style::default().bg(Color::White).fg(Color::Black));
             }
         }
     }

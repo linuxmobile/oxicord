@@ -96,6 +96,15 @@ pub trait DiscordDataPort: Send + Sync {
         options: FetchMessagesOptions,
     ) -> Result<Vec<Message>, AuthError>;
 
+    /// Fetches historical messages before a specific message ID.
+    async fn load_more_before_id(
+        &self,
+        token: &AuthToken,
+        channel_id: u64,
+        message_id: u64,
+        limit: u8,
+    ) -> Result<Vec<Message>, AuthError>;
+
     /// Sends a message to a channel.
     async fn send_message(
         &self,

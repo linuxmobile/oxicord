@@ -468,6 +468,20 @@ impl DiscordDataPort for DiscordClient {
         Ok(messages)
     }
 
+    async fn load_more_before_id(
+        &self,
+        token: &AuthToken,
+        channel_id: u64,
+        message_id: u64,
+        limit: u8,
+    ) -> Result<Vec<Message>, AuthError> {
+        let options = FetchMessagesOptions::default()
+            .with_limit(limit)
+            .before_message(message_id);
+
+        self.fetch_messages(token, channel_id, options).await
+    }
+
     async fn send_message(
         &self,
         token: &AuthToken,

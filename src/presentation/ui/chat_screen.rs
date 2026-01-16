@@ -330,6 +330,16 @@ impl ChatScreenState {
                 MessagePaneAction::JumpToReply(message_id) => {
                     return ChatKeyResult::JumpToMessage(message_id);
                 }
+                MessagePaneAction::LoadHistory => {
+                    if let Some(channel_id) = self.message_pane_data.channel_id()
+                        && let Some(first_msg) = self.message_pane_data.messages().front()
+                    {
+                        return ChatKeyResult::LoadHistory {
+                            channel_id,
+                            before_message_id: first_msg.id(),
+                        };
+                    }
+                }
             }
         }
         ChatKeyResult::Consumed
@@ -441,6 +451,25 @@ impl ChatScreenState {
         self.message_pane_state.on_new_message();
     }
 
+    pub fn prepend_messages(&mut self, new_messages: Vec<Message>) {
+        if new_messages.is_empty() {
+            return;
+        }
+
+        let width = self.message_pane_state.last_width();
+        let added_height: u16 = new_messages
+            .iter()
+            .map(|m| MessagePane::calculate_message_height(m, width))
+            .sum();
+
+        let added_count = self.message_pane_data.prepend_messages(new_messages);
+
+        if added_count > 0 {
+            self.message_pane_state
+                .adjust_for_prepend(added_count, added_height);
+        }
+    }
+
     pub fn update_message(&mut self, message: Message) {
         self.message_pane_data.update_message(message);
     }
@@ -505,7 +534,7 @@ impl ChatScreenState {
         self.message_input_state.value()
     }
 
-    /// Get the current reply info (message_id, author) if in reply mode.
+    /// Get the current reply info (`message_id`, author) if in reply mode.
     pub fn message_input_reply_info(&self) -> Option<(MessageId, String)> {
         match self.message_input_state.mode() {
             MessageInputMode::Reply { message_id, author } => Some((*message_id, author.clone())),
@@ -534,6 +563,10 @@ pub enum ChatKeyResult {
     ReplyToMessage {
         message_id: crate::domain::entities::MessageId,
         mention: bool,
+    },
+    LoadHistory {
+        channel_id: ChannelId,
+        before_message_id: MessageId,
     },
     EditMessage(crate::domain::entities::MessageId),
     DeleteMessage(crate::domain::entities::MessageId),

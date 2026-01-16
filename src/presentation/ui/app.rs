@@ -12,7 +12,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::application::dto::{LoginRequest, TokenSource};
 use crate::application::use_cases::{LoginUseCase, ResolveTokenUseCase};
-use crate::domain::entities::{AuthToken, ChannelId, GuildId, User};
+use crate::domain::entities::{AuthToken, ChannelId, GuildId, MessageId, User};
 use crate::domain::errors::AuthError;
 use crate::domain::ports::{
     AuthPort, DiscordDataPort, FetchMessagesOptions, SendMessageRequest, TokenStoragePort,
@@ -27,6 +27,12 @@ use crate::presentation::widgets::ConnectionStatus;
 
 const TYPING_CLEANUP_INTERVAL: Duration = Duration::from_secs(2);
 const TYPING_THROTTLE_DURATION: Duration = Duration::from_secs(8);
+
+#[derive(Debug)]
+enum Action {
+    HistoryLoaded(Vec<crate::domain::entities::Message>),
+    LoadError(String),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AppState {
@@ -50,6 +56,8 @@ pub struct App {
     current_token: Option<AuthToken>,
     gateway_client: Option<GatewayClient>,
     gateway_rx: Option<mpsc::UnboundedReceiver<GatewayEventKind>>,
+    action_tx: mpsc::UnboundedSender<Action>,
+    action_rx: mpsc::UnboundedReceiver<Action>,
     typing_manager: TypingIndicatorManager,
     last_typing_cleanup: Instant,
     last_typing_sent: Option<(ChannelId, Instant)>,
@@ -64,6 +72,7 @@ impl App {
     ) -> Self {
         let login_use_case = LoginUseCase::new(auth_port, storage_port.clone());
         let resolve_token_use_case = ResolveTokenUseCase::new(storage_port);
+        let (action_tx, action_rx) = mpsc::unbounded_channel();
 
         Self {
             state: AppState::Login,
@@ -75,6 +84,8 @@ impl App {
             current_token: None,
             gateway_client: None,
             gateway_rx: None,
+            action_tx,
+            action_rx,
             typing_manager: TypingIndicatorManager::new(),
             last_typing_cleanup: Instant::now(),
             last_typing_sent: None,
@@ -111,14 +122,22 @@ impl App {
         terminal.draw(|frame| self.render(frame))?;
 
         while self.state != AppState::Exiting {
-            let gateway_event = self.receive_gateway_event();
+            let gateway_future = match &mut self.gateway_rx {
+                Some(rx) => futures_util::future::Either::Left(rx.recv()),
+                None => futures_util::future::Either::Right(std::future::pending()),
+            };
             let terminal_event = terminal_events.next();
 
             tokio::select! {
                 biased;
 
-                Some(event) = gateway_event => {
+                Some(event) = gateway_future => {
                     self.handle_gateway_event(event);
+                    terminal.draw(|frame| self.render(frame))?;
+                }
+
+                Some(action) = self.action_rx.recv() => {
+                    self.handle_action(action);
                     terminal.draw(|frame| self.render(frame))?;
                 }
 
@@ -129,7 +148,7 @@ impl App {
                             self.state = AppState::Exiting;
                         }
                         EventResult::OpenEditor => {
-                            self.handle_open_editor(terminal).await?;
+                            self.handle_open_editor(terminal)?;
                         }
                         _ => {}
                     }
@@ -144,13 +163,6 @@ impl App {
         }
 
         Ok(())
-    }
-
-    async fn receive_gateway_event(&mut self) -> Option<GatewayEventKind> {
-        match &mut self.gateway_rx {
-            Some(rx) => rx.recv().await,
-            None => std::future::pending().await,
-        }
     }
 
     async fn handle_terminal_event(&mut self, event: Event) -> EventResult {
@@ -231,6 +243,13 @@ impl App {
             } => {
                 debug!(channel_id = %channel_id, recipient = %recipient_name, "Loading DM messages");
                 self.load_channel_messages(channel_id).await;
+            }
+            ChatKeyResult::LoadHistory {
+                channel_id,
+                before_message_id,
+            } => {
+                debug!(channel_id = %channel_id, before = %before_message_id, "Loading history");
+                self.load_history(channel_id, before_message_id);
             }
             ChatKeyResult::ReplyToMessage {
                 message_id,
@@ -633,6 +652,44 @@ impl App {
         }
     }
 
+    fn load_history(&mut self, channel_id: ChannelId, before_message_id: MessageId) {
+        let Some(ref token) = self.current_token else {
+            return;
+        };
+
+        let token = token.clone();
+        let discord = self.discord_data.clone();
+        let tx = self.action_tx.clone();
+
+        tokio::spawn(async move {
+            match discord
+                .load_more_before_id(&token, channel_id.as_u64(), before_message_id.as_u64(), 50)
+                .await
+            {
+                Ok(messages) => {
+                    debug!(count = messages.len(), "Loaded historical messages");
+                    let _ = tx.send(Action::HistoryLoaded(messages));
+                }
+                Err(e) => {
+                    let _ = tx.send(Action::LoadError(e.to_string()));
+                }
+            }
+        });
+    }
+
+    fn handle_action(&mut self, action: Action) {
+        match action {
+            Action::HistoryLoaded(messages) => {
+                if let CurrentScreen::Chat(ref mut state) = self.screen {
+                    state.prepend_messages(messages);
+                }
+            }
+            Action::LoadError(e) => {
+                warn!(error = %e, "Failed to load history");
+            }
+        }
+    }
+
     fn transition_to_login(&mut self) {
         self.disconnect_gateway();
         self.state = AppState::Login;
@@ -676,7 +733,9 @@ impl App {
         reply_to: Option<crate::domain::entities::MessageId>,
     ) {
         let channel_id = if let CurrentScreen::Chat(ref state) = self.screen {
-            state.selected_channel().map(|c| c.id())
+            state
+                .selected_channel()
+                .map(crate::domain::entities::Channel::id)
         } else {
             None
         };
@@ -719,7 +778,9 @@ impl App {
 
     async fn handle_start_typing(&mut self) {
         let channel_id = if let CurrentScreen::Chat(ref state) = self.screen {
-            state.selected_channel().map(|c| c.id())
+            state
+                .selected_channel()
+                .map(crate::domain::entities::Channel::id)
         } else {
             None
         };
@@ -754,10 +815,7 @@ impl App {
         }
     }
 
-    async fn handle_open_editor(
-        &mut self,
-        terminal: &mut DefaultTerminal,
-    ) -> color_eyre::Result<()> {
+    fn handle_open_editor(&mut self, terminal: &mut DefaultTerminal) -> color_eyre::Result<()> {
         use std::io::Write;
 
         // Get current input content and reply state
@@ -898,6 +956,16 @@ mod tests {
             _token: &AuthToken,
             _channel_id: u64,
             _options: FetchMessagesOptions,
+        ) -> Result<Vec<crate::domain::entities::Message>, AuthError> {
+            Ok(vec![])
+        }
+
+        async fn load_more_before_id(
+            &self,
+            _token: &AuthToken,
+            _channel_id: u64,
+            _message_id: u64,
+            _limit: u8,
         ) -> Result<Vec<crate::domain::entities::Message>, AuthError> {
             Ok(vec![])
         }

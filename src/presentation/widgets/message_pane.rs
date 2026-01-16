@@ -1,3 +1,5 @@
+use std::collections::{HashSet, VecDeque};
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     buffer::Buffer,
@@ -32,6 +34,7 @@ pub enum MessagePaneAction {
     YankId(String),
     OpenAttachments(MessageId),
     JumpToReply(MessageId),
+    LoadHistory,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,7 +51,7 @@ pub struct MessagePaneData {
     channel_topic: Option<String>,
     channel_icon: Option<String>,
     online_count: Option<u32>,
-    messages: Vec<Message>,
+    messages: VecDeque<Message>,
     loading_state: LoadingState,
     error_message: Option<String>,
     is_dm: bool,
@@ -64,7 +67,7 @@ impl MessagePaneData {
             channel_topic: None,
             channel_icon: None,
             online_count: None,
-            messages: Vec::new(),
+            messages: VecDeque::new(),
             loading_state: LoadingState::Idle,
             error_message: None,
             is_dm: false,
@@ -94,17 +97,33 @@ impl MessagePaneData {
     }
 
     pub fn set_messages(&mut self, messages: Vec<Message>) {
-        self.messages = messages;
+        self.messages = messages.into();
         self.loading_state = LoadingState::Loaded;
         self.error_message = None;
     }
 
     pub fn add_message(&mut self, message: Message) {
-        if self.channel_id == Some(message.channel_id()) {
-            if !self.messages.iter().any(|m| m.id() == message.id()) {
-                self.messages.push(message);
+        if self.channel_id == Some(message.channel_id())
+            && !self.messages.iter().any(|m| m.id() == message.id())
+        {
+            self.messages.push_back(message);
+        }
+    }
+
+    pub fn prepend_messages(&mut self, new_messages: Vec<Message>) -> usize {
+        let existing_ids: HashSet<_> = self
+            .messages
+            .iter()
+            .map(crate::domain::entities::Message::id)
+            .collect();
+        let mut added = 0;
+        for msg in new_messages.into_iter().rev() {
+            if !existing_ids.contains(&msg.id()) {
+                self.messages.push_front(msg);
+                added += 1;
             }
         }
+        added
     }
 
     pub fn update_message(&mut self, updated: Message) {
@@ -175,7 +194,7 @@ impl MessagePaneData {
     }
 
     #[must_use]
-    pub fn messages(&self) -> &[Message] {
+    pub fn messages(&self) -> &VecDeque<Message> {
         &self.messages
     }
 
@@ -185,12 +204,12 @@ impl MessagePaneData {
     }
 
     #[must_use]
-    pub const fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.messages.is_empty()
     }
 
     #[must_use]
-    pub const fn message_count(&self) -> usize {
+    pub fn message_count(&self) -> usize {
         self.messages.len()
     }
 
@@ -226,6 +245,7 @@ pub struct MessagePaneState {
     scroll_to_selection: bool,
     content_height: u16,
     viewport_height: u16,
+    last_width: u16,
 }
 
 impl MessagePaneState {
@@ -239,6 +259,7 @@ impl MessagePaneState {
             scroll_to_selection: false,
             content_height: 0,
             viewport_height: 0,
+            last_width: 0,
         }
     }
 
@@ -254,6 +275,22 @@ impl MessagePaneState {
     #[must_use]
     pub const fn selected_index(&self) -> Option<usize> {
         self.selected_index
+    }
+
+    #[must_use]
+    pub const fn last_width(&self) -> u16 {
+        self.last_width
+    }
+
+    pub fn adjust_for_prepend(&mut self, added_count: usize, added_height: u16) {
+        if let Some(idx) = self.selected_index {
+            self.selected_index = Some(idx + added_count);
+        }
+
+        let current_offset = self.scroll_state.offset();
+        let new_y = current_offset.y.saturating_add(added_height);
+        self.scroll_state
+            .set_offset(ratatui::layout::Position { x: 0, y: new_y });
     }
 
     pub fn select_next(&mut self, message_count: usize) {
@@ -364,6 +401,9 @@ impl MessagePaneState {
                 None
             }
             (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => {
+                if self.selected_index == Some(0) {
+                    return Some(MessagePaneAction::LoadHistory);
+                }
                 self.select_previous(message_count);
                 None
             }
@@ -372,12 +412,15 @@ impl MessagePaneState {
                 None
             }
             (KeyCode::Char('K'), KeyModifiers::SHIFT) => {
+                if self.scroll_state.offset().y == 0 {
+                    return Some(MessagePaneAction::LoadHistory);
+                }
                 self.scroll_up();
                 None
             }
             (KeyCode::Char('g'), KeyModifiers::NONE) => {
                 self.select_first();
-                None
+                Some(MessagePaneAction::LoadHistory)
             }
             (KeyCode::Char('G'), KeyModifiers::SHIFT) => {
                 self.select_last(message_count);
@@ -536,7 +579,8 @@ impl<'a> MessagePane<'a> {
     }
 
     #[allow(clippy::cast_possible_truncation)]
-    fn calculate_message_height(message: &Message, width: u16) -> u16 {
+    #[must_use]
+    pub fn calculate_message_height(message: &Message, width: u16) -> u16 {
         let indent_width = u16::try_from(CONTENT_INDENT).unwrap_or(0);
         let content_width = (width).saturating_sub(indent_width);
         let content_lines = wrap_text(message.content(), content_width as usize).len() as u16;
@@ -746,6 +790,7 @@ impl StatefulWidget for MessagePane<'_> {
         let content_height = self.calculate_content_height(content_width);
 
         state.update_dimensions(content_height, inner_area.height);
+        state.last_width = content_width;
 
         let mut scroll_view = ScrollView::new(Size::new(content_width, content_height))
             .horizontal_scrollbar_visibility(ScrollbarVisibility::Never);

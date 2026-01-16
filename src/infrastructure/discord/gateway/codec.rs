@@ -98,8 +98,8 @@ impl GatewayCodec {
                 )
                 .map_err(|e| GatewayError::compression(e.to_string()))?;
 
-            let consumed = (self.inflater.total_in() - in_before) as usize;
-            let produced = (self.inflater.total_out() - out_before) as usize;
+            let consumed = usize::try_from(self.inflater.total_in() - in_before).unwrap_or(0);
+            let produced = usize::try_from(self.inflater.total_out() - out_before).unwrap_or(0);
 
             total_in += consumed;
             total_out += produced;
