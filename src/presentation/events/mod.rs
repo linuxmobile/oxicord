@@ -13,6 +13,8 @@ pub enum EventResult {
     Exit,
     /// Event was consumed.
     Consumed,
+    /// Open external editor for message input.
+    OpenEditor,
 }
 
 /// Terminal event handler.

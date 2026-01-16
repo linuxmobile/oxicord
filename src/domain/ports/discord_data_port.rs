@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 
-use crate::domain::entities::{AuthToken, Channel, Guild, Message};
+use crate::domain::entities::{AuthToken, Channel, ChannelId, Guild, Message, MessageId};
 use crate::domain::errors::AuthError;
 
 /// Represents a direct message channel with a recipient.
@@ -45,6 +45,30 @@ impl FetchMessagesOptions {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct SendMessageRequest {
+    pub channel_id: ChannelId,
+    pub content: String,
+    pub reply_to: Option<MessageId>,
+}
+
+impl SendMessageRequest {
+    #[must_use]
+    pub fn new(channel_id: ChannelId, content: impl Into<String>) -> Self {
+        Self {
+            channel_id,
+            content: content.into(),
+            reply_to: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_reply(mut self, message_id: MessageId) -> Self {
+        self.reply_to = Some(message_id);
+        self
+    }
+}
+
 /// Port for fetching Discord data (guilds, channels, DMs, etc).
 #[async_trait]
 pub trait DiscordDataPort: Send + Sync {
@@ -71,4 +95,18 @@ pub trait DiscordDataPort: Send + Sync {
         channel_id: u64,
         options: FetchMessagesOptions,
     ) -> Result<Vec<Message>, AuthError>;
+
+    /// Sends a message to a channel.
+    async fn send_message(
+        &self,
+        token: &AuthToken,
+        request: SendMessageRequest,
+    ) -> Result<Message, AuthError>;
+
+    /// Sends a typing indicator to a channel.
+    async fn send_typing_indicator(
+        &self,
+        token: &AuthToken,
+        channel_id: ChannelId,
+    ) -> Result<(), AuthError>;
 }

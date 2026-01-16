@@ -2,15 +2,16 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
-    style::{Color, Style},
-    text::Span,
-    widgets::{Block, Borders, Paragraph, StatefulWidget, Widget},
+    widgets::{StatefulWidget, Widget},
 };
 
-use crate::domain::entities::{Channel, ChannelId, ChannelKind, Guild, GuildId, Message, User};
+use crate::domain::entities::{
+    Channel, ChannelId, ChannelKind, Guild, GuildId, Message, MessageId, User,
+};
 use crate::presentation::widgets::{
     ConnectionStatus, FocusContext, FooterBar, GuildsTree, GuildsTreeAction, GuildsTreeData,
-    GuildsTreeState, HeaderBar, MessagePane, MessagePaneAction, MessagePaneData, MessagePaneState,
+    GuildsTreeState, HeaderBar, MessageInput, MessageInputAction, MessageInputMode,
+    MessageInputState, MessagePane, MessagePaneAction, MessagePaneData, MessagePaneState,
 };
 use crate::{NAME, VERSION};
 
@@ -99,6 +100,7 @@ pub struct ChatScreenState {
     guilds_tree_data: GuildsTreeData,
     message_pane_state: MessagePaneState,
     message_pane_data: MessagePaneData,
+    message_input_state: MessageInputState<'static>,
     selected_guild: Option<GuildId>,
     selected_channel: Option<Channel>,
     dm_channels: std::collections::HashMap<String, DmChannelInfo>,
@@ -119,6 +121,7 @@ impl ChatScreenState {
             guilds_tree_data: GuildsTreeData::new(),
             message_pane_state: MessagePaneState::new(),
             message_pane_data: MessagePaneData::new(),
+            message_input_state: MessageInputState::new(),
             selected_guild: None,
             selected_channel: None,
             dm_channels: std::collections::HashMap::new(),
@@ -216,6 +219,8 @@ impl ChatScreenState {
             .set_focused(focus == ChatFocus::GuildsTree);
         self.message_pane_state
             .set_focused(focus == ChatFocus::MessagesList);
+        self.message_input_state
+            .set_focused(focus == ChatFocus::MessageInput);
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ChatKeyResult {
@@ -330,8 +335,24 @@ impl ChatScreenState {
         ChatKeyResult::Consumed
     }
 
-    const fn handle_message_input_key(&self, _key: KeyEvent) -> ChatKeyResult {
-        let _ = self;
+    fn handle_message_input_key(&mut self, key: KeyEvent) -> ChatKeyResult {
+        if let Some(action) = self.message_input_state.handle_key(key) {
+            match action {
+                MessageInputAction::SendMessage { content, reply_to } => {
+                    return ChatKeyResult::SendMessage { content, reply_to };
+                }
+                MessageInputAction::StartTyping => {
+                    return ChatKeyResult::StartTyping;
+                }
+                MessageInputAction::CancelReply => {}
+                MessageInputAction::ExitInput => {
+                    self.focus_messages_list();
+                }
+                MessageInputAction::OpenEditor => {
+                    return ChatKeyResult::OpenEditor;
+                }
+            }
+        }
         ChatKeyResult::Consumed
     }
 
@@ -351,6 +372,8 @@ impl ChatScreenState {
             self.guilds_tree_data.set_active_dm_user(None);
             let channel_name = channel.display_name();
             self.message_pane_data.set_channel(channel_id, channel_name);
+            self.message_input_state.set_has_channel(true);
+            self.message_input_state.clear();
             if let Some(topic) = topic {
                 self.message_pane_data.set_channel_topic(Some(topic));
             }
@@ -385,6 +408,8 @@ impl ChatScreenState {
 
             let display_name = format!("@{recipient_name}");
             self.message_pane_data.set_channel(channel_id, display_name);
+            self.message_input_state.set_has_channel(true);
+            self.message_input_state.clear();
 
             return Some(ChatKeyResult::LoadDmMessages {
                 channel_id,
@@ -444,6 +469,54 @@ impl ChatScreenState {
     pub const fn message_pane_parts_mut(&mut self) -> (&MessagePaneData, &mut MessagePaneState) {
         (&self.message_pane_data, &mut self.message_pane_state)
     }
+
+    pub fn start_reply(&mut self, message_id: MessageId, author_name: String) {
+        self.message_input_state
+            .start_reply(message_id, author_name);
+        self.focus_message_input();
+    }
+
+    pub fn cancel_reply(&mut self) {
+        self.message_input_state.cancel_reply();
+    }
+
+    pub fn clear_input(&mut self) {
+        self.message_input_state.clear();
+    }
+
+    pub fn get_reply_author(&self, message_id: MessageId) -> Option<String> {
+        self.message_pane_data
+            .messages()
+            .iter()
+            .find(|m| m.id() == message_id)
+            .map(|m| m.author().display_name().to_string())
+    }
+
+    pub fn message_input_parts_mut(&mut self) -> &mut MessageInputState<'static> {
+        &mut self.message_input_state
+    }
+
+    pub fn message_input_state(&self) -> &MessageInputState<'static> {
+        &self.message_input_state
+    }
+
+    /// Get the current message input value.
+    pub fn message_input_value(&self) -> String {
+        self.message_input_state.value()
+    }
+
+    /// Get the current reply info (message_id, author) if in reply mode.
+    pub fn message_input_reply_info(&self) -> Option<(MessageId, String)> {
+        match self.message_input_state.mode() {
+            MessageInputMode::Reply { message_id, author } => Some((*message_id, author.clone())),
+            MessageInputMode::Normal => None,
+        }
+    }
+
+    /// Set the message input content.
+    pub fn set_message_input_content(&mut self, content: &str) {
+        self.message_input_state.set_content(content);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -466,6 +539,12 @@ pub enum ChatKeyResult {
     DeleteMessage(crate::domain::entities::MessageId),
     OpenAttachments(crate::domain::entities::MessageId),
     JumpToMessage(crate::domain::entities::MessageId),
+    SendMessage {
+        content: String,
+        reply_to: Option<MessageId>,
+    },
+    StartTyping,
+    OpenEditor,
 }
 
 pub struct ChatScreen;
@@ -502,7 +581,7 @@ impl StatefulWidget for ChatScreen {
 
 fn render_header_bar(state: &ChatScreenState, area: Rect, buf: &mut Buffer) {
     let header = HeaderBar::new(NAME, VERSION).connection_status(state.connection_status());
-    header.render(area, buf);
+    Widget::render(header, area, buf);
 }
 
 fn render_footer_bar(state: &ChatScreenState, area: Rect, buf: &mut Buffer) {
@@ -523,7 +602,7 @@ fn render_footer_bar(state: &ChatScreenState, area: Rect, buf: &mut Buffer) {
             } else {
                 Some(Box::leak(right_info.into_boxed_str()))
             });
-    footer.render(area, buf);
+    Widget::render(footer, area, buf);
 }
 
 fn render_content_area(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) {
@@ -562,31 +641,8 @@ fn render_message_pane(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer
     StatefulWidget::render(pane, area, buf, pane_state);
 }
 
-fn render_input_placeholder(focus: ChatFocus, has_channel: bool, area: Rect, buf: &mut Buffer) {
-    let is_focused = focus == ChatFocus::MessageInput;
-    let border_style = if is_focused {
-        Style::default().fg(Color::Cyan)
-    } else {
-        Style::default().fg(Color::Gray)
-    };
-
-    let placeholder = if has_channel {
-        "Type a message..."
-    } else {
-        "Select a channel first"
-    };
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(border_style);
-
-    let paragraph = Paragraph::new(Span::styled(
-        placeholder,
-        Style::default().fg(Color::DarkGray),
-    ))
-    .block(block);
-
-    paragraph.render(area, buf);
+fn render_message_input(state: &ChatScreenState, area: Rect, buf: &mut Buffer) {
+    MessageInput::render(state.message_input_state(), area, buf);
 }
 
 fn render_messages_area(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) {
@@ -594,10 +650,7 @@ fn render_messages_area(state: &mut ChatScreenState, area: Rect, buf: &mut Buffe
     let [messages_area, input_area] = layout.areas(area);
 
     render_message_pane(state, messages_area, buf);
-
-    let focus = state.focus;
-    let has_channel = state.selected_channel().is_some();
-    render_input_placeholder(focus, has_channel, input_area, buf);
+    render_message_input(state, input_area, buf);
 }
 
 #[cfg(test)]

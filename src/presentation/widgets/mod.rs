@@ -5,6 +5,7 @@ mod footer_bar;
 mod guilds_tree;
 mod header_bar;
 mod input;
+mod message_input;
 mod message_pane;
 mod status_bar;
 
@@ -15,6 +16,9 @@ pub use guilds_tree::{
 };
 pub use header_bar::{ConnectionStatus, HeaderBar, HeaderBarStyle};
 pub use input::TextInput;
+pub use message_input::{
+    MessageInput, MessageInputAction, MessageInputMode, MessageInputState, MessageInputStyle,
+};
 pub use message_pane::{
     LoadingState, MessagePane, MessagePaneAction, MessagePaneData, MessagePaneState,
     MessagePaneStyle,

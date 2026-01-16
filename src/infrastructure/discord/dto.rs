@@ -146,3 +146,15 @@ pub struct MessageResponse {
     #[serde(default)]
     pub pinned: bool,
 }
+
+#[derive(Debug, serde::Serialize)]
+pub struct SendMessagePayload {
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_reference: Option<MessageReferencePayload>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct MessageReferencePayload {
+    pub message_id: String,
+}

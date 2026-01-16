@@ -16,6 +16,8 @@ ratatui = { version = "0.30", features = ["crossterm_0_28"] }
 crossterm = { version = "0.28", features = ["event-stream"] }
 tui-tree-widget = "0.24"
 tui-scrollview = "0.6.2"
+tui-textarea = "0.7"
+tempfile = "3"
 
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 tokio-tungstenite = { version = "0.27", features = ["rustls-tls-native-roots"] }

@@ -101,7 +101,9 @@ impl MessagePaneData {
 
     pub fn add_message(&mut self, message: Message) {
         if self.channel_id == Some(message.channel_id()) {
-            self.messages.push(message);
+            if !self.messages.iter().any(|m| m.id() == message.id()) {
+                self.messages.push(message);
+            }
         }
     }
 

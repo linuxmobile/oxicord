@@ -7,14 +7,16 @@ use tracing::{debug, warn};
 
 use super::dto::{
     AttachmentResponse, ChannelResponse, DmChannelResponse, ErrorResponse, GuildResponse,
-    MessageResponse, UserResponse,
+    MessageReferencePayload, MessageResponse, SendMessagePayload, UserResponse,
 };
 use crate::domain::entities::{
-    Attachment, AuthToken, Channel, ChannelKind, Guild, Message, MessageAuthor, MessageKind,
-    MessageReference, User,
+    Attachment, AuthToken, Channel, ChannelId, ChannelKind, Guild, Message, MessageAuthor,
+    MessageKind, MessageReference, User,
 };
 use crate::domain::errors::AuthError;
-use crate::domain::ports::{AuthPort, DirectMessageChannel, DiscordDataPort, FetchMessagesOptions};
+use crate::domain::ports::{
+    AuthPort, DirectMessageChannel, DiscordDataPort, FetchMessagesOptions, SendMessageRequest,
+};
 
 const DISCORD_API_BASE: &str = "https://discord.com/api/v10";
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -464,6 +466,89 @@ impl DiscordDataPort for DiscordClient {
         messages.reverse();
 
         Ok(messages)
+    }
+
+    async fn send_message(
+        &self,
+        token: &AuthToken,
+        request: SendMessageRequest,
+    ) -> Result<Message, AuthError> {
+        let url = format!(
+            "{}/channels/{}/messages",
+            self.base_url,
+            request.channel_id.as_u64()
+        );
+
+        debug!(
+            channel_id = %request.channel_id,
+            has_reply = request.reply_to.is_some(),
+            "Sending message to Discord API"
+        );
+
+        let payload = SendMessagePayload {
+            content: request.content,
+            message_reference: request.reply_to.map(|id| MessageReferencePayload {
+                message_id: id.as_u64().to_string(),
+            }),
+        };
+
+        let response = self
+            .client
+            .post(&url)
+            .header(header::AUTHORIZATION, token.as_str())
+            .header(header::CONTENT_TYPE, "application/json")
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| {
+                warn!(error = %e, "Failed to send message");
+                AuthError::network(e.to_string())
+            })?;
+
+        let status = response.status();
+
+        if !status.is_success() {
+            return Err(self.handle_error_response(status, response).await);
+        }
+
+        let message_response: MessageResponse = response.json().await.map_err(|e| {
+            warn!(error = %e, "Failed to parse message response");
+            AuthError::unexpected(format!("failed to parse message response: {e}"))
+        })?;
+
+        debug!(message_id = %message_response.id, "Message sent successfully");
+
+        Self::parse_message_response(message_response, request.channel_id.as_u64())
+            .ok_or_else(|| AuthError::unexpected("failed to parse sent message"))
+    }
+
+    async fn send_typing_indicator(
+        &self,
+        token: &AuthToken,
+        channel_id: ChannelId,
+    ) -> Result<(), AuthError> {
+        let url = format!("{}/channels/{}/typing", self.base_url, channel_id.as_u64());
+
+        debug!(channel_id = %channel_id, "Sending typing indicator");
+
+        let response = self
+            .client
+            .post(&url)
+            .header(header::AUTHORIZATION, token.as_str())
+            .send()
+            .await
+            .map_err(|e| {
+                warn!(error = %e, "Failed to send typing indicator");
+                AuthError::network(e.to_string())
+            })?;
+
+        let status = response.status();
+
+        if !status.is_success() && status != StatusCode::NO_CONTENT {
+            return Err(self.handle_error_response(status, response).await);
+        }
+
+        Ok(())
     }
 }
 

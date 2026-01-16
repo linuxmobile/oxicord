@@ -14,7 +14,9 @@ use crate::application::dto::{LoginRequest, TokenSource};
 use crate::application::use_cases::{LoginUseCase, ResolveTokenUseCase};
 use crate::domain::entities::{AuthToken, ChannelId, GuildId, User};
 use crate::domain::errors::AuthError;
-use crate::domain::ports::{AuthPort, DiscordDataPort, FetchMessagesOptions, TokenStoragePort};
+use crate::domain::ports::{
+    AuthPort, DiscordDataPort, FetchMessagesOptions, SendMessageRequest, TokenStoragePort,
+};
 use crate::infrastructure::discord::{
     DispatchEvent, GatewayClient, GatewayClientConfig, GatewayEventKind, GatewayIntents,
     TypingIndicatorManager,
@@ -24,6 +26,7 @@ use crate::presentation::ui::{ChatKeyResult, ChatScreen, ChatScreenState, LoginS
 use crate::presentation::widgets::ConnectionStatus;
 
 const TYPING_CLEANUP_INTERVAL: Duration = Duration::from_secs(2);
+const TYPING_THROTTLE_DURATION: Duration = Duration::from_secs(8);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AppState {
@@ -49,6 +52,7 @@ pub struct App {
     gateway_rx: Option<mpsc::UnboundedReceiver<GatewayEventKind>>,
     typing_manager: TypingIndicatorManager,
     last_typing_cleanup: Instant,
+    last_typing_sent: Option<(ChannelId, Instant)>,
 }
 
 impl App {
@@ -73,6 +77,7 @@ impl App {
             gateway_rx: None,
             typing_manager: TypingIndicatorManager::new(),
             last_typing_cleanup: Instant::now(),
+            last_typing_sent: None,
         }
     }
 
@@ -118,7 +123,16 @@ impl App {
                 }
 
                 Some(Ok(event)) = terminal_event => {
-                    self.handle_terminal_event(event).await;
+                    let result = self.handle_terminal_event(event).await;
+                    match result {
+                        EventResult::Exit => {
+                            self.state = AppState::Exiting;
+                        }
+                        EventResult::OpenEditor => {
+                            self.handle_open_editor(terminal).await?;
+                        }
+                        _ => {}
+                    }
                     terminal.draw(|frame| self.render(frame))?;
                 }
 
@@ -139,14 +153,10 @@ impl App {
         }
     }
 
-    async fn handle_terminal_event(&mut self, event: Event) {
-        let result = match event {
+    async fn handle_terminal_event(&mut self, event: Event) -> EventResult {
+        match event {
             Event::Key(key) => self.handle_key(key).await,
             _ => EventResult::Continue,
-        };
-
-        if result == EventResult::Exit {
-            self.state = AppState::Exiting;
         }
     }
 
@@ -227,6 +237,7 @@ impl App {
                 mention,
             } => {
                 debug!(message_id = %message_id, mention = mention, "Reply to message requested");
+                self.handle_reply_to_message(message_id);
             }
             ChatKeyResult::EditMessage(message_id) => {
                 debug!(message_id = %message_id, "Edit message requested");
@@ -239,6 +250,15 @@ impl App {
             }
             ChatKeyResult::JumpToMessage(message_id) => {
                 debug!(message_id = %message_id, "Jump to message requested");
+            }
+            ChatKeyResult::SendMessage { content, reply_to } => {
+                self.handle_send_message(content, reply_to).await;
+            }
+            ChatKeyResult::StartTyping => {
+                self.handle_start_typing().await;
+            }
+            ChatKeyResult::OpenEditor => {
+                return EventResult::OpenEditor;
             }
             ChatKeyResult::Consumed => {}
         }
@@ -641,6 +661,204 @@ impl App {
             screen.set_error(message);
         }
     }
+
+    fn handle_reply_to_message(&mut self, message_id: crate::domain::entities::MessageId) {
+        if let CurrentScreen::Chat(ref mut state) = self.screen
+            && let Some(author_name) = state.get_reply_author(message_id)
+        {
+            state.start_reply(message_id, author_name);
+        }
+    }
+
+    async fn handle_send_message(
+        &mut self,
+        content: String,
+        reply_to: Option<crate::domain::entities::MessageId>,
+    ) {
+        let channel_id = if let CurrentScreen::Chat(ref state) = self.screen {
+            state.selected_channel().map(|c| c.id())
+        } else {
+            None
+        };
+
+        let Some(channel_id) = channel_id else {
+            warn!("Cannot send message: no channel selected");
+            return;
+        };
+
+        let Some(ref token) = self.current_token else {
+            warn!("Cannot send message: no token available");
+            return;
+        };
+
+        let request = if let Some(reply_id) = reply_to {
+            SendMessageRequest::new(channel_id, content).with_reply(reply_id)
+        } else {
+            SendMessageRequest::new(channel_id, content)
+        };
+
+        debug!(channel_id = %channel_id, has_reply = reply_to.is_some(), "Sending message");
+
+        match self.discord_data.send_message(token, request).await {
+            Ok(message) => {
+                info!(message_id = %message.id(), "Message sent successfully");
+                if let CurrentScreen::Chat(ref mut state) = self.screen {
+                    state.add_message(message);
+                }
+            }
+            Err(e) => {
+                error!(error = %e, "Failed to send message");
+                if let CurrentScreen::Chat(ref mut state) = self.screen {
+                    state.set_message_error(format!("Failed to send: {e}"));
+                }
+            }
+        }
+
+        self.last_typing_sent = None;
+    }
+
+    async fn handle_start_typing(&mut self) {
+        let channel_id = if let CurrentScreen::Chat(ref state) = self.screen {
+            state.selected_channel().map(|c| c.id())
+        } else {
+            None
+        };
+
+        let Some(channel_id) = channel_id else {
+            return;
+        };
+
+        let should_send = match self.last_typing_sent {
+            Some((last_channel, last_time)) => {
+                last_channel != channel_id || last_time.elapsed() >= TYPING_THROTTLE_DURATION
+            }
+            None => true,
+        };
+
+        if !should_send {
+            return;
+        }
+
+        let Some(ref token) = self.current_token else {
+            return;
+        };
+
+        if let Err(e) = self
+            .discord_data
+            .send_typing_indicator(token, channel_id)
+            .await
+        {
+            debug!(error = %e, "Failed to send typing indicator");
+        } else {
+            self.last_typing_sent = Some((channel_id, Instant::now()));
+        }
+    }
+
+    async fn handle_open_editor(
+        &mut self,
+        terminal: &mut DefaultTerminal,
+    ) -> color_eyre::Result<()> {
+        use std::io::Write;
+
+        // Get current input content and reply state
+        let (current_content, reply_info) = if let CurrentScreen::Chat(ref state) = self.screen {
+            let content = state.message_input_value();
+            let reply = state.message_input_reply_info();
+            (content, reply)
+        } else {
+            return Ok(());
+        };
+
+        // Create temp file with .md extension
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join(format!("discordo_message_{}.md", std::process::id()));
+
+        // Write current content to temp file
+        {
+            let mut file = std::fs::File::create(&temp_path)?;
+            file.write_all(current_content.as_bytes())?;
+        }
+
+        // Get editor from environment
+        let editor = std::env::var("EDITOR")
+            .or_else(|_| std::env::var("VISUAL"))
+            .unwrap_or_else(|_| {
+                // Try common editors in order of preference
+                for editor in &["nvim", "vim", "nano", "vi"] {
+                    if std::process::Command::new("which")
+                        .arg(editor)
+                        .output()
+                        .map(|o| o.status.success())
+                        .unwrap_or(false)
+                    {
+                        return (*editor).to_string();
+                    }
+                }
+                "vi".to_string()
+            });
+
+        debug!(editor = %editor, path = %temp_path.display(), "Opening external editor");
+
+        // Suspend TUI - restore terminal to normal state
+        crossterm::terminal::disable_raw_mode()?;
+        crossterm::execute!(
+            std::io::stdout(),
+            crossterm::terminal::LeaveAlternateScreen,
+            crossterm::cursor::Show
+        )?;
+
+        // Spawn editor and wait
+        let status = std::process::Command::new(&editor).arg(&temp_path).status();
+
+        // Resume TUI
+        crossterm::terminal::enable_raw_mode()?;
+        crossterm::execute!(
+            std::io::stdout(),
+            crossterm::terminal::EnterAlternateScreen,
+            crossterm::cursor::Hide
+        )?;
+
+        // Force terminal refresh
+        terminal.clear()?;
+
+        match status {
+            Ok(exit_status) if exit_status.success() => {
+                // Read file content back
+                let new_content = std::fs::read_to_string(&temp_path).unwrap_or_default();
+
+                // Update message input with new content
+                if let CurrentScreen::Chat(ref mut state) = self.screen {
+                    state.set_message_input_content(&new_content);
+
+                    // Restore reply state if it existed
+                    if let Some((message_id, author)) = reply_info {
+                        state.start_reply(message_id, author);
+                    }
+                }
+
+                info!("Editor closed successfully");
+            }
+            Ok(exit_status) => {
+                warn!(
+                    exit_code = ?exit_status.code(),
+                    "Editor exited with non-zero status"
+                );
+            }
+            Err(e) => {
+                error!(error = %e, editor = %editor, "Failed to spawn editor");
+                if let CurrentScreen::Chat(ref mut state) = self.screen {
+                    state.set_message_error(format!("Failed to open editor: {e}"));
+                }
+            }
+        }
+
+        // Clean up temp file
+        if let Err(e) = std::fs::remove_file(&temp_path) {
+            debug!(error = %e, "Failed to remove temp file");
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -648,7 +866,7 @@ mod tests {
     use super::*;
     use crate::domain::entities::Guild;
     use crate::domain::ports::{
-        DirectMessageChannel, FetchMessagesOptions,
+        DirectMessageChannel, FetchMessagesOptions, SendMessageRequest,
         mocks::{MockAuthPort, MockTokenStorage},
     };
 
@@ -682,6 +900,22 @@ mod tests {
             _options: FetchMessagesOptions,
         ) -> Result<Vec<crate::domain::entities::Message>, AuthError> {
             Ok(vec![])
+        }
+
+        async fn send_message(
+            &self,
+            _token: &AuthToken,
+            _request: SendMessageRequest,
+        ) -> Result<crate::domain::entities::Message, AuthError> {
+            Err(AuthError::unexpected("mock not implemented"))
+        }
+
+        async fn send_typing_indicator(
+            &self,
+            _token: &AuthToken,
+            _channel_id: ChannelId,
+        ) -> Result<(), AuthError> {
+            Ok(())
         }
     }
 
