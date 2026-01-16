@@ -1,12 +1,14 @@
 use std::collections::{HashSet, VecDeque};
 
+use crate::application::services::markdown_service::MarkdownService;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Rect, Size},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, StatefulWidget, Widget},
+    widgets::{Block, Borders, Padding, Paragraph, StatefulWidget, Widget},
 };
 use tui_scrollview::{ScrollView, ScrollViewState, ScrollbarVisibility};
 
@@ -553,14 +555,16 @@ impl Default for MessagePaneStyle {
 pub struct MessagePane<'a> {
     data: &'a MessagePaneData,
     style: MessagePaneStyle,
+    markdown_service: &'a MarkdownService,
 }
 
 impl<'a> MessagePane<'a> {
     #[must_use]
-    pub fn new(data: &'a MessagePaneData) -> Self {
+    pub fn new(data: &'a MessagePaneData, markdown_service: &'a MarkdownService) -> Self {
         Self {
             data,
             style: MessagePaneStyle::default(),
+            markdown_service,
         }
     }
 
@@ -574,16 +578,38 @@ impl<'a> MessagePane<'a> {
         self.data
             .messages()
             .iter()
-            .map(|m| Self::calculate_message_height(m, width))
+            .map(|m| Self::calculate_message_height(m, width, self.markdown_service))
             .sum()
+    }
+
+    #[must_use]
+    fn calculate_content_lines_count(
+        markdown_service: &MarkdownService,
+        message: &Message,
+        width: u16,
+    ) -> u16 {
+        let indent_width = u16::try_from(CONTENT_INDENT).unwrap_or(0);
+        let content_width = (width).saturating_sub(indent_width);
+
+        let text = markdown_service.render(message.content());
+
+        let mut content_lines = 0;
+        for line in text.lines {
+            let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            content_lines +=
+                u16::try_from(wrap_text(&line_text, content_width as usize).len()).unwrap_or(0);
+        }
+        content_lines
     }
 
     #[allow(clippy::cast_possible_truncation)]
     #[must_use]
-    pub fn calculate_message_height(message: &Message, width: u16) -> u16 {
-        let indent_width = u16::try_from(CONTENT_INDENT).unwrap_or(0);
-        let content_width = (width).saturating_sub(indent_width);
-        let content_lines = wrap_text(message.content(), content_width as usize).len() as u16;
+    pub fn calculate_message_height(
+        message: &Message,
+        width: u16,
+        markdown_service: &MarkdownService,
+    ) -> u16 {
+        let content_lines = Self::calculate_content_lines_count(markdown_service, message, width);
 
         let mut height = 1 + content_lines;
 
@@ -676,19 +702,29 @@ impl<'a> MessagePane<'a> {
             self.style.content_style
         };
 
-        let indent_width = u16::try_from(CONTENT_INDENT).unwrap_or(0);
-        let content_width = (width).saturating_sub(indent_width);
-        let content_lines = wrap_text(message.content(), content_width as usize);
+        let paragraph_style = if is_selected {
+            base_style
+        } else {
+            base_style.patch(content_style)
+        };
 
-        for line_text in content_lines {
-            let content_line = Line::from(vec![
-                indent_span.clone(),
-                Span::styled(line_text, content_style),
-            ]);
-            let content_para = Paragraph::new(content_line).style(base_style);
-            scroll_view.render_widget(content_para, Rect::new(0, current_y, width, 1));
-            current_y += 1;
-        }
+        let indent_width = u16::try_from(CONTENT_INDENT).unwrap_or(0);
+
+        let text = self.markdown_service.render(message.content());
+        let rendered_text = text;
+
+        let block = Block::default().padding(Padding::new(indent_width, 0, 0, 0));
+        let para = Paragraph::new(rendered_text)
+            .block(block)
+            .style(paragraph_style)
+            .wrap(ratatui::widgets::Wrap { trim: false });
+
+        let content_height =
+            Self::calculate_content_lines_count(self.markdown_service, message, width);
+
+        scroll_view.render_widget(para, Rect::new(0, current_y, width, content_height));
+
+        current_y += content_height;
 
         for attachment in message.attachments() {
             let attachment_text = format!("📎 {}", attachment.filename());

@@ -11,6 +11,7 @@ use tokio::time::interval;
 use tracing::{debug, error, info, warn};
 
 use crate::application::dto::{LoginRequest, TokenSource};
+use crate::application::services::markdown_service::MarkdownService;
 use crate::application::use_cases::{LoginUseCase, ResolveTokenUseCase};
 use crate::domain::entities::{AuthToken, ChannelId, GuildId, MessageId, User};
 use crate::domain::errors::AuthError;
@@ -61,6 +62,7 @@ pub struct App {
     typing_manager: TypingIndicatorManager,
     last_typing_cleanup: Instant,
     last_typing_sent: Option<(ChannelId, Instant)>,
+    markdown_service: Arc<MarkdownService>,
 }
 
 impl App {
@@ -73,6 +75,7 @@ impl App {
         let login_use_case = LoginUseCase::new(auth_port, storage_port.clone());
         let resolve_token_use_case = ResolveTokenUseCase::new(storage_port);
         let (action_tx, action_rx) = mpsc::unbounded_channel();
+        let markdown_service = Arc::new(MarkdownService::new());
 
         Self {
             state: AppState::Login,
@@ -89,6 +92,7 @@ impl App {
             typing_manager: TypingIndicatorManager::new(),
             last_typing_cleanup: Instant::now(),
             last_typing_sent: None,
+            markdown_service,
         }
     }
 
@@ -325,7 +329,7 @@ impl App {
 
     async fn transition_to_chat(&mut self, user: User) {
         self.state = AppState::Chat;
-        let mut chat_state = ChatScreenState::new(user);
+        let mut chat_state = ChatScreenState::new(user, self.markdown_service.clone());
 
         let token_clone = self.current_token.clone();
         if let Some(ref token) = token_clone {

@@ -2,6 +2,8 @@
 
 /// Data transfer objects.
 pub mod dto;
+/// Service implementations.
+pub mod services;
 /// Use case implementations.
 pub mod use_cases;
 

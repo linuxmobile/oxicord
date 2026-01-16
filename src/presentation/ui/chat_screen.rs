@@ -4,7 +4,9 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     widgets::{StatefulWidget, Widget},
 };
+use std::sync::Arc;
 
+use crate::application::services::markdown_service::MarkdownService;
 use crate::domain::entities::{
     Channel, ChannelId, ChannelKind, Guild, GuildId, Message, MessageId, User,
 };
@@ -105,11 +107,12 @@ pub struct ChatScreenState {
     selected_channel: Option<Channel>,
     dm_channels: std::collections::HashMap<String, DmChannelInfo>,
     connection_status: ConnectionStatus,
+    markdown_service: Arc<MarkdownService>,
 }
 
 impl ChatScreenState {
     #[must_use]
-    pub fn new(user: User) -> Self {
+    pub fn new(user: User, markdown_service: Arc<MarkdownService>) -> Self {
         let mut guilds_tree_state = GuildsTreeState::new();
         guilds_tree_state.set_focused(true);
 
@@ -126,6 +129,7 @@ impl ChatScreenState {
             selected_channel: None,
             dm_channels: std::collections::HashMap::new(),
             connection_status: ConnectionStatus::Disconnected,
+            markdown_service,
         }
     }
 
@@ -459,7 +463,7 @@ impl ChatScreenState {
         let width = self.message_pane_state.last_width();
         let added_height: u16 = new_messages
             .iter()
-            .map(|m| MessagePane::calculate_message_height(m, width))
+            .map(|m| MessagePane::calculate_message_height(m, width, &self.markdown_service))
             .sum();
 
         let added_count = self.message_pane_data.prepend_messages(new_messages);
@@ -669,8 +673,9 @@ fn render_guilds_tree(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer)
 }
 
 fn render_message_pane(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) {
+    let service = state.markdown_service.clone();
     let (data, pane_state) = state.message_pane_parts_mut();
-    let pane = MessagePane::new(data);
+    let pane = MessagePane::new(data, &service);
     StatefulWidget::render(pane, area, buf, pane_state);
 }
 
@@ -696,7 +701,7 @@ mod tests {
 
     #[test]
     fn test_chat_screen_state_creation() {
-        let state = ChatScreenState::new(create_test_user());
+        let state = ChatScreenState::new(create_test_user(), Arc::new(MarkdownService::new()));
 
         assert_eq!(state.focus(), ChatFocus::GuildsTree);
         assert!(state.is_guilds_tree_visible());
@@ -705,7 +710,7 @@ mod tests {
 
     #[test]
     fn test_focus_cycling() {
-        let mut state = ChatScreenState::new(create_test_user());
+        let mut state = ChatScreenState::new(create_test_user(), Arc::new(MarkdownService::new()));
 
         assert_eq!(state.focus(), ChatFocus::GuildsTree);
 
@@ -721,7 +726,7 @@ mod tests {
 
     #[test]
     fn test_toggle_guilds_tree() {
-        let mut state = ChatScreenState::new(create_test_user());
+        let mut state = ChatScreenState::new(create_test_user(), Arc::new(MarkdownService::new()));
 
         assert!(state.is_guilds_tree_visible());
 
@@ -732,7 +737,7 @@ mod tests {
 
     #[test]
     fn test_focus_skip_when_guilds_hidden() {
-        let mut state = ChatScreenState::new(create_test_user());
+        let mut state = ChatScreenState::new(create_test_user(), Arc::new(MarkdownService::new()));
         state.toggle_guilds_tree();
         state.set_focus(ChatFocus::MessagesList);
 
@@ -745,7 +750,7 @@ mod tests {
 
     #[test]
     fn test_set_guilds() {
-        let mut state = ChatScreenState::new(create_test_user());
+        let mut state = ChatScreenState::new(create_test_user(), Arc::new(MarkdownService::new()));
         let guilds = vec![
             Guild::new(1_u64, "Guild One"),
             Guild::new(2_u64, "Guild Two"),
