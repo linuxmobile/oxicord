@@ -371,19 +371,27 @@ impl ChatScreenState {
     }
 
     fn on_channel_selected(&mut self, channel_id: ChannelId) -> Option<ChatKeyResult> {
-        let channel_info = if let Some(guild_id) = self.selected_guild
+        let guild_id = self
+            .selected_guild
+            .or_else(|| self.guilds_tree_data.find_guild_for_channel(channel_id));
+
+        let channel_info = if let Some(guild_id) = guild_id
             && let Some(channels) = self.guilds_tree_data.channels(guild_id)
             && let Some(channel) = channels.iter().find(|c| c.id() == channel_id)
         {
-            Some((channel.clone(), channel.topic().map(String::from)))
+            Some((guild_id, channel.clone(), channel.topic().map(String::from)))
         } else {
             None
         };
 
-        if let Some((channel, topic)) = channel_info {
+        if let Some((guild_id, channel, topic)) = channel_info {
+            self.selected_guild = Some(guild_id);
             self.selected_channel = Some(channel.clone());
+
+            self.guilds_tree_data.set_active_guild(Some(guild_id));
             self.guilds_tree_data.set_active_channel(Some(channel_id));
             self.guilds_tree_data.set_active_dm_user(None);
+
             let channel_name = channel.display_name();
             self.message_pane_data.set_channel(channel_id, channel_name);
             self.message_input_state.set_has_channel(true);
@@ -393,7 +401,7 @@ impl ChatScreenState {
             }
             return Some(ChatKeyResult::LoadChannelMessages {
                 channel_id,
-                guild_id: self.selected_guild,
+                guild_id: Some(guild_id),
             });
         }
         None

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -164,6 +166,7 @@ pub struct GatewayConnectionHandler {
     intents: GatewayIntents,
     event_tx: mpsc::UnboundedSender<GatewayEventKind>,
     payload_rx: mpsc::Receiver<String>,
+    ack_received: Arc<AtomicBool>,
 }
 
 impl GatewayConnectionHandler {
@@ -173,6 +176,7 @@ impl GatewayConnectionHandler {
         intents: GatewayIntents,
         event_tx: mpsc::UnboundedSender<GatewayEventKind>,
         payload_rx: mpsc::Receiver<String>,
+        ack_received: Arc<AtomicBool>,
     ) -> Self {
         Self {
             connection,
@@ -182,6 +186,7 @@ impl GatewayConnectionHandler {
             intents,
             event_tx,
             payload_rx,
+            ack_received,
         }
     }
 
@@ -355,7 +360,7 @@ impl GatewayConnectionHandler {
     }
 
     pub async fn run(&mut self) -> GatewayResult<()> {
-        while self.state.connection().is_active() {
+        if self.state.connection().is_active() {
             tokio::select! {
                 result = self.connection.receive() => {
                     match result {
@@ -387,13 +392,13 @@ impl GatewayConnectionHandler {
         match opcode {
             Some(GatewayOpcode::Dispatch) => {
                 if let Some(event_type) = message.t.as_deref() {
-                    // Log raw dispatch events at trace level for debugging
                     trace!(event = event_type, "Raw dispatch received");
                     self.handle_dispatch(event_type, message.d);
                 }
             }
             Some(GatewayOpcode::HeartbeatAck) => {
                 self.state.record_heartbeat_ack();
+                self.ack_received.store(true, Ordering::SeqCst);
                 if let Some(latency) = self.state.latency_ms() {
                     let _ = self.event_tx.send(GatewayEventKind::HeartbeatAck {
                         latency_ms: latency,

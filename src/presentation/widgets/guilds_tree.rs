@@ -378,6 +378,17 @@ impl GuildsTreeData {
     pub fn active_dm_user_id(&self) -> Option<&str> {
         self.active_dm_user_id.as_deref()
     }
+
+    /// Finds the guild ID containing a specific channel.
+    #[must_use]
+    pub fn find_guild_for_channel(&self, channel_id: ChannelId) -> Option<GuildId> {
+        for (guild_id, channels) in &self.channels_by_guild {
+            if channels.iter().any(|c| c.id() == channel_id) {
+                return Some(*guild_id);
+            }
+        }
+        None
+    }
 }
 
 impl Default for GuildsTreeData {

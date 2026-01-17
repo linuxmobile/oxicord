@@ -32,7 +32,11 @@ impl HeartbeatManager {
         clippy::cast_sign_loss,
         clippy::cast_precision_loss
     )]
-    pub fn start(&self, payload_tx: mpsc::Sender<String>) -> tokio::task::JoinHandle<()> {
+    pub fn start(
+        &self,
+        payload_tx: mpsc::Sender<String>,
+        error_tx: mpsc::Sender<()>,
+    ) -> tokio::task::JoinHandle<()> {
         let interval_ms = self.interval_ms;
         let sequence = self.sequence.clone();
         let running = self.running.clone();
@@ -57,6 +61,10 @@ impl HeartbeatManager {
 
                 if !ack_received.load(Ordering::SeqCst) {
                     warn!("Heartbeat ACK not received, connection may be dead");
+                    if error_tx.send(()).await.is_err() {
+                        debug!("Error channel closed");
+                    }
+                    break;
                 }
 
                 let seq = sequence.load(Ordering::SeqCst);
@@ -75,6 +83,10 @@ impl HeartbeatManager {
 
             debug!("Heartbeat loop stopped");
         })
+    }
+
+    pub fn set_ack_received(&mut self, ack_received: Arc<AtomicBool>) {
+        self.ack_received = ack_received;
     }
 
     pub fn stop(&self) {

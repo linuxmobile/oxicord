@@ -171,6 +171,7 @@ async fn run_gateway_loop(
 
     while running.load(Ordering::SeqCst) {
         let (payload_tx, payload_rx) = mpsc::channel(32);
+        let ack_received = Arc::new(AtomicBool::new(true));
 
         let connection = Box::new(WebSocketConnection::new());
         let handler = GatewayConnectionHandler::new(
@@ -179,6 +180,7 @@ async fn run_gateway_loop(
             config.intents,
             event_tx.clone(),
             payload_rx,
+            ack_received.clone(),
         );
 
         let result = run_single_connection(
@@ -188,6 +190,7 @@ async fn run_gateway_loop(
             &running,
             &mut session,
             &mut reconnect_attempts,
+            ack_received,
         )
         .await;
 
@@ -272,6 +275,7 @@ async fn run_single_connection(
     running: &Arc<AtomicBool>,
     session: &mut SessionInfo,
     reconnect_attempts: &mut u32,
+    ack_received: Arc<AtomicBool>,
 ) -> ConnectionResult {
     match handler.connect().await {
         Ok(()) => {
@@ -279,11 +283,19 @@ async fn run_single_connection(
             *reconnect_attempts = 0;
 
             if let Some(interval) = handler.heartbeat_interval() {
-                let heartbeat = HeartbeatManager::new(interval);
-                let _heartbeat_handle = heartbeat.start(payload_tx.clone());
+                let mut heartbeat = HeartbeatManager::new(interval);
+                heartbeat.set_ack_received(ack_received);
+                let (error_tx, mut error_rx) = mpsc::channel(1);
+                let _heartbeat_handle = heartbeat.start(payload_tx.clone(), error_tx);
 
-                let run_result =
-                    run_connection_loop(&mut handler, payload_tx, command_rx, running).await;
+                let run_result = run_connection_loop(
+                    &mut handler,
+                    payload_tx,
+                    command_rx,
+                    running,
+                    &mut error_rx,
+                )
+                .await;
 
                 heartbeat.stop();
 
@@ -305,6 +317,7 @@ async fn run_connection_loop(
     payload_tx: &mpsc::Sender<String>,
     command_rx: &mut mpsc::UnboundedReceiver<GatewayCommand>,
     running: &Arc<AtomicBool>,
+    heartbeat_error_rx: &mut mpsc::Receiver<()>,
 ) -> GatewayResult<()> {
     use tokio::select;
 
@@ -315,6 +328,13 @@ async fn run_connection_loop(
             }
             Some(command) = command_rx.recv() => {
                 process_gateway_command(command, payload_tx).await;
+            }
+            Some(()) = heartbeat_error_rx.recv() => {
+                warn!("Heartbeat failure detected, closing connection");
+                return Err(GatewayError::ConnectionClosed {
+                    code: 4000,
+                    reason: "Heartbeat ACK missing".to_string(),
+                });
             }
         }
     }
