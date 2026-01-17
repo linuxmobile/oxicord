@@ -6,17 +6,19 @@ use ratatui::{
 };
 use std::sync::Arc;
 
+use crate::application::services::autocomplete_service::AutocompleteService;
 use crate::application::services::markdown_service::MarkdownService;
 use crate::domain::entities::{
-    Channel, ChannelId, ChannelKind, Guild, GuildId, Message, MessageId, User,
+    CachedUser, Channel, ChannelId, ChannelKind, Guild, GuildId, Message, MessageId, User,
+    UserCache,
 };
 use crate::domain::keybinding::{Action, Keybind};
 use crate::presentation::commands::{CommandRegistry, HasCommands};
 use crate::presentation::widgets::{
     ConnectionStatus, FileExplorerAction, FileExplorerComponent, FocusContext, FooterBar,
-    GuildsTree, GuildsTreeAction, GuildsTreeData, GuildsTreeState, HeaderBar, MessageInput,
-    MessageInputAction, MessageInputMode, MessageInputState, MessagePane, MessagePaneAction,
-    MessagePaneData, MessagePaneState,
+    GuildsTree, GuildsTreeAction, GuildsTreeData, GuildsTreeState, HeaderBar, MentionPopup,
+    MessageInput, MessageInputAction, MessageInputMode, MessageInputState, MessagePane,
+    MessagePaneAction, MessagePaneData, MessagePaneState,
 };
 use crate::{NAME, VERSION};
 
@@ -106,6 +108,8 @@ pub struct ChatScreenState {
     message_pane_state: MessagePaneState,
     message_pane_data: MessagePaneData,
     message_input_state: MessageInputState<'static>,
+    autocomplete_service: AutocompleteService,
+    user_cache: UserCache,
     selected_guild: Option<GuildId>,
     selected_channel: Option<Channel>,
     dm_channels: std::collections::HashMap<String, DmChannelInfo>,
@@ -119,7 +123,7 @@ pub struct ChatScreenState {
 
 impl ChatScreenState {
     #[must_use]
-    pub fn new(user: User, markdown_service: Arc<MarkdownService>) -> Self {
+    pub fn new(user: User, markdown_service: Arc<MarkdownService>, user_cache: UserCache) -> Self {
         let mut guilds_tree_state = GuildsTreeState::new();
         guilds_tree_state.set_focused(true);
 
@@ -132,6 +136,8 @@ impl ChatScreenState {
             message_pane_state: MessagePaneState::new(),
             message_pane_data: MessagePaneData::new(),
             message_input_state: MessageInputState::new(),
+            autocomplete_service: AutocompleteService::new(),
+            user_cache,
             selected_guild: None,
             selected_channel: None,
             dm_channels: std::collections::HashMap::new(),
@@ -240,21 +246,21 @@ impl ChatScreenState {
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ChatKeyResult {
         if self.show_help {
-            if let Some(action) = self.registry.find_action(key) {
-                if matches!(action, Action::ToggleHelp | Action::Quit | Action::Cancel) {
-                    self.toggle_help();
-                    return ChatKeyResult::Consumed;
-                }
+            if let Some(action) = self.registry.find_action(key)
+                && matches!(action, Action::ToggleHelp | Action::Quit | Action::Cancel)
+            {
+                self.toggle_help();
+                return ChatKeyResult::Consumed;
             }
             return ChatKeyResult::Consumed;
         }
 
         if self.show_file_explorer {
-            if let Some(action) = self.registry.find_action(key) {
-                if action == Action::ToggleFileExplorer || action == Action::Cancel {
-                    self.toggle_file_explorer();
-                    return ChatKeyResult::Consumed;
-                }
+            if let Some(action) = self.registry.find_action(key)
+                && (action == Action::ToggleFileExplorer || action == Action::Cancel)
+            {
+                self.toggle_file_explorer();
+                return ChatKeyResult::Consumed;
             }
             return self.handle_file_explorer_key(key);
         }
@@ -290,7 +296,7 @@ impl ChatScreenState {
                 self.focus_previous();
                 Some(ChatKeyResult::Consumed)
             }
-            Some(Action::FocusNext) | Some(Action::NextTab) => {
+            Some(Action::FocusNext | Action::NextTab) => {
                 self.focus_next();
                 Some(ChatKeyResult::Consumed)
             }
@@ -399,7 +405,17 @@ impl ChatScreenState {
             return ChatKeyResult::Consumed;
         }
 
+        if self.handle_autocomplete_navigation(key) {
+            return ChatKeyResult::Consumed;
+        }
+
+        let autocomplete_changed;
+
         if let Some(action) = self.message_input_state.handle_key(key, &self.registry) {
+            let value = self.message_input_state.value();
+            let cursor_idx = self.message_input_state.get_cursor_index();
+            autocomplete_changed = self.autocomplete_service.process_input(&value, cursor_idx);
+
             match action {
                 MessageInputAction::SendMessage {
                     content,
@@ -421,19 +437,99 @@ impl ChatScreenState {
                         content,
                     };
                 }
-                MessageInputAction::StartTyping => {
-                    return ChatKeyResult::StartTyping;
-                }
-                MessageInputAction::CancelReply => {}
                 MessageInputAction::ExitInput => {
                     self.focus_messages_list();
                 }
                 MessageInputAction::OpenEditor => {
                     return ChatKeyResult::OpenEditor;
                 }
+                MessageInputAction::StartTyping | MessageInputAction::CancelReply => {}
+            }
+        } else {
+            let value = self.message_input_state.value();
+            let cursor_idx = self.message_input_state.get_cursor_index();
+            autocomplete_changed = self.autocomplete_service.process_input(&value, cursor_idx);
+        }
+
+        if autocomplete_changed {
+            self.update_autocomplete_suggestions();
+            return ChatKeyResult::StartTyping;
+        }
+
+        ChatKeyResult::Consumed
+    }
+
+    fn handle_autocomplete_navigation(&mut self, key: KeyEvent) -> bool {
+        if !self.autocomplete_service.state().active {
+            return false;
+        }
+
+        match key.code {
+            KeyCode::Up => {
+                self.autocomplete_service.select_previous();
+                true
+            }
+            KeyCode::Down => {
+                self.autocomplete_service.select_next();
+                true
+            }
+            KeyCode::Enter | KeyCode::Tab => {
+                if let Some(user) = self.autocomplete_service.state().selected_user() {
+                    let trigger_idx = self.autocomplete_service.state().trigger_index;
+                    self.message_input_state
+                        .insert_mention(trigger_idx, user.id());
+                }
+                self.autocomplete_service.reset();
+                true
+            }
+            KeyCode::Esc => {
+                self.autocomplete_service.reset();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn update_autocomplete_suggestions(&mut self) {
+        if !self.autocomplete_service.state().active {
+            return;
+        }
+
+        let mut candidates = Vec::new();
+        candidates.push(CachedUser::from_user(&self.user));
+
+        let mut seen_ids = std::collections::HashSet::new();
+        seen_ids.insert(self.user.id().to_string());
+
+        for msg in self.message_pane_data.messages() {
+            let author = msg.author();
+            if seen_ids.insert(author.id().to_string()) {
+                if let Some(cached) = self.user_cache.get(author.id()) {
+                    candidates.push(cached);
+                } else {
+                    let cached = CachedUser::new(
+                        author.id(),
+                        author.username(),
+                        author.discriminator(),
+                        author.avatar().map(String::from),
+                        author.is_bot(),
+                    );
+                    candidates.push(cached);
+                }
+            }
+
+            for mention in msg.mentions() {
+                if seen_ids.insert(mention.id().to_string()) {
+                    if let Some(cached) = self.user_cache.get(mention.id()) {
+                        candidates.push(cached);
+                    } else {
+                        candidates.push(CachedUser::from_user(mention));
+                    }
+                }
             }
         }
-        ChatKeyResult::Consumed
+
+        self.autocomplete_service.update_results(candidates);
     }
 
     fn on_channel_selected(&mut self, channel_id: ChannelId) -> Option<ChatKeyResult> {
@@ -696,6 +792,9 @@ impl HasCommands for ChatScreenState {
                     add(Action::DeleteMessage, "Del");
                 }
                 ChatFocus::MessageInput => {
+                    if self.autocomplete_service.state().active {
+                        // We could add mention specific hints here if we wanted
+                    }
                     add(Action::SendMessage, "Send");
                     add(Action::OpenEditor, "Editor");
                     add(Action::Cancel, "Cancel");
@@ -791,6 +890,7 @@ impl StatefulWidget for ChatScreen {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn render_help_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) {
     use crate::domain::keybinding::Action;
     use ratatui::layout::Alignment;
@@ -805,7 +905,7 @@ fn render_help_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) 
 
     Clear.render(popup_area, buf);
 
-    let bindings = vec![
+    let bindings = [
         (
             "GLOBAL",
             vec![
@@ -854,10 +954,10 @@ fn render_help_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) 
     ];
 
     let format_key = |action: Action| -> String {
-        state
-            .registry
-            .get(action)
-            .map(|k| {
+        state.registry.get(action).map_or_else(
+            || "N/A".to_string(),
+            |k| {
+                use std::fmt::Write;
                 let mut s = String::new();
                 if k.modifiers
                     .contains(crossterm::event::KeyModifiers::CONTROL)
@@ -880,7 +980,9 @@ fn render_help_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) 
                     KeyCode::Down => s.push_str("Down"),
                     KeyCode::Left => s.push_str("Left"),
                     KeyCode::Right => s.push_str("Right"),
-                    KeyCode::F(n) => s.push_str(&format!("F{}", n)),
+                    KeyCode::F(n) => {
+                        let _ = write!(s, "F{n}");
+                    }
                     KeyCode::Backspace => s.push_str("Backspace"),
                     KeyCode::Delete => s.push_str("Delete"),
                     KeyCode::Home => s.push_str("Home"),
@@ -888,16 +990,18 @@ fn render_help_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) 
                     KeyCode::PageUp => s.push_str("PageUp"),
                     KeyCode::PageDown => s.push_str("PageDown"),
                     KeyCode::BackTab => s.push_str("BackTab"),
-                    _ => s.push_str(&format!("{:?}", k.code)),
+                    _ => {
+                        let _ = write!(s, "{:?}", k.code);
+                    }
                 }
                 s
-            })
-            .unwrap_or_else(|| "N/A".to_string())
+            },
+        )
     };
 
     let mut rows = Vec::new();
 
-    for (category, keys) in bindings.iter() {
+    for (category, keys) in &bindings {
         rows.push(Row::new(vec![
             Cell::from(format!(" {category} ")).style(
                 Style::default()
@@ -907,7 +1011,7 @@ fn render_help_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) 
             Cell::from(""),
         ]));
 
-        for (action, desc) in keys.iter() {
+        for (action, desc) in keys {
             rows.push(Row::new(vec![
                 Cell::from(format!("  {}", format_key(*action)))
                     .style(Style::default().fg(ratatui::style::Color::Cyan)),
@@ -1040,6 +1144,20 @@ fn render_messages_area(state: &mut ChatScreenState, area: Rect, buf: &mut Buffe
 
     render_message_pane(state, messages_area, buf);
     render_message_input(state, input_area, buf);
+
+    if state.autocomplete_service.state().active {
+        let popup_height =
+            u16::try_from(state.autocomplete_service.state().results.len().min(5)).unwrap_or(0) + 2;
+        let popup_width = 30;
+        let popup_area = Rect::new(
+            input_area.x,
+            input_area.y.saturating_sub(popup_height),
+            popup_width,
+            popup_height,
+        );
+        let mut autocomplete_state = state.autocomplete_service.state().clone();
+        MentionPopup::new().render(popup_area, buf, &mut autocomplete_state);
+    }
 }
 
 #[cfg(test)]
@@ -1052,7 +1170,11 @@ mod tests {
 
     #[test]
     fn test_chat_screen_state_creation() {
-        let state = ChatScreenState::new(create_test_user(), Arc::new(MarkdownService::new()));
+        let state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownService::new()),
+            UserCache::new(),
+        );
 
         assert_eq!(state.focus(), ChatFocus::GuildsTree);
         assert!(state.is_guilds_tree_visible());
@@ -1061,7 +1183,11 @@ mod tests {
 
     #[test]
     fn test_focus_cycling() {
-        let mut state = ChatScreenState::new(create_test_user(), Arc::new(MarkdownService::new()));
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownService::new()),
+            UserCache::new(),
+        );
 
         assert_eq!(state.focus(), ChatFocus::GuildsTree);
 
@@ -1077,7 +1203,11 @@ mod tests {
 
     #[test]
     fn test_toggle_guilds_tree() {
-        let mut state = ChatScreenState::new(create_test_user(), Arc::new(MarkdownService::new()));
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownService::new()),
+            UserCache::new(),
+        );
 
         assert!(state.is_guilds_tree_visible());
 
@@ -1088,7 +1218,11 @@ mod tests {
 
     #[test]
     fn test_focus_skip_when_guilds_hidden() {
-        let mut state = ChatScreenState::new(create_test_user(), Arc::new(MarkdownService::new()));
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownService::new()),
+            UserCache::new(),
+        );
         state.toggle_guilds_tree();
         state.set_focus(ChatFocus::MessagesList);
 
@@ -1101,7 +1235,11 @@ mod tests {
 
     #[test]
     fn test_set_guilds() {
-        let mut state = ChatScreenState::new(create_test_user(), Arc::new(MarkdownService::new()));
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownService::new()),
+            UserCache::new(),
+        );
         let guilds = vec![
             Guild::new(1_u64, "Guild One"),
             Guild::new(2_u64, "Guild Two"),

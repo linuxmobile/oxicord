@@ -73,6 +73,7 @@ impl Keybind {
         }
     }
 
+    #[must_use]
     pub fn hidden(mut self) -> Self {
         self.visible_in_bar = false;
         self

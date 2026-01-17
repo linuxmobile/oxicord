@@ -352,7 +352,8 @@ impl App {
     async fn transition_to_chat(&mut self, user: User) {
         self.state = AppState::Chat;
         self.current_user_id = Some(user.id().to_string());
-        let mut chat_state = ChatScreenState::new(user, self.markdown_service.clone());
+        let mut chat_state =
+            ChatScreenState::new(user, self.markdown_service.clone(), self.user_cache.clone());
 
         let token_clone = self.current_token.clone();
         if let Some(ref token) = token_clone {

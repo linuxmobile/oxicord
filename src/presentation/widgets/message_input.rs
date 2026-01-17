@@ -159,6 +159,43 @@ impl MessageInputState<'_> {
         self.textarea.set_placeholder_text(placeholder);
     }
 
+    pub fn get_cursor_index(&self) -> usize {
+        let (row, col) = self.textarea.cursor();
+        let lines = self.textarea.lines();
+        let mut index = 0;
+        for i in 0..row {
+            if let Some(line) = lines.get(i) {
+                index += line.len() + 1;
+            }
+        }
+        index + col
+    }
+
+    pub fn insert_mention(&mut self, trigger_index: usize, user_id: &str) {
+        let content = self.value();
+        let mention = format!("<@{user_id}> ");
+
+        if trigger_index >= content.len() {
+            return;
+        }
+
+        let cursor_idx = self.get_cursor_index();
+
+        if cursor_idx < trigger_index {
+            return;
+        }
+        if cursor_idx > content.len() {
+            return;
+        }
+
+        let prefix = &content[..trigger_index];
+        let suffix = &content[cursor_idx..];
+
+        let new_content = format!("{prefix}{mention}{suffix}");
+
+        self.set_content(&new_content);
+    }
+
     fn enforce_message_limit(&mut self) {
         let content = self.value();
         if content.len() > MAX_MESSAGE_LENGTH {
@@ -408,6 +445,7 @@ impl Default for MessageInput {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::KeyModifiers;
 
     #[test]
     fn test_message_input_state_creation() {

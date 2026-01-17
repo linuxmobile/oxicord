@@ -1,11 +1,10 @@
-//! Reusable UI widgets.
-
 mod channel_header;
 mod file_explorer;
 mod footer_bar;
 mod guilds_tree;
 mod header_bar;
 mod input;
+mod mention_popup;
 mod message_input;
 mod message_pane;
 mod status_bar;
@@ -18,6 +17,7 @@ pub use guilds_tree::{
 };
 pub use header_bar::{ConnectionStatus, HeaderBar, HeaderBarStyle};
 pub use input::TextInput;
+pub use mention_popup::MentionPopup;
 pub use message_input::{
     MessageInput, MessageInputAction, MessageInputMode, MessageInputState, MessageInputStyle,
 };

@@ -89,7 +89,8 @@ impl<'a> FooterBar<'a> {
         self
     }
 
-    fn format_key(&self, key: &crossterm::event::KeyEvent) -> String {
+    fn format_key(key: &crossterm::event::KeyEvent) -> String {
+        use std::fmt::Write;
         let mut s = String::new();
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             s.push_str("C-");
@@ -107,12 +108,16 @@ impl<'a> FooterBar<'a> {
             KeyCode::Esc => s.push_str("Esc"),
             KeyCode::Tab => s.push_str("Tab"),
             KeyCode::Backspace => s.push_str("Bksp"),
-            KeyCode::Up => s.push_str("↑"),
-            KeyCode::Down => s.push_str("↓"),
-            KeyCode::Left => s.push_str("←"),
-            KeyCode::Right => s.push_str("→"),
-            KeyCode::F(n) => s.push_str(&format!("F{}", n)),
-            _ => s.push_str(&format!("{:?}", key.code)),
+            KeyCode::Up => s.push('↑'),
+            KeyCode::Down => s.push('↓'),
+            KeyCode::Left => s.push('←'),
+            KeyCode::Right => s.push('→'),
+            KeyCode::F(n) => {
+                let _ = write!(s, "F{n}");
+            }
+            _ => {
+                let _ = write!(s, "{:?}", key.code);
+            }
         }
         s
     }
@@ -138,7 +143,7 @@ impl<'a> FooterBar<'a> {
                 spans.push(Span::raw("  "));
             }
             spans.push(Span::styled("[", self.style.key_bracket));
-            spans.push(Span::styled(self.format_key(&binding.key), self.style.key));
+            spans.push(Span::styled(Self::format_key(&binding.key), self.style.key));
             spans.push(Span::styled("]", self.style.key_bracket));
             spans.push(Span::raw(" "));
             spans.push(Span::styled(binding.label.as_ref(), self.style.action));
@@ -164,7 +169,7 @@ impl Widget for FooterBar<'_> {
         let left_spans = self.build_left_spans();
         let left_line = Line::from(left_spans);
         let left_para = Paragraph::new(left_line);
-        let right_width = self.right_info.map(|s| s.len() as u16).unwrap_or(0);
+        let right_width = self.right_info.map_or(0, |s| s.len() as u16);
         let left_width = area.width.saturating_sub(right_width + 1);
 
         let left_area = Rect::new(area.x, area.y, left_width, 1);

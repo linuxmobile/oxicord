@@ -532,7 +532,11 @@ impl DiscordDataPort for DiscordClient {
             .post(&url)
             .header(header::AUTHORIZATION, token.as_str());
 
-        if !request.attachments.is_empty() {
+        if request.attachments.is_empty() {
+            request_builder = request_builder
+                .header(header::CONTENT_TYPE, "application/json")
+                .json(&payload);
+        } else {
             use reqwest::multipart::{Form, Part};
             let mut form = Form::new();
 
@@ -565,10 +569,6 @@ impl DiscordDataPort for DiscordClient {
             }
 
             request_builder = request_builder.multipart(form);
-        } else {
-            request_builder = request_builder
-                .header(header::CONTENT_TYPE, "application/json")
-                .json(&payload);
         }
 
         let response = request_builder.send().await.map_err(|e| {

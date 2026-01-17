@@ -7,6 +7,7 @@ pub struct CommandRegistry {
     input_bindings: Vec<(KeyEvent, Action)>,
 }
 
+#[allow(clippy::too_many_lines)]
 impl Default for CommandRegistry {
     fn default() -> Self {
         let mut display_bindings = HashMap::new();
@@ -266,14 +267,17 @@ impl Default for CommandRegistry {
 }
 
 impl CommandRegistry {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn get(&self, action: Action) -> Option<KeyEvent> {
-        self.display_bindings.get(&action).cloned()
+        self.display_bindings.get(&action).copied()
     }
 
+    #[must_use]
     pub fn find_action(&self, key: KeyEvent) -> Option<Action> {
         self.input_bindings
             .iter()

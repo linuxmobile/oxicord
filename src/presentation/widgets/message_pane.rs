@@ -476,7 +476,7 @@ impl MessagePaneState {
                 self.auto_scroll = true;
                 None
             }
-            Some(Action::Cancel) | Some(Action::ClearSelection) => {
+            Some(Action::Cancel | Action::ClearSelection) => {
                 self.clear_selection();
                 Some(MessagePaneAction::ClearSelection)
             }
