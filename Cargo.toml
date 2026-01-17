@@ -19,7 +19,7 @@ tui-scrollview = "0.6.2"
 tui-textarea = "0.7"
 tempfile = "3"
 
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "multipart"], default-features = false }
 tokio-tungstenite = { version = "0.27", features = ["rustls-tls-native-roots"] }
 futures-util = "0.3"
 chrono = { version = "0.4", features = ["serde"] }

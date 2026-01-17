@@ -512,28 +512,69 @@ impl DiscordDataPort for DiscordClient {
         debug!(
             channel_id = %request.channel_id,
             has_reply = request.reply_to.is_some(),
+            attachment_count = request.attachments.len(),
             "Sending message to Discord API"
         );
 
         let payload = SendMessagePayload {
-            content: request.content,
+            content: if request.content.is_empty() {
+                None
+            } else {
+                Some(request.content)
+            },
             message_reference: request.reply_to.map(|id| MessageReferencePayload {
                 message_id: id.as_u64().to_string(),
             }),
         };
 
-        let response = self
+        let mut request_builder = self
             .client
             .post(&url)
-            .header(header::AUTHORIZATION, token.as_str())
-            .header(header::CONTENT_TYPE, "application/json")
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| {
-                warn!(error = %e, "Failed to send message");
-                AuthError::network(e.to_string())
-            })?;
+            .header(header::AUTHORIZATION, token.as_str());
+
+        if !request.attachments.is_empty() {
+            use reqwest::multipart::{Form, Part};
+            let mut form = Form::new();
+
+            let json_payload = serde_json::to_string(&payload)
+                .map_err(|e| AuthError::unexpected(format!("failed to serialize payload: {e}")))?;
+            form = form.part(
+                "payload_json",
+                Part::text(json_payload)
+                    .mime_str("application/json")
+                    .map_err(|e| AuthError::unexpected(format!("failed to set mime type: {e}")))?,
+            );
+
+            for (index, path) in request.attachments.iter().enumerate() {
+                let filename = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+
+                let content = tokio::fs::read(path).await.map_err(|e| {
+                    AuthError::unexpected(format!(
+                        "failed to read attachment {}: {}",
+                        path.display(),
+                        e
+                    ))
+                })?;
+
+                let part = Part::bytes(content).file_name(filename);
+                form = form.part(format!("files[{index}]"), part);
+            }
+
+            request_builder = request_builder.multipart(form);
+        } else {
+            request_builder = request_builder
+                .header(header::CONTENT_TYPE, "application/json")
+                .json(&payload);
+        }
+
+        let response = request_builder.send().await.map_err(|e| {
+            warn!(error = %e, "Failed to send message");
+            AuthError::network(e.to_string())
+        })?;
 
         let status = response.status();
 

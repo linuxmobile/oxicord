@@ -1,6 +1,7 @@
 //! Reusable UI widgets.
 
 mod channel_header;
+mod file_explorer;
 mod footer_bar;
 mod guilds_tree;
 mod header_bar;
@@ -10,6 +11,7 @@ mod message_pane;
 mod status_bar;
 
 pub use channel_header::{ChannelHeader, ChannelHeaderStyle};
+pub use file_explorer::{FileExplorerAction, FileExplorerComponent};
 pub use footer_bar::{FocusContext, FooterBar, FooterBarStyle, KeyBinding};
 pub use guilds_tree::{
     GuildsTree, GuildsTreeAction, GuildsTreeData, GuildsTreeState, GuildsTreeStyle, TreeNodeId,

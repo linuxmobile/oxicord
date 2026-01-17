@@ -11,9 +11,10 @@ use crate::domain::entities::{
     Channel, ChannelId, ChannelKind, Guild, GuildId, Message, MessageId, User,
 };
 use crate::presentation::widgets::{
-    ConnectionStatus, FocusContext, FooterBar, GuildsTree, GuildsTreeAction, GuildsTreeData,
-    GuildsTreeState, HeaderBar, MessageInput, MessageInputAction, MessageInputMode,
-    MessageInputState, MessagePane, MessagePaneAction, MessagePaneData, MessagePaneState,
+    ConnectionStatus, FileExplorerAction, FileExplorerComponent, FocusContext, FooterBar,
+    GuildsTree, GuildsTreeAction, GuildsTreeData, GuildsTreeState, HeaderBar, MessageInput,
+    MessageInputAction, MessageInputMode, MessageInputState, MessagePane, MessagePaneAction,
+    MessagePaneData, MessagePaneState,
 };
 use crate::{NAME, VERSION};
 
@@ -108,6 +109,8 @@ pub struct ChatScreenState {
     dm_channels: std::collections::HashMap<String, DmChannelInfo>,
     connection_status: ConnectionStatus,
     markdown_service: Arc<MarkdownService>,
+    file_explorer: Option<FileExplorerComponent>,
+    show_file_explorer: bool,
 }
 
 impl ChatScreenState {
@@ -130,6 +133,8 @@ impl ChatScreenState {
             dm_channels: std::collections::HashMap::new(),
             connection_status: ConnectionStatus::Disconnected,
             markdown_service,
+            file_explorer: None,
+            show_file_explorer: false,
         }
     }
 
@@ -228,6 +233,10 @@ impl ChatScreenState {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ChatKeyResult {
+        if self.show_file_explorer {
+            return self.handle_file_explorer_key(key);
+        }
+
         if let Some(result) = self.handle_global_key(key) {
             return result;
         }
@@ -255,6 +264,10 @@ impl ChatScreenState {
                 self.focus_message_input();
                 Some(ChatKeyResult::Consumed)
             }
+            (KeyCode::Tab, _) => {
+                self.focus_message_input();
+                Some(ChatKeyResult::Consumed)
+            }
             (KeyCode::Char('h'), KeyModifiers::CONTROL) => {
                 self.focus_previous();
                 Some(ChatKeyResult::Consumed)
@@ -265,6 +278,10 @@ impl ChatScreenState {
             }
             (KeyCode::Char('b'), KeyModifiers::CONTROL) => {
                 self.toggle_guilds_tree();
+                Some(ChatKeyResult::Consumed)
+            }
+            (KeyCode::Char('a'), KeyModifiers::CONTROL) => {
+                self.toggle_file_explorer();
                 Some(ChatKeyResult::Consumed)
             }
             _ => None,
@@ -361,8 +378,16 @@ impl ChatScreenState {
     fn handle_message_input_key(&mut self, key: KeyEvent) -> ChatKeyResult {
         if let Some(action) = self.message_input_state.handle_key(key) {
             match action {
-                MessageInputAction::SendMessage { content, reply_to } => {
-                    return ChatKeyResult::SendMessage { content, reply_to };
+                MessageInputAction::SendMessage {
+                    content,
+                    reply_to,
+                    attachments,
+                } => {
+                    return ChatKeyResult::SendMessage {
+                        content,
+                        reply_to,
+                        attachments,
+                    };
                 }
                 MessageInputAction::EditMessage {
                     message_id,
@@ -580,6 +605,36 @@ impl ChatScreenState {
     pub fn set_message_input_content(&mut self, content: &str) {
         self.message_input_state.set_content(content);
     }
+
+    pub fn toggle_file_explorer(&mut self) {
+        self.show_file_explorer = !self.show_file_explorer;
+        if self.show_file_explorer {
+            self.file_explorer = Some(FileExplorerComponent::new());
+        } else {
+            self.file_explorer = None;
+        }
+    }
+
+    fn handle_file_explorer_key(&mut self, key: KeyEvent) -> ChatKeyResult {
+        if let Some(explorer) = &mut self.file_explorer {
+            match explorer.handle_key(key) {
+                FileExplorerAction::SelectFile(path) => {
+                    self.message_input_state.add_attachment(path);
+                    self.show_file_explorer = false;
+                    self.file_explorer = None;
+                    ChatKeyResult::Consumed
+                }
+                FileExplorerAction::Close => {
+                    self.show_file_explorer = false;
+                    self.file_explorer = None;
+                    ChatKeyResult::Consumed
+                }
+                FileExplorerAction::None => ChatKeyResult::Consumed,
+            }
+        } else {
+            ChatKeyResult::Consumed
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -616,6 +671,7 @@ pub enum ChatKeyResult {
     SendMessage {
         content: String,
         reply_to: Option<MessageId>,
+        attachments: Vec<std::path::PathBuf>,
     },
     StartTyping,
     OpenEditor,
@@ -650,6 +706,43 @@ impl StatefulWidget for ChatScreen {
         render_header_bar(state, header_area, buf);
         render_content_area(state, content_area, buf);
         render_footer_bar(state, footer_area, buf);
+
+        if state.show_file_explorer {
+            render_explorer_popup(state, area, buf);
+        }
+    }
+}
+
+fn render_explorer_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) {
+    if let Some(explorer) = &mut state.file_explorer {
+        let content_area = if state.guilds_tree_visible {
+            let chunks = Layout::horizontal([
+                Constraint::Percentage(GUILDS_TREE_WIDTH_PERCENT),
+                Constraint::Min(0),
+            ])
+            .split(area);
+            chunks[1]
+        } else {
+            area
+        };
+
+        let base_area = if content_area.width < GUILDS_TREE_MIN_WIDTH {
+            area
+        } else {
+            content_area
+        };
+
+        // Match input box width exactly
+        let width = base_area.width;
+        let height = base_area.height * 40 / 100;
+
+        let x = base_area.x;
+        // Anchor to bottom: Area height - Footer(1) - Input(3) - PopupHeight
+        let bottom_anchor = area.height.saturating_sub(4);
+        let y = bottom_anchor.saturating_sub(height);
+
+        let popup_area = Rect::new(x, y, width, height);
+        explorer.render(popup_area, buf);
     }
 }
 

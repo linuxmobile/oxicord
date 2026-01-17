@@ -37,6 +37,7 @@ impl FocusContext {
                 KeyBinding::global_focus_next(),
                 KeyBinding::new("Enter", "SEND"),
                 KeyBinding::new("Esc", "CANCEL"),
+                KeyBinding::new("C-a", "ATTACH"),
             ],
         }
     }

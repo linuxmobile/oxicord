@@ -291,8 +291,13 @@ impl App {
             ChatKeyResult::JumpToMessage(message_id) => {
                 debug!(message_id = %message_id, "Jump to message requested");
             }
-            ChatKeyResult::SendMessage { content, reply_to } => {
-                self.handle_send_message(content, reply_to).await;
+            ChatKeyResult::SendMessage {
+                content,
+                reply_to,
+                attachments,
+            } => {
+                self.handle_send_message(content, reply_to, attachments)
+                    .await;
             }
             ChatKeyResult::StartTyping => {
                 self.handle_start_typing().await;
@@ -838,6 +843,7 @@ impl App {
         &mut self,
         content: String,
         reply_to: Option<crate::domain::entities::MessageId>,
+        attachments: Vec<std::path::PathBuf>,
     ) {
         let channel_id = if let CurrentScreen::Chat(ref state) = self.screen {
             state
@@ -857,11 +863,12 @@ impl App {
             return;
         };
 
-        let request = if let Some(reply_id) = reply_to {
+        let mut request = if let Some(reply_id) = reply_to {
             SendMessageRequest::new(channel_id, content).with_reply(reply_id)
         } else {
             SendMessageRequest::new(channel_id, content)
         };
+        request = request.with_attachments(attachments);
 
         debug!(channel_id = %channel_id, has_reply = reply_to.is_some(), "Sending message");
 

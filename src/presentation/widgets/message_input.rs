@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     buffer::Buffer,
@@ -31,6 +33,7 @@ pub enum MessageInputAction {
     SendMessage {
         content: String,
         reply_to: Option<MessageId>,
+        attachments: Vec<PathBuf>,
     },
     EditMessage {
         message_id: MessageId,
@@ -47,6 +50,7 @@ pub struct MessageInputState<'a> {
     focused: bool,
     mode: MessageInputMode,
     has_channel: bool,
+    attachments: Vec<PathBuf>,
 }
 
 impl MessageInputState<'_> {
@@ -59,7 +63,20 @@ impl MessageInputState<'_> {
             focused: false,
             mode: MessageInputMode::Normal,
             has_channel: false,
+            attachments: Vec::new(),
         }
+    }
+
+    pub fn add_attachment(&mut self, path: PathBuf) {
+        self.attachments.push(path);
+    }
+
+    pub fn clear_attachments(&mut self) {
+        self.attachments.clear();
+    }
+
+    pub fn attachments(&self) -> &[PathBuf] {
+        &self.attachments
     }
 
     pub fn set_focused(&mut self, focused: bool) {
@@ -167,7 +184,7 @@ impl MessageInputState<'_> {
             }
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 let content = self.value();
-                if content.trim().is_empty() {
+                if content.trim().is_empty() && self.attachments.is_empty() {
                     return None;
                 }
 
@@ -184,8 +201,14 @@ impl MessageInputState<'_> {
                     MessageInputMode::Reply { message_id, .. } => Some(*message_id),
                     _ => None,
                 };
+                let attachments = self.attachments.clone();
                 self.clear();
-                Some(MessageInputAction::SendMessage { content, reply_to })
+                self.clear_attachments();
+                Some(MessageInputAction::SendMessage {
+                    content,
+                    reply_to,
+                    attachments,
+                })
             }
             (KeyCode::Char('e'), KeyModifiers::CONTROL) => Some(MessageInputAction::OpenEditor),
             (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
@@ -234,6 +257,15 @@ impl MessageInputState<'_> {
             block = block.title(edit_title).title_style(
                 Style::default()
                     .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            );
+        }
+
+        if !self.attachments.is_empty() {
+            let attachments_title = format!(" {} Attachments ", self.attachments.len());
+            block = block.title(attachments_title).title_style(
+                Style::default()
+                    .fg(Color::Magenta)
                     .add_modifier(Modifier::BOLD),
             );
         }
@@ -441,7 +473,8 @@ mod tests {
             action,
             Some(MessageInputAction::SendMessage {
                 content,
-                reply_to: Some(_)
+                reply_to: Some(_),
+                attachments: _
             }) if content == "test"
         ));
         assert!(state.is_empty());

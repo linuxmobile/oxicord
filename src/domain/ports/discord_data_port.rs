@@ -50,6 +50,7 @@ pub struct SendMessageRequest {
     pub channel_id: ChannelId,
     pub content: String,
     pub reply_to: Option<MessageId>,
+    pub attachments: Vec<std::path::PathBuf>,
 }
 
 impl SendMessageRequest {
@@ -59,12 +60,19 @@ impl SendMessageRequest {
             channel_id,
             content: content.into(),
             reply_to: None,
+            attachments: Vec::new(),
         }
     }
 
     #[must_use]
     pub const fn with_reply(mut self, message_id: MessageId) -> Self {
         self.reply_to = Some(message_id);
+        self
+    }
+
+    #[must_use]
+    pub fn with_attachments(mut self, attachments: Vec<std::path::PathBuf>) -> Self {
+        self.attachments = attachments;
         self
     }
 }
