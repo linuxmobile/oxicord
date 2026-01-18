@@ -13,7 +13,7 @@ use tracing::{debug, error, info, warn};
 use crate::application::dto::{LoginRequest, TokenSource};
 use crate::application::services::markdown_service::MarkdownService;
 use crate::application::use_cases::{LoginUseCase, ResolveTokenUseCase};
-use crate::domain::entities::{AuthToken, ChannelId, GuildId, MessageId, User, UserCache};
+use crate::domain::entities::{AuthToken, ChannelId, GuildId, MessageId, UserCache};
 use crate::domain::errors::AuthError;
 use crate::domain::ports::{
     AuthPort, DiscordDataPort, EditMessageRequest, FetchMessagesOptions, SendMessageRequest,
@@ -24,27 +24,37 @@ use crate::infrastructure::discord::{
     GatewayIntents, TypingIndicatorManager,
 };
 use crate::presentation::events::{EventHandler, EventResult};
-use crate::presentation::ui::{ChatKeyResult, ChatScreen, ChatScreenState, LoginScreen};
+use crate::presentation::ui::{
+    ChatKeyResult, ChatScreen, ChatScreenState, LoginScreen, SplashScreen,
+};
 use crate::presentation::widgets::{ConnectionStatus, MessageInputMode};
 
 const TYPING_CLEANUP_INTERVAL: Duration = Duration::from_secs(2);
 const TYPING_THROTTLE_DURATION: Duration = Duration::from_secs(8);
+const ANIMATION_TICK_RATE: Duration = Duration::from_millis(33);
 
 #[derive(Debug)]
 enum Action {
     HistoryLoaded(Vec<crate::domain::entities::Message>),
     LoadError(String),
+    DataLoaded {
+        user: crate::domain::entities::User,
+        guilds: Vec<crate::domain::entities::Guild>,
+        dms: Vec<crate::domain::ports::DirectMessageChannel>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AppState {
     Login,
+    Initializing,
     Chat,
     Exiting,
 }
 
 enum CurrentScreen {
     Login(LoginScreen),
+    Splash(SplashScreen),
     Chat(Box<ChatScreenState>),
 }
 
@@ -66,6 +76,7 @@ pub struct App {
     markdown_service: Arc<MarkdownService>,
     user_cache: UserCache,
     current_user_id: Option<String>,
+    pending_chat_state: Option<Box<ChatScreenState>>,
 }
 
 impl App {
@@ -98,6 +109,7 @@ impl App {
             markdown_service,
             user_cache: UserCache::new(),
             current_user_id: None,
+            pending_chat_state: None,
         }
     }
 
@@ -127,6 +139,7 @@ impl App {
     async fn run_event_loop(&mut self, terminal: &mut DefaultTerminal) -> color_eyre::Result<()> {
         let mut terminal_events = EventStream::new();
         let mut typing_cleanup_interval = interval(TYPING_CLEANUP_INTERVAL);
+        let mut animation_interval = interval(ANIMATION_TICK_RATE);
 
         terminal.draw(|frame| self.render(frame))?;
 
@@ -148,6 +161,24 @@ impl App {
                 Some(action) = self.action_rx.recv() => {
                     self.handle_action(action);
                     terminal.draw(|frame| self.render(frame))?;
+                }
+
+                _ = animation_interval.tick() => {
+                     if let CurrentScreen::Splash(splash) = &mut self.screen {
+                        splash.tick(ANIMATION_TICK_RATE);
+
+                        if splash.state.animation_complete && self.pending_chat_state.is_some() {
+                             self.state = AppState::Chat;
+                             self.screen = CurrentScreen::Chat(self.pending_chat_state.take().unwrap());
+                             if let Some(ref token) = self.current_token.clone() {
+                                 self.connect_gateway(token);
+                             }
+                        }
+                        terminal.draw(|frame| self.render(frame))?;
+                    } else if let CurrentScreen::Chat(state) = &mut self.screen {
+                        state.tick(ANIMATION_TICK_RATE);
+                        terminal.draw(|frame| self.render(frame))?;
+                    }
                 }
 
                 Some(Ok(event)) = terminal_event => {
@@ -195,7 +226,7 @@ impl App {
                 if let Some(auth_token) = AuthToken::new(&token) {
                     self.current_token = Some(auth_token);
                 }
-                self.transition_to_chat(response.user).await;
+                self.start_app_loading(response.user).await;
             }
             Err(e) => {
                 error!(error = %e, "Auto-login failed");
@@ -210,6 +241,9 @@ impl App {
         match &mut self.screen {
             CurrentScreen::Login(screen) => {
                 frame.render_widget(&*screen, frame.area());
+            }
+            CurrentScreen::Splash(screen) => {
+                frame.render_widget(screen, frame.area());
             }
             CurrentScreen::Chat(state) => {
                 frame.render_stateful_widget(ChatScreen::new(), frame.area(), state);
@@ -229,6 +263,7 @@ impl App {
                 }
                 return EventResult::Continue;
             }
+            CurrentScreen::Splash(_) => return EventResult::Continue,
             CurrentScreen::Chat(state) => state.handle_key(key),
         };
 
@@ -340,7 +375,7 @@ impl App {
                 if let Some(auth_token) = AuthToken::new(&token) {
                     self.current_token = Some(auth_token);
                 }
-                self.transition_to_chat(response.user).await;
+                self.start_app_loading(response.user).await;
             }
             Err(e) => {
                 error!(error = %e, "Login failed");
@@ -349,22 +384,41 @@ impl App {
         }
     }
 
-    async fn transition_to_chat(&mut self, user: User) {
-        self.state = AppState::Chat;
-        self.current_user_id = Some(user.id().to_string());
-        let mut chat_state =
-            ChatScreenState::new(user, self.markdown_service.clone(), self.user_cache.clone());
+    async fn start_app_loading(&mut self, user: crate::domain::entities::User) {
+        self.state = AppState::Initializing;
+        self.screen = CurrentScreen::Splash(SplashScreen::new());
 
-        let token_clone = self.current_token.clone();
-        if let Some(ref token) = token_clone {
-            self.load_discord_data(&mut chat_state, token).await;
-        }
+        let Some(ref token) = self.current_token else {
+            return;
+        };
+        let token = token.clone();
+        let discord = self.discord_data.clone();
+        let tx = self.action_tx.clone();
 
-        self.screen = CurrentScreen::Chat(Box::new(chat_state));
+        tokio::spawn(async move {
+            let guilds_future = discord.fetch_guilds(&token);
+            let dms_future = discord.fetch_dm_channels(&token);
 
-        if let Some(ref token) = self.current_token.clone() {
-            self.connect_gateway(token);
-        }
+            let (guilds_result, dms_result) = tokio::join!(guilds_future, dms_future);
+
+            let guilds = match guilds_result {
+                Ok(g) => g,
+                Err(e) => {
+                    error!(error = %e, "Failed to load initial guilds");
+                    Vec::new()
+                }
+            };
+
+            let dms = match dms_result {
+                Ok(d) => d,
+                Err(e) => {
+                    error!(error = %e, "Failed to load initial DMs");
+                    Vec::new()
+                }
+            };
+
+            let _ = tx.send(Action::DataLoaded { user, guilds, dms });
+        });
     }
 
     fn connect_gateway(&mut self, token: &AuthToken) {
@@ -647,40 +701,6 @@ impl App {
         }
     }
 
-    async fn load_discord_data(&mut self, state: &mut ChatScreenState, token: &AuthToken) {
-        let guilds_future = self.discord_data.fetch_guilds(token);
-        let dms_future = self.discord_data.fetch_dm_channels(token);
-
-        let (guilds_result, dms_result) = tokio::join!(guilds_future, dms_future);
-
-        if let Ok(dm_channels) = dms_result {
-            for dm in &dm_channels {
-                self.user_cache
-                    .insert_basic(&dm.recipient_id, &dm.recipient_name);
-            }
-
-            let dm_users: Vec<(String, String)> = dm_channels
-                .into_iter()
-                .map(|dm| (dm.channel_id, dm.recipient_name))
-                .collect();
-            state.set_dm_users(dm_users);
-            debug!(
-                count = state.guilds_tree_data().dm_users().len(),
-                "Loaded DM channels"
-            );
-        }
-
-        match guilds_result {
-            Ok(guilds) => {
-                info!(count = guilds.len(), "Loaded guilds from Discord");
-                state.set_guilds(guilds);
-            }
-            Err(e) => {
-                warn!(error = %e, "Failed to load guilds from Discord");
-            }
-        }
-    }
-
     async fn load_guild_channels(&mut self, guild_id: GuildId) {
         let channels = if let Some(ref token) = self.current_token {
             match self
@@ -798,6 +818,33 @@ impl App {
             Action::LoadError(e) => {
                 warn!(error = %e, "Failed to load history");
             }
+            Action::DataLoaded { user, guilds, dms } => {
+                info!("Data loaded, preparing chat state");
+                self.current_user_id = Some(user.id().to_string());
+                let mut chat_state = ChatScreenState::new(
+                    user,
+                    self.markdown_service.clone(),
+                    self.user_cache.clone(),
+                );
+
+                for dm in &dms {
+                    self.user_cache
+                        .insert_basic(&dm.recipient_id, &dm.recipient_name);
+                }
+
+                let dm_users: Vec<(String, String)> = dms
+                    .into_iter()
+                    .map(|dm| (dm.channel_id, dm.recipient_name))
+                    .collect();
+                chat_state.set_dm_users(dm_users);
+                chat_state.set_guilds(guilds);
+
+                self.pending_chat_state = Some(Box::new(chat_state));
+
+                if let CurrentScreen::Splash(splash) = &mut self.screen {
+                    splash.set_data_ready();
+                }
+            }
         }
     }
 
@@ -806,6 +853,7 @@ impl App {
         self.state = AppState::Login;
         self.current_token = None;
         self.current_user_id = None;
+        self.pending_chat_state = None;
         self.typing_manager = TypingIndicatorManager::new();
         self.user_cache.clear();
         self.screen = CurrentScreen::Login(LoginScreen::new());

@@ -42,6 +42,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anpa"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d032745fe46100dbcb28ee6e30f12c4b148786f8889e07cd0a3445eeb54970f"
+
+[[package]]
 name = "anstream"
 version = "0.6.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -193,6 +199,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
 dependencies = [
  "generic-array",
+]
+
+[[package]]
+name = "bon"
+version = "3.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "234655ec178edd82b891e262ea7cf71f6584bcd09eff94db786be23f1821825c"
+dependencies = [
+ "bon-macros",
+ "rustversion",
+]
+
+[[package]]
+name = "bon-macros"
+version = "3.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89ec27229c38ed0eb3c0feee3d2c1d6a4379ae44f418a29a658890e062d8f365"
+dependencies = [
+ "darling",
+ "ident_case",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn 2.0.114",
 ]
 
 [[package]]
@@ -1366,6 +1397,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "micromath"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3c8dda44ff03a2f238717214da50f65d5a53b45cd213a7370424ffdb6fae815"
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1592,6 +1629,7 @@ dependencies = [
  "serde",
  "serde_json",
  "syntect",
+ "tachyonfx",
  "tempfile",
  "thiserror 2.0.17",
  "tokio",
@@ -1820,6 +1858,16 @@ checksum = "72dd2d6d381dfb73a193c7fca536518d7caee39fc8503f74e7dc0be0531b425c"
 dependencies = [
  "predicates-core",
  "termtree",
+]
+
+[[package]]
+name = "prettyplease"
+version = "0.2.37"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
+dependencies = [
+ "proc-macro2",
+ "syn 2.0.114",
 ]
 
 [[package]]
@@ -2617,6 +2665,21 @@ dependencies = [
  "thiserror 2.0.17",
  "walkdir",
  "yaml-rust",
+]
+
+[[package]]
+name = "tachyonfx"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6258f6e8464efd9c4b197354159b577cdf56dc876d558cdc9a1e99f42178f454"
+dependencies = [
+ "anpa",
+ "bon",
+ "compact_str 0.9.0",
+ "micromath",
+ "ratatui 0.30.0",
+ "thiserror 2.0.17",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]

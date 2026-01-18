@@ -5,6 +5,8 @@ use ratatui::{
     widgets::{StatefulWidget, Widget},
 };
 use std::sync::Arc;
+use std::time::Duration;
+use tachyonfx::{Effect, Interpolation, fx};
 
 use crate::application::services::autocomplete_service::AutocompleteService;
 use crate::application::services::markdown_service::MarkdownService;
@@ -119,6 +121,9 @@ pub struct ChatScreenState {
     show_file_explorer: bool,
     show_help: bool,
     registry: CommandRegistry,
+    entrance_effect: Effect,
+    pending_duration: Duration,
+    has_entered: bool,
 }
 
 impl ChatScreenState {
@@ -147,6 +152,15 @@ impl ChatScreenState {
             show_file_explorer: false,
             show_help: false,
             registry: CommandRegistry::default(),
+            entrance_effect: fx::coalesce((2000, Interpolation::SineOut)),
+            pending_duration: Duration::ZERO,
+            has_entered: false,
+        }
+    }
+
+    pub fn tick(&mut self, duration: Duration) {
+        if !self.has_entered {
+            self.pending_duration = self.pending_duration.saturating_add(duration);
         }
     }
 
@@ -906,6 +920,16 @@ impl StatefulWidget for ChatScreen {
 
         if state.show_help {
             render_help_popup(state, area, buf);
+        }
+
+        if !state.has_entered {
+            let duration = state.pending_duration;
+            state.pending_duration = Duration::ZERO;
+
+            let overflow = state.entrance_effect.process(duration.into(), buf, area);
+            if overflow.is_some() {
+                state.has_entered = true;
+            }
         }
     }
 }
