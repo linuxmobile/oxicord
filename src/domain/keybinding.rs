@@ -8,6 +8,7 @@ pub enum Action {
     ToggleHelp,
     ToggleGuildsTree,
     ToggleFileExplorer,
+    ToggleHiddenFiles,
 
     // Navigation / Focus
     FocusGuilds,

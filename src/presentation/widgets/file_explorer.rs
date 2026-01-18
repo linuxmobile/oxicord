@@ -30,6 +30,7 @@ pub struct FileExplorerComponent {
     current_dir: PathBuf,
     entries: Vec<FileEntry>,
     state: ListState,
+    show_hidden: bool,
 }
 
 impl FileExplorerComponent {
@@ -39,12 +40,15 @@ impl FileExplorerComponent {
             current_dir: root.clone(),
             entries: Vec::new(),
             state: ListState::default(),
+            show_hidden: false,
         };
         component.load_entries(&root);
         component
     }
 
-    fn load_entries(&mut self, path: &Path) {
+    pub fn load_entries(&mut self, path: &Path) {
+        let selected_name = self.selected_entry().map(|e| e.name.clone());
+
         self.entries.clear();
 
         if let Some(parent) = path.parent() {
@@ -58,6 +62,16 @@ impl FileExplorerComponent {
         if let Ok(read_dir) = fs::read_dir(path) {
             let mut entries: Vec<FileEntry> = read_dir
                 .filter_map(Result::ok)
+                .filter(|entry| {
+                    if self.show_hidden {
+                        return true;
+                    }
+                    !entry
+                        .path()
+                        .file_name()
+                        .map(|s| s.to_string_lossy().starts_with('.'))
+                        .unwrap_or(false)
+                })
                 .map(|entry| {
                     let path = entry.path();
                     let is_dir = path.is_dir();
@@ -79,11 +93,23 @@ impl FileExplorerComponent {
             self.entries.extend(entries);
         }
 
-        if self.entries.is_empty() {
+        if let Some(name) = selected_name {
+            if let Some(idx) = self.entries.iter().position(|e| e.name == name) {
+                self.state.select(Some(idx));
+            } else {
+                self.state.select(Some(0));
+            }
+        } else if self.entries.is_empty() {
             self.state.select(None);
         } else {
             self.state.select(Some(0));
         }
+    }
+
+    pub fn toggle_hidden(&mut self) {
+        self.show_hidden = !self.show_hidden;
+        let path = self.current_dir.clone();
+        self.load_entries(&path);
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> FileExplorerAction {
@@ -104,7 +130,8 @@ impl FileExplorerComponent {
                     .map(PathBuf::from)
                     .unwrap_or(self.current_dir.clone());
                 self.current_dir = parent;
-                self.load_entries(&self.current_dir.clone());
+                let path = self.current_dir.clone();
+                self.load_entries(&path);
                 FileExplorerAction::None
             }
             KeyCode::Char('l') => {
@@ -113,7 +140,8 @@ impl FileExplorerComponent {
                         FileExplorerAction::None
                     } else if selected.is_dir {
                         self.current_dir = selected.path.clone();
-                        self.load_entries(&self.current_dir.clone());
+                        let path = self.current_dir.clone();
+                        self.load_entries(&path);
                         FileExplorerAction::None
                     } else {
                         FileExplorerAction::SelectFile(selected.path.clone())
@@ -131,11 +159,13 @@ impl FileExplorerComponent {
                             .map(PathBuf::from)
                             .unwrap_or(self.current_dir.clone());
                         self.current_dir = parent;
-                        self.load_entries(&self.current_dir.clone());
+                        let path = self.current_dir.clone();
+                        self.load_entries(&path);
                         FileExplorerAction::None
                     } else if selected.is_dir {
                         self.current_dir = selected.path.clone();
-                        self.load_entries(&self.current_dir.clone());
+                        let path = self.current_dir.clone();
+                        self.load_entries(&path);
                         FileExplorerAction::None
                     } else {
                         FileExplorerAction::SelectFile(selected.path.clone())
@@ -183,9 +213,15 @@ impl FileExplorerComponent {
     pub fn render(&mut self, area: Rect, buf: &mut Buffer) {
         Clear.render(area, buf);
 
+        let title = if self.show_hidden {
+            " File Explorer (H) - Select Attachment "
+        } else {
+            " File Explorer - Select Attachment "
+        };
+
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" File Explorer - Select Attachment ")
+            .title(title)
             .title_style(Style::default().add_modifier(Modifier::BOLD));
 
         let inner_area = block.inner(area);

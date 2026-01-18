@@ -876,6 +876,13 @@ impl ChatScreenState {
     }
 
     fn handle_file_explorer_key(&mut self, key: KeyEvent) -> ChatKeyResult {
+        if self.registry.find_action(key) == Some(Action::ToggleHiddenFiles) {
+            if let Some(explorer) = &mut self.file_explorer {
+                explorer.toggle_hidden();
+                return ChatKeyResult::Consumed;
+            }
+        }
+
         if let Some(explorer) = &mut self.file_explorer {
             match explorer.handle_key(key) {
                 FileExplorerAction::SelectFile(path) => {
@@ -915,6 +922,11 @@ impl HasCommands for ChatScreenState {
         if self.show_file_explorer {
             add(Action::Select, "Select");
             add(Action::ToggleFileExplorer, "Close");
+            commands.push(Keybind::new(
+                KeyEvent::from(KeyCode::Char('.')),
+                Action::ToggleHiddenFiles,
+                "Hidden",
+            ));
         } else {
             match self.focus {
                 ChatFocus::GuildsTree => {
@@ -1200,8 +1212,8 @@ fn render_explorer_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buff
             content_area
         };
 
-        let width = base_area.width;
-        let height = base_area.height * 40 / 100;
+        let width = base_area.width * 40 / 100;
+        let height = base_area.height * 25 / 100;
 
         let x = base_area.x;
         let bottom_anchor = area.height.saturating_sub(4);
