@@ -27,7 +27,7 @@ use crate::presentation::events::{EventHandler, EventResult};
 use crate::presentation::ui::{
     ChatKeyResult, ChatScreen, ChatScreenState, LoginScreen, SplashScreen,
 };
-use crate::presentation::widgets::{ConnectionStatus, MessageInputMode};
+use crate::presentation::widgets::ConnectionStatus;
 
 const TYPING_CLEANUP_INTERVAL: Duration = Duration::from_secs(2);
 const TYPING_THROTTLE_DURATION: Duration = Duration::from_secs(8);
@@ -189,8 +189,12 @@ impl App {
                         EventResult::Exit => {
                             self.state = AppState::Exiting;
                         }
-                        EventResult::OpenEditor => {
-                            self.handle_open_editor(terminal)?;
+                        EventResult::OpenEditor {
+                            initial_content,
+                            message_id,
+                        } => {
+                            self.handle_open_editor(terminal, initial_content, message_id)
+                                .await?;
                         }
                         _ => {}
                     }
@@ -339,8 +343,14 @@ impl App {
             ChatKeyResult::StartTyping => {
                 self.handle_start_typing().await;
             }
-            ChatKeyResult::OpenEditor => {
-                return EventResult::OpenEditor;
+            ChatKeyResult::OpenEditor {
+                initial_content,
+                message_id,
+            } => {
+                return EventResult::OpenEditor {
+                    initial_content,
+                    message_id,
+                };
             }
             ChatKeyResult::ToggleHelp | ChatKeyResult::Consumed => {}
         }
@@ -1106,24 +1116,18 @@ impl App {
         }
     }
 
-    fn handle_open_editor(&mut self, terminal: &mut DefaultTerminal) -> color_eyre::Result<()> {
+    async fn handle_open_editor(
+        &mut self,
+        terminal: &mut DefaultTerminal,
+        initial_content: String,
+        target_message_id: Option<MessageId>,
+    ) -> color_eyre::Result<()> {
         use std::io::Write;
+        use tempfile::NamedTempFile;
 
-        let (current_content, input_mode) = if let CurrentScreen::Chat(ref state) = self.screen {
-            let content = state.message_input_value();
-            let mode = state.message_input_state().mode().clone();
-            (content, mode)
-        } else {
-            return Ok(());
-        };
-
-        let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.join(format!("oxicord_message_{}.md", std::process::id()));
-
-        {
-            let mut file = std::fs::File::create(&temp_path)?;
-            file.write_all(current_content.as_bytes())?;
-        }
+        let mut temp_file = NamedTempFile::new()?;
+        write!(temp_file, "{}", initial_content)?;
+        let temp_path = temp_file.path().to_owned();
 
         let editor = std::env::var("EDITOR")
             .or_else(|_| std::env::var("VISUAL"))
@@ -1163,27 +1167,39 @@ impl App {
 
         match status {
             Ok(exit_status) if exit_status.success() => {
-                let new_content = std::fs::read_to_string(&temp_path).unwrap_or_default();
+                let new_content = match std::fs::read_to_string(&temp_path) {
+                    Ok(content) => content,
+                    Err(e) => {
+                        error!(error = %e, "Failed to read from temp file after edit");
+                        if let CurrentScreen::Chat(ref mut state) = self.screen {
+                            state.set_message_error(format!("Failed to read editor output: {e}"));
+                        }
+                        if let Err(e) = std::fs::remove_file(&temp_path) {
+                            debug!(error = %e, "Failed to remove temp file");
+                        }
+                        return Ok(());
+                    }
+                };
+
+                let new_content = if new_content.ends_with('\n') && !initial_content.ends_with('\n')
+                {
+                    new_content[..new_content.len() - 1].to_string()
+                } else {
+                    new_content
+                };
 
                 if let CurrentScreen::Chat(ref mut state) = self.screen {
-                    match input_mode {
-                        MessageInputMode::Reply { message_id, author } => {
-                            state.set_message_input_content(&new_content);
-                            state.start_reply(message_id, author);
-                        }
-                        MessageInputMode::Editing { message_id } => {
-                            state
-                                .message_input_parts_mut()
-                                .start_edit(message_id, &new_content);
-                        }
-                        MessageInputMode::Normal => {
-                            state.set_message_input_content(&new_content);
-                        }
+                    if let Some(id) = target_message_id {
+                        state.message_input_parts_mut().start_edit(id, &new_content);
+                        state.focus_message_input();
+                    } else {
+                        state.message_input_parts_mut().set_content(&new_content);
                     }
                 }
 
                 info!("Editor closed successfully");
             }
+
             Ok(exit_status) => {
                 warn!(
                     exit_code = ?exit_status.code(),
@@ -1196,10 +1212,6 @@ impl App {
                     state.set_message_error(format!("Failed to open editor: {e}"));
                 }
             }
-        }
-
-        if let Err(e) = std::fs::remove_file(&temp_path) {
-            debug!(error = %e, "Failed to remove temp file");
         }
 
         Ok(())

@@ -14,7 +14,10 @@ pub enum EventResult {
     /// Event was consumed.
     Consumed,
     /// Open external editor for message input.
-    OpenEditor,
+    OpenEditor {
+        initial_content: String,
+        message_id: Option<crate::domain::entities::MessageId>,
+    },
 }
 
 /// Terminal event handler.

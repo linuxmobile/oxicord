@@ -327,14 +327,42 @@ impl ChatScreenState {
             return self.handle_file_explorer_key(key);
         }
 
-        if let Some(result) = self.handle_global_key(key) {
-            return result;
+        if let Some(action) = self.registry.find_action(key) {
+            if matches!(action, Action::Quit | Action::Logout | Action::ToggleHelp) {
+                if let Some(result) = self.handle_global_key(key) {
+                    return result;
+                }
+            }
         }
 
         match self.focus {
-            ChatFocus::GuildsTree => self.handle_guilds_tree_key(key),
-            ChatFocus::MessagesList => self.handle_messages_list_key(key),
-            ChatFocus::MessageInput => self.handle_message_input_key(key),
+            ChatFocus::MessageInput => {
+                // Prioritize input for typing characters to prevent shadowing by single-key globals (like 'i')
+                if let KeyCode::Char(_) = key.code {
+                    if key.modifiers.is_empty()
+                        || key.modifiers == crossterm::event::KeyModifiers::SHIFT
+                    {
+                        return self.handle_message_input_key(key);
+                    }
+                }
+
+                if let Some(result) = self.handle_global_key(key) {
+                    return result;
+                }
+
+                self.handle_message_input_key(key)
+            }
+            _ => {
+                if let Some(result) = self.handle_global_key(key) {
+                    return result;
+                }
+
+                match self.focus {
+                    ChatFocus::GuildsTree => self.handle_guilds_tree_key(key),
+                    ChatFocus::MessagesList => self.handle_messages_list_key(key),
+                    ChatFocus::MessageInput => unreachable!(),
+                }
+            }
         }
     }
 
@@ -431,6 +459,19 @@ impl ChatScreenState {
                         self.focus_message_input();
                     }
                 }
+                MessagePaneAction::EditExternal(message_id) => {
+                    if let Some(message) = self
+                        .message_pane_data
+                        .messages()
+                        .iter()
+                        .find(|m| m.id() == message_id)
+                    {
+                        return ChatKeyResult::OpenEditor {
+                            initial_content: message.content().to_string(),
+                            message_id: Some(message_id),
+                        };
+                    }
+                }
                 MessagePaneAction::Delete(message_id) => {
                     return ChatKeyResult::DeleteMessage(message_id);
                 }
@@ -503,7 +544,13 @@ impl ChatScreenState {
                     self.focus_messages_list();
                 }
                 MessageInputAction::OpenEditor => {
-                    return ChatKeyResult::OpenEditor;
+                    return ChatKeyResult::OpenEditor {
+                        initial_content: self.message_input_state.value(),
+                        message_id: match self.message_input_state.mode() {
+                            MessageInputMode::Editing { message_id } => Some(*message_id),
+                            _ => None,
+                        },
+                    };
                 }
                 MessageInputAction::StartTyping | MessageInputAction::CancelReply => {}
             }
@@ -923,7 +970,10 @@ pub enum ChatKeyResult {
         attachments: Vec<std::path::PathBuf>,
     },
     StartTyping,
-    OpenEditor,
+    OpenEditor {
+        initial_content: String,
+        message_id: Option<crate::domain::entities::MessageId>,
+    },
     ToggleHelp,
 }
 

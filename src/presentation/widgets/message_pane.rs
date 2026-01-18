@@ -33,6 +33,7 @@ pub enum MessagePaneAction {
         mention: bool,
     },
     Edit(MessageId),
+    EditExternal(MessageId),
     Delete(MessageId),
     YankContent(String),
     YankUrl(String),
@@ -497,6 +498,9 @@ impl MessagePaneState {
             Some(Action::EditMessage) => self
                 .get_selected_message_id(data)
                 .map(MessagePaneAction::Edit),
+            Some(Action::OpenEditor) => self
+                .get_selected_message_id(data)
+                .map(MessagePaneAction::EditExternal),
             Some(Action::DeleteMessage) => self
                 .get_selected_message_id(data)
                 .map(MessagePaneAction::Delete),
