@@ -1,42 +1,49 @@
 name: ci
 on: [push, pull_request]
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
-        # https://docs.github.com/en/actions/using-github-hosted-runners
-        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, windows-11-arm, macos-latest, macos-15-intel]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+
     runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v6
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          go-version: stable
-          
-      - name: Install libx11-dev for clipboard support
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        run: sudo apt install libx11-dev
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
 
-      - name: Test
-        run: go test -v ./...
+      - run: cargo test --release --target ${{ matrix.target }}
 
-      - name: Build
-        run: go build -trimpath -ldflags=-s .
+      - run: cargo build --release --target ${{ matrix.target }}
 
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+        if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         with:
           name: oxicord_${{ runner.os }}_${{ runner.arch }}
           path: |
-            oxicord
-            oxicord.exe
-
-      - name: Send repository dispatch
-        if: ${{ runner.os == 'Windows' && github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
-        env:
-          GH_TOKEN: ${{ secrets.PAT }}
-        run: |
-          gh api --method POST -H "Accept: application/vnd.github+json" -f "event_type=oxicord-ci-completed" /repos/vvirtues/bucket/dispatches
+            target/${{ matrix.target }}/release/oxicord
+            target/${{ matrix.target }}/release/oxicord.exe

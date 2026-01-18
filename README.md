@@ -47,6 +47,18 @@ We stand on the shoulders of giants. Here is how Oxicord compares to existing te
 
 ## Installation & Configuration
 
+### Nix
+
+```bash
+nix run github:linuxmobile/oxicord
+```
+
+For development:
+
+```bash
+nix develop
+```
+
 ### Building from Source
 
 ```bash
