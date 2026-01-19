@@ -1,5 +1,4 @@
-<img width="2600" height="1280" alt="Board2" src="https://github.com/user-attachments/assets/e1c6cbcf-e423-4150-8e80-640bda181807" />
-
+<img width="2560" height="1120" alt="oxicordbanner" src="https://github.com/user-attachments/assets/a66b4fe1-2270-459d-957c-d9620365044b" />
 
 Oxicord is a high-performance, memory-safe Discord TUI client written in Rust. It is a spiritual successor to [Discordo](https://github.com/ayn2op/discordo), rewritten from scratch to leverage the performance and safety guarantees of Rust and the Ratatui ecosystem.
 
