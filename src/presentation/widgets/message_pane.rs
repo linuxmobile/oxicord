@@ -1167,7 +1167,9 @@ fn render_ui_message(
         let actual_height = img_attachment.height();
         let actual_width = img_attachment.width();
 
-        if let Some(ref mut protocol) = img_attachment.protocol {
+        let has_protocol = img_attachment.protocol.is_some();
+
+        if has_protocol {
             let img_start_y = current_msg_y;
             let img_height = i32::from(actual_height);
 
@@ -1199,9 +1201,19 @@ fn render_ui_message(
                         effective_height,
                     );
 
-                    use ratatui_image::{Resize, StatefulImage};
-                    let image_widget = StatefulImage::default().resize(Resize::Crop(None));
-                    ratatui::widgets::StatefulWidget::render(image_widget, img_area, buf, protocol);
+                    if img_attachment.update_state_and_check_redraw(img_area) {
+                        if let Some(ref mut protocol) = img_attachment.protocol {
+                            use ratatui_image::{Resize, StatefulImage};
+                            let image_widget = StatefulImage::default().resize(Resize::Crop(None));
+                            ratatui::widgets::StatefulWidget::render(image_widget, img_area, buf, protocol);
+                        }
+                    } else {
+                        for y in img_area.top()..img_area.bottom() {
+                            for x in img_area.left()..img_area.right() {
+                                buf[(x, y)].set_skip(true);
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1333,11 +1345,40 @@ impl StatefulWidget for MessagePane<'_> {
 }
 
 fn truncate_string(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+    if UnicodeWidthStr::width(s) <= max_len {
+        return s.to_string();
     }
+
+    if max_len < 3 {
+        let mut current_width = 0;
+        let mut cut_off_index = 0;
+        for (i, c) in s.char_indices() {
+            let char_len = c.len_utf8();
+            let w = UnicodeWidthStr::width(&s[i..i + char_len]);
+            if current_width + w > max_len {
+                break;
+            }
+            current_width += w;
+            cut_off_index = i + char_len;
+        }
+        return s[..cut_off_index].to_string();
+    }
+
+    let mut current_width = 0;
+    let mut cut_off_index = 0;
+    let target_width = max_len.saturating_sub(3);
+
+    for (i, c) in s.char_indices() {
+        let char_len = c.len_utf8();
+        let w = UnicodeWidthStr::width(&s[i..i + char_len]);
+        if current_width + w > target_width {
+            break;
+        }
+        current_width += w;
+        cut_off_index = i + char_len;
+    }
+
+    format!("{}...", &s[..cut_off_index])
 }
 
 fn wrap_text(text: &str, width: usize) -> Vec<String> {

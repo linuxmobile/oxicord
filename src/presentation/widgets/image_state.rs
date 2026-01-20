@@ -1,7 +1,10 @@
 //! Image attachment state for message rendering.
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+use ratatui::layout::Rect;
 use ratatui_image::picker::{Picker, ProtocolType};
 use ratatui_image::protocol::StatefulProtocol;
 
@@ -20,6 +23,9 @@ pub struct ImageAttachment {
     pub status: ImageStatus,
     rendered_height: u16,
     rendered_width: u16,
+    pub last_area: Option<Rect>,
+    pub last_hash: u64,
+    protocol_version: u64,
 }
 
 impl ImageAttachment {
@@ -34,6 +40,9 @@ impl ImageAttachment {
             status: ImageStatus::NotStarted,
             rendered_height: 0,
             rendered_width: 0,
+            last_area: None,
+            last_hash: 0,
+            protocol_version: 0,
         }
     }
 
@@ -77,6 +86,28 @@ impl ImageAttachment {
     #[must_use]
     pub const fn needs_load(&self) -> bool {
         self.status.is_not_started()
+    }
+
+    pub fn update_state_and_check_redraw(&mut self, new_area: Rect) -> bool {
+        let mut hasher = DefaultHasher::new();
+        self.id.hash(&mut hasher);
+
+        if let Some(img) = &self.image {
+            img.width().hash(&mut hasher);
+            img.height().hash(&mut hasher);
+            img.as_bytes().len().hash(&mut hasher);
+        }
+        self.protocol_version.hash(&mut hasher);
+
+        let current_hash = hasher.finish();
+
+        if self.last_area == Some(new_area) && self.last_hash == current_hash {
+            return false;
+        }
+
+        self.last_area = Some(new_area);
+        self.last_hash = current_hash;
+        true
     }
 
     #[allow(
@@ -136,6 +167,7 @@ impl ImageAttachment {
         self.rendered_width = (final_width as f32 / f32::from(font_width)).ceil() as u16;
         self.protocol = Some(picker.new_resize_protocol(resized_image));
         self.last_width = terminal_width;
+        self.protocol_version = self.protocol_version.wrapping_add(1);
 
         true
     }
