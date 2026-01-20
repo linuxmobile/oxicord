@@ -265,9 +265,27 @@ impl MessageInputState<'_> {
                 None
             }
             _ => {
+                if let KeyCode::Char(c) = key.code
+                    && (key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT)
+                {
+                    self.textarea.insert_char(c);
+                } else if key.code == KeyCode::Backspace {
+                    self.textarea.delete_char();
+                } else if key.code == KeyCode::Delete {
+                    self.textarea.delete_next_char();
+                } else if key.code == KeyCode::Left {
+                    self.textarea.move_cursor(tui_textarea::CursorMove::Back);
+                } else if key.code == KeyCode::Right {
+                    self.textarea.move_cursor(tui_textarea::CursorMove::Forward);
+                } else if key.code == KeyCode::Up {
+                    self.textarea.move_cursor(tui_textarea::CursorMove::Up);
+                } else if key.code == KeyCode::Down {
+                    self.textarea.move_cursor(tui_textarea::CursorMove::Down);
+                } else if key.code == KeyCode::Enter {
+                    self.textarea.insert_newline();
+                }
+
                 let was_empty = self.is_empty();
-                let input = tui_textarea::Input::from(key);
-                self.textarea.input(input);
                 self.enforce_message_limit();
 
                 if !was_empty || !self.is_empty() {

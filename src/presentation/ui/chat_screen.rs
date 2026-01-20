@@ -459,10 +459,10 @@ impl ChatScreenState {
                         .message_pane_data
                         .messages()
                         .iter()
-                        .find(|m| m.id() == message_id)
+                        .find(|m| m.message.id() == message_id)
                     {
                         self.message_input_state
-                            .start_edit(message_id, message.content());
+                            .start_edit(message_id, message.message.content());
                         self.focus_message_input();
                     }
                 }
@@ -471,10 +471,10 @@ impl ChatScreenState {
                         .message_pane_data
                         .messages()
                         .iter()
-                        .find(|m| m.id() == message_id)
+                        .find(|m| m.message.id() == message_id)
                     {
                         return ChatKeyResult::OpenEditor {
-                            initial_content: message.content().to_string(),
+                            initial_content: message.message.content().to_string(),
                             message_id: Some(message_id),
                         };
                     }
@@ -496,11 +496,11 @@ impl ChatScreenState {
                 }
                 MessagePaneAction::LoadHistory => {
                     if let Some(channel_id) = self.message_pane_data.channel_id()
-                        && let Some(first_msg) = self.message_pane_data.messages().front()
+                        && let Some(first_msg) = self.message_pane_data.messages().iter().next()
                     {
                         return ChatKeyResult::LoadHistory {
                             channel_id,
-                            before_message_id: first_msg.id(),
+                            before_message_id: first_msg.message.id(),
                         };
                     }
                 }
@@ -618,7 +618,7 @@ impl ChatScreenState {
         seen_ids.insert(self.user.id().to_string());
 
         for msg in self.message_pane_data.messages() {
-            let author = msg.author();
+            let author = msg.message.author();
             if seen_ids.insert(author.id().to_string()) {
                 if let Some(cached) = self.user_cache.get(author.id()) {
                     candidates.push(cached);
@@ -634,7 +634,7 @@ impl ChatScreenState {
                 }
             }
 
-            for mention in msg.mentions() {
+            for mention in msg.message.mentions() {
                 if seen_ids.insert(mention.id().to_string()) {
                     if let Some(cached) = self.user_cache.get(mention.id()) {
                         candidates.push(cached);
@@ -771,7 +771,7 @@ impl ChatScreenState {
         }
 
         let width = self.message_pane_state.last_width();
-        let pane = MessagePane::new(&self.message_pane_data, &self.markdown_service);
+        let pane = MessagePane::new(&mut self.message_pane_data, &self.markdown_service);
         let added_height: u16 = new_messages
             .iter()
             .map(|m| pane.calculate_message_height(m, width, &self.markdown_service))
@@ -781,7 +781,7 @@ impl ChatScreenState {
 
         if added_count > 0 {
             self.message_pane_state
-                .adjust_for_prepend(added_count, added_height);
+                .adjust_for_prepend(added_count, added_height.into());
         }
     }
 
@@ -810,8 +810,10 @@ impl ChatScreenState {
         &mut self.message_pane_data
     }
 
-    pub const fn message_pane_parts_mut(&mut self) -> (&MessagePaneData, &mut MessagePaneState) {
-        (&self.message_pane_data, &mut self.message_pane_state)
+    pub const fn message_pane_parts_mut(
+        &mut self,
+    ) -> (&mut MessagePaneData, &mut MessagePaneState) {
+        (&mut self.message_pane_data, &mut self.message_pane_state)
     }
 
     pub fn start_reply(&mut self, message_id: MessageId, author_name: String) {
@@ -832,8 +834,8 @@ impl ChatScreenState {
         self.message_pane_data
             .messages()
             .iter()
-            .find(|m| m.id() == message_id)
-            .map(|m| m.author().display_name().clone())
+            .find(|m| m.message.id() == message_id)
+            .map(|m| m.message.author().display_name().clone())
     }
 
     pub fn message_input_parts_mut(&mut self) -> &mut MessageInputState<'static> {
@@ -1283,6 +1285,10 @@ fn render_guilds_tree(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer)
 
 fn render_message_pane(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) {
     let service = state.markdown_service.clone();
+    // MessagePane renders borders, so the inner content width is area.width - 2.
+    // We must calculate layout based on this inner width to ensure estimated heights match rendered wrapping.
+    let inner_width = area.width.saturating_sub(2);
+    state.message_pane_data.update_layout(inner_width, &service);
     let (data, pane_state) = state.message_pane_parts_mut();
     let pane = MessagePane::new(data, &service);
     StatefulWidget::render(pane, area, buf, pane_state);

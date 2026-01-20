@@ -784,6 +784,7 @@ impl App {
                 for message in &messages {
                     self.cache_users_from_message(message);
                 }
+
                 if let CurrentScreen::Chat(ref mut state) = self.screen {
                     state.prepend_messages(messages);
                 }
@@ -868,16 +869,18 @@ impl App {
                 channel_id,
                 messages,
             } => {
-                debug!(channel_id = %channel_id, count = messages.len(), "Loaded messages for channel");
-                for message in &messages {
-                    self.cache_users_from_message(message);
-                }
-
-                if let CurrentScreen::Chat(state) = &mut self.screen {
+                if let CurrentScreen::Chat(state) = &mut self.screen
+                    && state.message_pane_data().channel_id() == Some(channel_id)
+                {
                     state.set_messages(messages);
                     state.set_typing_indicator(None);
 
-                    if let Some(last_msg) = state.message_pane_data().messages().back() {
+                    if let Some(last_msg) = state
+                        .message_pane_data()
+                        .messages()
+                        .back()
+                        .map(|m| &m.message)
+                    {
                         let message_id = last_msg.id();
                         if let Some(ref token) = self.current_token {
                             let _ = self.command_tx.send(BackendCommand::AcknowledgeMessage {
@@ -892,7 +895,9 @@ impl App {
             }
             Action::ChannelMessagesLoadError { channel_id, error } => {
                 warn!(channel_id = %channel_id, error = %error, "Failed to load messages for channel");
-                if let CurrentScreen::Chat(state) = &mut self.screen {
+                if let CurrentScreen::Chat(state) = &mut self.screen
+                    && state.message_pane_data().channel_id() == Some(channel_id)
+                {
                     state.set_message_error(error);
                     state.focus_guilds_tree();
                 }
