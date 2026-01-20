@@ -283,9 +283,7 @@ impl Default for GuildsTreeStyle {
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
             channel_style: Style::default().fg(Color::Gray),
-            channel_unread_style: Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
+            channel_unread_style: Style::default().fg(Color::White),
             category_style: Style::default()
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::ITALIC),
