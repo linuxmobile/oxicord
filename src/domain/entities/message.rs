@@ -124,6 +124,57 @@ impl MessageKind {
     }
 }
 
+/// Discord message embed.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[allow(missing_docs)]
+pub struct Embed {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub url: Option<String>,
+    pub color: Option<u32>,
+    pub provider: Option<EmbedProvider>,
+    pub thumbnail: Option<EmbedThumbnail>,
+}
+
+#[allow(missing_docs)]
+impl Default for Embed {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[allow(missing_docs)]
+impl Embed {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            title: None,
+            description: None,
+            url: None,
+            color: None,
+            provider: None,
+            thumbnail: None,
+        }
+    }
+}
+
+/// Embed provider structure.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[allow(missing_docs)]
+pub struct EmbedProvider {
+    pub name: Option<String>,
+    pub url: Option<String>,
+}
+
+/// Embed thumbnail structure.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[allow(missing_docs)]
+pub struct EmbedThumbnail {
+    pub url: String,
+    pub height: Option<u64>,
+    pub width: Option<u64>,
+}
+
 /// Discord message attachment.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[allow(missing_docs)]
@@ -310,6 +361,7 @@ pub struct Message {
     edited_timestamp: Option<DateTime<Local>>,
     kind: MessageKind,
     attachments: Vec<Attachment>,
+    embeds: Vec<Embed>,
     reference: Option<MessageReference>,
     referenced: Option<Box<Self>>,
     pinned: bool,
@@ -336,6 +388,7 @@ impl Message {
             edited_timestamp: None,
             kind: MessageKind::Default,
             attachments: Vec::new(),
+            embeds: Vec::new(),
             reference: None,
             referenced: None,
             pinned: false,
@@ -352,6 +405,12 @@ impl Message {
     #[must_use]
     pub fn with_attachments(mut self, attachments: Vec<Attachment>) -> Self {
         self.attachments = attachments;
+        self
+    }
+
+    #[must_use]
+    pub fn with_embeds(mut self, embeds: Vec<Embed>) -> Self {
+        self.embeds = embeds;
         self
     }
 
@@ -426,6 +485,11 @@ impl Message {
     }
 
     #[must_use]
+    pub fn embeds(&self) -> &[Embed] {
+        &self.embeds
+    }
+
+    #[must_use]
     pub const fn reference(&self) -> Option<&MessageReference> {
         self.reference.as_ref()
     }
@@ -453,6 +517,11 @@ impl Message {
     #[must_use]
     pub const fn has_attachments(&self) -> bool {
         !self.attachments.is_empty()
+    }
+
+    #[must_use]
+    pub const fn has_embeds(&self) -> bool {
+        !self.embeds.is_empty()
     }
 
     #[must_use]

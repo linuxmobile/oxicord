@@ -18,7 +18,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::domain::entities::{ChannelId, Message, MessageId};
+use crate::domain::entities::{ChannelId, Embed, Message, MessageId};
 
 use super::image_state::ImageAttachment;
 
@@ -29,6 +29,18 @@ const CHANNEL_NAME_SUFFIX: &str = " ]";
 const DM_CHANNEL_PREFIX: &str = "[ ";
 const TIMESTAMP_WIDTH: usize = 6;
 const CONTENT_INDENT: usize = 6;
+const EMBED_INDENT: usize = 6;
+
+/// Pre-calculated layout data for an embed.
+pub struct RenderedEmbed {
+    pub provider: Option<String>,
+    pub title: Vec<String>,
+    pub description: Option<Text<'static>>,
+    pub description_height: u16,
+    pub height: u16,
+    pub color: Color,
+    pub url: Option<String>,
+}
 
 /// UI wrapper for a message with rendering state.
 pub struct UiMessage {
@@ -37,6 +49,8 @@ pub struct UiMessage {
     pub rendered_content: Option<Text<'static>>,
     /// Image attachments for this message.
     pub image_attachments: Vec<ImageAttachment>,
+    /// Pre-calculated embed layouts.
+    pub rendered_embeds: Vec<RenderedEmbed>,
 }
 
 impl UiMessage {
@@ -65,6 +79,7 @@ impl UiMessage {
             estimated_height: 1,
             rendered_content: None,
             image_attachments,
+            rendered_embeds: Vec::new(),
         }
     }
 
@@ -150,6 +165,63 @@ struct HashMapResolver<'a>(&'a HashMap<String, String>);
 impl MentionResolver for HashMapResolver<'_> {
     fn resolve(&self, user_id: &str) -> Option<String> {
         self.0.get(user_id).cloned()
+    }
+}
+
+fn calculate_embed_layout(
+    embed: &Embed,
+    width: u16,
+    markdown_service: &MarkdownService,
+) -> RenderedEmbed {
+    let mut height = 0;
+    let width = width.saturating_sub(2);
+
+    let mut title_lines = Vec::new();
+    let mut description_text = None;
+    let mut description_height = 0;
+
+    if embed.provider.as_ref().and_then(|p| p.name.as_ref()).is_some() {
+        height += 1;
+    }
+
+    if let Some(title) = &embed.title {
+        title_lines = wrap_text(title, width as usize);
+        height += u16::try_from(title_lines.len()).unwrap_or(u16::MAX);
+    }
+
+    if let Some(description) = &embed.description {
+        let text = markdown_service.render(description, None);
+        
+        let mut lines_count = 0;
+        for line in &text.lines {
+            let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            lines_count +=
+                u16::try_from(wrap_text(&line_text, width as usize).len()).unwrap_or(0);
+        }
+        
+        description_height = lines_count;
+        height += description_height;
+        description_text = Some(text);
+    }
+
+    let color = if let Some(c) = embed.color {
+        Color::Rgb(
+            u8::try_from((c >> 16) & 0xFF).unwrap_or(0),
+            u8::try_from((c >> 8) & 0xFF).unwrap_or(0),
+            u8::try_from(c & 0xFF).unwrap_or(0),
+        )
+    } else {
+        Color::DarkGray
+    };
+
+    RenderedEmbed {
+        provider: embed.provider.as_ref().and_then(|p| p.name.clone()),
+        title: title_lines,
+        description: description_text,
+        description_height,
+        height,
+        color,
+        url: embed.url.clone(),
     }
 }
 
@@ -435,6 +507,15 @@ impl MessagePaneData {
 
             // Add height for image attachments that are ready or loading
             height += ui_msg.total_image_height();
+
+            // Calculate layout for embeds
+            let mut rendered_embeds = Vec::new();
+            for embed in message.embeds() {
+                let layout = calculate_embed_layout(embed, content_width, markdown_service);
+                height += layout.height;
+                rendered_embeds.push(layout);
+            }
+            ui_msg.rendered_embeds = rendered_embeds;
 
             ui_msg.estimated_height = height;
         }
@@ -899,6 +980,10 @@ impl<'a> MessagePane<'a> {
             height += u16::try_from(message.attachments().len()).unwrap_or(u16::MAX);
         }
 
+        for embed in message.embeds() {
+            height += calculate_embed_layout(embed, content_width, markdown_service).height;
+        }
+
         height
     }
 
@@ -940,8 +1025,107 @@ impl<'a> MessagePane<'a> {
             );
         }
 
+
         block
     }
+}
+
+fn render_embed(
+    embed: &RenderedEmbed,
+    start_y: i32,
+    area: Rect,
+    buf: &mut Buffer,
+) -> i32 {
+    let mut current_y = start_y;
+    let indent = u16::try_from(EMBED_INDENT).unwrap_or(0);
+    
+    let border_color = embed.color;
+
+    let content_x = area.x.saturating_add(indent);
+    let content_width = area.width.saturating_sub(indent).saturating_sub(SCROLLBAR_MARGIN).saturating_sub(2);
+
+    let mut render_line = |text: Line, is_bold: bool| {
+        if current_y >= 0 && current_y < i32::from(area.height) {
+            let y = u16::try_from(current_y).unwrap_or(0);
+            
+            if let Some(cell) = buf.cell_mut((content_x, area.y + y)) {
+                cell.set_symbol("▎").set_fg(border_color);
+            }
+
+            let mut style = Style::default();
+            if is_bold {
+                style = style.add_modifier(Modifier::BOLD);
+            }
+            
+            let para = Paragraph::new(text).style(style);
+            let text_area = Rect::new(content_x + 2, area.y + y, content_width, 1);
+            para.render(text_area, buf);
+        }
+        current_y += 1;
+    };
+
+    if let Some(name) = &embed.provider {
+        let span = Span::styled(name, Style::default().fg(Color::DarkGray));
+        render_line(Line::from(span), false);
+    }
+
+    if !embed.title.is_empty() {
+        let mut style = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
+        if embed.url.is_some() {
+            style = style.add_modifier(Modifier::UNDERLINED);
+        }
+        for line in &embed.title {
+             let span = Span::styled(line, style);
+             render_line(Line::from(span), true);
+        }
+    }
+
+    if let Some(text) = &embed.description {
+        let desc_height = i32::from(embed.description_height);
+        
+        if current_y + desc_height > 0 && current_y < i32::from(area.height) {
+             for i in 0..desc_height {
+                 let y = current_y + i;
+                 if y >= 0 && y < i32::from(area.height) {
+                     let y_u16 = u16::try_from(y).unwrap_or(0);
+                     if let Some(cell) = buf.cell_mut((content_x, area.y + y_u16)) {
+                         cell.set_symbol("▎").set_fg(border_color);
+                     }
+                 }
+             }
+
+             let top_clip = if current_y < 0 {
+                 u16::try_from(current_y.unsigned_abs()).unwrap_or(0)
+             } else {
+                 0
+             };
+
+             let target_y = u16::try_from(current_y.max(0)).unwrap_or(0);
+             let available_height = area.height.saturating_sub(target_y);
+             let effective_height = u16::try_from(desc_height)
+                 .unwrap_or(0)
+                 .saturating_sub(top_clip)
+                 .min(available_height);
+
+             if effective_height > 0 {
+                 let para = Paragraph::new(text.clone())
+                     .wrap(ratatui::widgets::Wrap { trim: false })
+                     .style(Style::default().fg(Color::Gray))
+                     .scroll((top_clip, 0));
+                 
+                 let text_area = Rect::new(
+                     content_x + 2, 
+                     area.y + target_y, 
+                     content_width.saturating_sub(SCROLLBAR_MARGIN), 
+                     effective_height
+                 );
+                 para.render(text_area, buf);
+             }
+        }
+        current_y += desc_height;
+    }
+
+    current_y - start_y
 }
 
 #[allow(clippy::too_many_lines, clippy::items_after_statements)]
@@ -1081,6 +1265,10 @@ fn render_ui_message(
     content_height -= i32::try_from(non_image_count).unwrap_or(0);
     // Subtract image attachment heights
     content_height -= i32::from(ui_msg.total_image_height());
+
+    for embed in &ui_msg.rendered_embeds {
+        content_height -= i32::from(embed.height);
+    }
 
     let content_height = content_height.max(0);
 
@@ -1238,6 +1426,12 @@ fn render_ui_message(
             }
             current_msg_y += 1;
         }
+    }
+
+
+    for embed in &ui_msg.rendered_embeds {
+        let height = render_embed(embed, current_msg_y, area, buf);
+        current_msg_y += height;
     }
 }
 

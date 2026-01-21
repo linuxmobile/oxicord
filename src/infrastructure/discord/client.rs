@@ -6,12 +6,12 @@ use reqwest::{Client, StatusCode, header};
 use tracing::{debug, warn};
 
 use super::dto::{
-    AttachmentResponse, ChannelResponse, DmChannelResponse, EditMessagePayload, ErrorResponse,
+    AttachmentResponse, ChannelResponse, DmChannelResponse, EditMessagePayload, EmbedDto, ErrorResponse,
     GuildResponse, MessageReferencePayload, MessageResponse, SendMessagePayload, UserResponse,
 };
 use crate::domain::entities::{
-    Attachment, AuthToken, Channel, ChannelId, ChannelKind, Guild, Message, MessageAuthor,
-    MessageKind, MessageReference, ReadState, User,
+    Attachment, AuthToken, Channel, ChannelId, ChannelKind, Embed, EmbedProvider, EmbedThumbnail,
+    Guild, Message, MessageAuthor, MessageKind, MessageReference, ReadState, User,
 };
 use crate::domain::errors::AuthError;
 use crate::domain::ports::{
@@ -128,6 +128,24 @@ impl DiscordClient {
         result
     }
 
+    fn parse_embed(embed: EmbedDto) -> Embed {
+        Embed {
+            title: embed.title,
+            description: embed.description,
+            url: embed.url,
+            color: embed.color,
+            provider: embed.provider.map(|p| EmbedProvider {
+                name: p.name,
+                url: p.url,
+            }),
+            thumbnail: embed.thumbnail.map(|t| EmbedThumbnail {
+                url: t.url,
+                height: t.height,
+                width: t.width,
+            }),
+        }
+    }
+
     fn parse_message_response(response: MessageResponse, channel_id: u64) -> Option<Message> {
         let id: u64 = response.id.parse().ok()?;
         let author = MessageAuthor::new(
@@ -157,6 +175,11 @@ impl DiscordClient {
                 .map(Self::parse_attachment)
                 .collect();
             message = message.with_attachments(attachments);
+        }
+
+        if !response.embeds.is_empty() {
+            let embeds = response.embeds.into_iter().map(Self::parse_embed).collect();
+            message = message.with_embeds(embeds);
         }
 
         if !response.mentions.is_empty() {

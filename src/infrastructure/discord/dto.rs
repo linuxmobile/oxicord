@@ -122,6 +122,29 @@ pub struct AttachmentResponse {
     pub content_type: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct EmbedProviderDto {
+    pub name: Option<String>,
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EmbedThumbnailDto {
+    pub url: String,
+    pub height: Option<u64>,
+    pub width: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EmbedDto {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub url: Option<String>,
+    pub color: Option<u32>,
+    pub provider: Option<EmbedProviderDto>,
+    pub thumbnail: Option<EmbedThumbnailDto>,
+}
+
 /// Discord API message reference structure.
 #[derive(Debug, Deserialize)]
 pub struct MessageReferenceResponse {
@@ -143,6 +166,8 @@ pub struct MessageResponse {
     pub kind: u8,
     #[serde(default)]
     pub attachments: Vec<AttachmentResponse>,
+    #[serde(default)]
+    pub embeds: Vec<EmbedDto>,
     pub message_reference: Option<MessageReferenceResponse>,
     pub referenced_message: Option<Box<Self>>,
     #[serde(default)]

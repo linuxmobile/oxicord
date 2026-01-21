@@ -176,6 +176,7 @@ fn parse_inline(input: &str) -> Vec<MdNode> {
             '*' => handle_asterisk(input, idx, &mut start, &mut nodes, &mut chars),
             '~' => handle_tilde(input, idx, &mut start, &mut nodes, &mut chars),
             '<' => handle_bracket(input, idx, &mut start, &mut nodes, &mut chars),
+            '\\' => handle_escape(input, idx, &mut start, &mut nodes, &mut chars),
             _ => {}
         }
     }
@@ -348,6 +349,35 @@ fn handle_bracket(
                 *start = end_total;
             }
         }
+    }
+}
+
+fn handle_escape(
+    input: &str,
+    idx: usize,
+    start: &mut usize,
+    nodes: &mut Vec<MdNode>,
+    chars: &mut Peekable<CharIndices>,
+) {
+    if idx > *start {
+        nodes.push(MdNode::Text(input[*start..idx].to_string()));
+    }
+
+    // Check if there is a character after the backslash
+    let mut chars_iter = input[idx..].char_indices();
+    chars_iter.next(); // Skip the backslash
+
+    if let Some((_, ch)) = chars_iter.next() {
+        nodes.push(MdNode::Text(ch.to_string()));
+        let end_total = idx + 1 + ch.len_utf8();
+        advance_chars(chars, end_total);
+        *start = end_total;
+    } else {
+        // Backslash at the end of the string, just treat as text
+        nodes.push(MdNode::Text("\\".to_string()));
+        let end_total = idx + 1;
+        advance_chars(chars, end_total);
+        *start = end_total;
     }
 }
 

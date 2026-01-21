@@ -12,7 +12,10 @@ mod user_cache;
 pub use channel::{Channel, ChannelId, ChannelKind};
 pub use guild::{Guild, GuildId};
 pub use image::{ImageId, ImageMetadata, ImageSource, ImageStatus, LoadedImage};
-pub use message::{Attachment, Message, MessageAuthor, MessageId, MessageKind, MessageReference};
+pub use message::{
+    Attachment, Embed, EmbedProvider, EmbedThumbnail, Message, MessageAuthor, MessageId,
+    MessageKind, MessageReference,
+};
 pub use read_state::ReadState;
 pub use token::AuthToken;
 pub use user::User;
