@@ -111,7 +111,7 @@ mod tests {
 
     #[test]
     fn test_main_screen_creation() {
-        let user = User::new("123", "testuser", "0", None, false);
+        let user = User::new("123", "testuser", "0", None, false, None);
         let screen = MainScreen::new(user);
 
         assert_eq!(screen.user().username(), "testuser");

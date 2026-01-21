@@ -1,7 +1,6 @@
 //! Guilds tree widget for server/channel navigation.
 
 use std::collections::HashSet;
-use std::sync::OnceLock;
 
 use crossterm::event::KeyEvent;
 use ratatui::{
@@ -15,7 +14,7 @@ use ratatui::{
 use crate::domain::entities::{Channel, ChannelId, Guild, GuildId, ReadState};
 use crate::domain::keybinding::Action;
 use crate::presentation::commands::CommandRegistry;
-use regex::Regex;
+use crate::presentation::ui::utils::clean_text;
 
 /// Unique identifier for nodes in the guilds tree.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -448,15 +447,6 @@ impl GuildsTreeData {
         }
     }
 
-    fn clean_text(s: &str) -> String {
-        static RE: OnceLock<Regex> = OnceLock::new();
-        let re = RE.get_or_init(|| {
-            Regex::new(r"[\p{Extended_Pictographic}\p{Emoji_Presentation}\u{FE0F}\u{200D}\u{20E3}]")
-                .expect("Invalid regex")
-        });
-        re.replace_all(s, "").to_string()
-    }
-
     #[must_use]
     pub fn flatten<'a>(&'a self, state: &GuildsTreeState, width: u16) -> Vec<FlattenedNode<'a>> {
         let mut nodes = Vec::new();
@@ -485,7 +475,7 @@ impl GuildsTreeData {
                     Style::default().fg(Color::Magenta)
                 };
 
-                let clean_name = Self::clean_text(name);
+                let clean_name = clean_text(name);
 
                 nodes.push(FlattenedNode {
                     id: TreeNodeId::DirectMessageUser(id.clone()),
@@ -517,7 +507,7 @@ impl GuildsTreeData {
                 Style::default().fg(Color::White)
             };
 
-            let clean_name = Self::clean_text(guild.name());
+            let clean_name = clean_text(guild.name());
 
             let arrow = if expanded { "▾ " } else { "▸ " };
             nodes.push(FlattenedNode {
@@ -598,7 +588,7 @@ impl GuildsTreeData {
                 .contains(&TreeNodeId::Category(category.id()));
             let arrow = if expanded { "▾ " } else { "▸ " };
 
-            let clean_name = Self::clean_text(category.name());
+            let clean_name = clean_text(category.name());
 
             nodes.push(FlattenedNode {
                 id: TreeNodeId::Category(category.id()),
@@ -615,7 +605,9 @@ impl GuildsTreeData {
                 depth: 1,
             });
 
-            if expanded && let Some(children) = categories.get(&category.id()) {
+            if expanded
+                && let Some(children) = categories.get(&category.id())
+            {
                 let mut sorted_children = children.clone();
                 sorted_children.sort_by_key(|c| c.position());
 
@@ -652,7 +644,9 @@ impl GuildsTreeData {
 
         let is_active = self.active_channel_id() == Some(channel.id());
         let style = if is_active {
-            Style::default().fg(Color::Cyan).bg(Color::Rgb(30, 40, 50))
+            Style::default()
+                .fg(Color::Cyan)
+                .bg(Color::Rgb(30, 40, 50))
         } else if channel.has_unread() {
             Style::default()
                 .fg(Color::White)
@@ -672,10 +666,11 @@ impl GuildsTreeData {
             .saturating_sub(padding_right);
 
         let name = channel.display_name();
-        let mut clean_name = Self::clean_text(&name);
+        let mut clean_name = clean_text(&name);
 
-        let name_width = u16::try_from(unicode_width::UnicodeWidthStr::width(clean_name.as_str()))
-            .unwrap_or(u16::MAX);
+        let name_width =
+            u16::try_from(unicode_width::UnicodeWidthStr::width(clean_name.as_str()))
+                .unwrap_or(u16::MAX);
 
         if name_width > max_name_width {
             let mut w = 0;
@@ -719,6 +714,7 @@ impl GuildsTreeData {
         })
     }
 }
+
 impl Default for GuildsTreeData {
     fn default() -> Self {
         Self::new()

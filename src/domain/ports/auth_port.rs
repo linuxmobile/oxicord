@@ -33,7 +33,7 @@ pub mod mock {
         pub fn new(should_succeed: bool) -> Self {
             Self {
                 should_succeed: Arc::new(AtomicBool::new(should_succeed)),
-                user: User::new("123", "testuser", "0", None, false),
+                user: User::new("123", "testuser", "0", None, false, None),
             }
         }
 

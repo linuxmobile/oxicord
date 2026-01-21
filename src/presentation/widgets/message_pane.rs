@@ -19,7 +19,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::domain::entities::{ChannelId, Embed, Message, MessageId};
 
 use super::image_state::ImageAttachment;
-use crate::presentation::ui::utils::get_author_color;
+use crate::presentation::ui::utils::{clean_text, get_author_color};
 
 const SCROLL_AMOUNT: u16 = 3;
 const SCROLLBAR_MARGIN: u16 = 2;
@@ -54,19 +54,15 @@ pub struct UiMessage {
 
 impl UiMessage {
     fn new(message: Message) -> Self {
-        // Extract image attachments from Discord attachments
         let mut image_attachments: Vec<ImageAttachment> = message
             .attachments()
             .iter()
             .filter_map(ImageAttachment::from_attachment)
             .collect();
 
-        // Also extract inline image URLs from message content
-        // Match markdown images: ![alt](url) and direct image URLs
         let content = message.content();
         let inline_images = Self::extract_inline_images(content);
         for url in inline_images {
-            // Avoid duplicates
             if !image_attachments.iter().any(|img| img.url == url) {
                 let id = crate::domain::entities::ImageId::from_url(&url);
                 image_attachments.push(ImageAttachment::new(id, url));
@@ -127,7 +123,6 @@ impl UiMessage {
     #[must_use]
     #[allow(clippy::cast_possible_truncation)]
     pub fn total_image_height(&self) -> u16 {
-        // Sum actual heights from each image attachment
         self.image_attachments
             .iter()
             .map(ImageAttachment::height)
@@ -496,7 +491,6 @@ impl MessagePaneData {
                 height += 1;
             }
 
-            // Count non-image attachments (for file attachments display)
             let non_image_attachments = message
                 .attachments()
                 .iter()
@@ -504,10 +498,8 @@ impl MessagePaneData {
                 .count();
             height += u16::try_from(non_image_attachments).unwrap_or(0);
 
-            // Add height for image attachments that are ready or loading
             height += ui_msg.total_image_height();
 
-            // Calculate layout for embeds
             let mut rendered_embeds = Vec::new();
             for embed in message.embeds() {
                 let layout = calculate_embed_layout(embed, content_width, markdown_service);
@@ -541,7 +533,8 @@ impl MessagePaneData {
     #[must_use]
     pub fn formatted_channel_title(&self) -> Option<String> {
         self.channel_name.as_ref().map(|name| {
-            let display_name = name.trim_start_matches('@').to_uppercase();
+            let clean_name = clean_text(name);
+            let display_name = clean_name.trim_start_matches('@').to_uppercase();
             if self.is_dm {
                 format!("{DM_CHANNEL_PREFIX}{display_name}{CHANNEL_NAME_SUFFIX}")
             } else {
@@ -1014,9 +1007,10 @@ impl<'a> MessagePane<'a> {
         }
 
         if let Some(typing) = self.data.typing_indicator() {
+            let clean_typing = clean_text(typing);
             block = block.title_bottom(
                 Line::from(Span::styled(
-                    format!(" {typing} "),
+                    format!(" {clean_typing} "),
                     Style::default()
                         .fg(Color::DarkGray)
                         .add_modifier(Modifier::ITALIC),
@@ -1266,14 +1260,12 @@ fn render_ui_message(
     if message.is_reply() && message.referenced().is_some() {
         content_height -= 1;
     }
-    // Subtract non-image attachments
     let non_image_count = message
         .attachments()
         .iter()
         .filter(|a| !a.is_image())
         .count();
     content_height -= i32::try_from(non_image_count).unwrap_or(0);
-    // Subtract image attachment heights
     content_height -= i32::from(ui_msg.total_image_height());
 
     for embed in &ui_msg.rendered_embeds {
@@ -1304,7 +1296,6 @@ fn render_ui_message(
     }
     current_msg_y += content_height;
 
-    // Render non-image attachments (file attachments)
     for attachment in message.attachments() {
         if attachment.is_image() {
             continue; // Images are rendered separately below
@@ -1329,10 +1320,8 @@ fn render_ui_message(
         current_msg_y += 1;
     }
 
-    // Render image attachments
     for img_attachment in &mut ui_msg.image_attachments {
         if !img_attachment.is_ready() {
-            // Show placeholder for loading images
             if img_attachment.is_loading()
                 && current_msg_y >= 0
                 && current_msg_y < i32::from(area.height)
@@ -1692,7 +1681,7 @@ mod tests {
     use chrono::Local;
 
     fn create_test_message(id: u64, content: &str) -> Message {
-        let author = MessageAuthor::new("1", "testuser", "0", None, false);
+        let author = MessageAuthor::new("1", "testuser", "0", None, false, None);
         Message::new(id, 100_u64, author, content, Local::now())
     }
 
@@ -1737,13 +1726,10 @@ mod tests {
     }
 
     #[test]
-    fn test_wrap_text() {
-        let text = "Hello world this is a test";
-        let lines = wrap_text(text, 10);
-        assert!(lines.len() > 1);
-
-        let empty_lines = wrap_text("", 10);
-        assert_eq!(empty_lines.len(), 1);
+    fn test_author_color() {
+        let author = MessageAuthor::new("1", "testuser", "0", None, false, None);
+        let color = get_author_color(&author);
+        assert_ne!(color, ratatui::style::Color::Reset);
     }
 
     #[test]
@@ -1787,25 +1773,16 @@ mod tests {
         let mut data = MessagePaneData::new();
         data.set_channel(ChannelId(100), "general".to_string());
 
-        // Add 50 messages of 1 line each.
-        // Each message: 1 header + 1 content = 2 lines.
-        // Total content height should be 100.
         let messages: Vec<Message> = (0..50).map(|i| create_test_message(i, "msg")).collect();
         data.set_messages(messages);
 
         let markdown = MarkdownService::new();
-        // Layout width large enough to not wrap.
         data.update_layout(100, &markdown);
 
         let mut state = MessagePaneState::new();
         state.is_following = true; // Default
 
-        // Viewport height 50.
-        // Content height 100.
-        // Max scroll = 50.
-        // Vertical scroll should be 50.
 
-        // Calculate content height
         let content_height: usize = data
             .ui_messages()
             .iter()
@@ -1816,7 +1793,5 @@ mod tests {
         state.update_dimensions(content_height, 50);
 
         assert_eq!(state.vertical_scroll, 50);
-        // Verify scrollbar state? Ratatui ScrollbarState doesn't expose fields easily,
-        // but we can assume if vertical_scroll is correct, it's correct.
     }
 }

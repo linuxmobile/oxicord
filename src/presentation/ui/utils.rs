@@ -1,7 +1,25 @@
+use std::sync::OnceLock;
+
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::Color;
+use regex::Regex;
 
 use crate::domain::entities::{MessageAuthor, User};
+
+/// Removes emojis and symbols from the given string.
+///
+/// # Panics
+///
+/// Panics if the internal regex is invalid.
+#[must_use]
+pub fn clean_text(s: &str) -> String {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        Regex::new(r"[\p{Extended_Pictographic}\p{Emoji_Presentation}\u{FE0F}\u{200D}\u{20E3}]")
+            .expect("Invalid regex")
+    });
+    re.replace_all(s, "").to_string()
+}
 
 const USER_PALETTE: &[Color] = &[
     Color::Red,

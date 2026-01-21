@@ -895,7 +895,6 @@ impl ChatScreenState {
     pub fn collect_needed_image_loads(&self) -> Vec<(crate::domain::entities::ImageId, String)> {
         let mut needed = Vec::new();
 
-        // Only check visible messages + buffer
         let visible_range = self.calculate_visible_range();
         let buffer = super::super::widgets::LOAD_BUFFER;
         let start = visible_range.0.saturating_sub(buffer);
@@ -955,7 +954,6 @@ impl ChatScreenState {
                 }
             }
         }
-        // Mark as dirty to recalculate heights
         self.message_pane_data.mark_dirty();
     }
 
@@ -963,12 +961,10 @@ impl ChatScreenState {
     /// Should be called before rendering.
     /// Only processes images that need protocol updates.
     pub fn update_visible_image_protocols(&mut self, terminal_width: u16) {
-        // Quick check: if no messages or no images, skip entirely
         if self.message_pane_data.is_empty() {
             return;
         }
 
-        // Update cached width for tracking
         self.image_manager.set_width(terminal_width);
 
         let visible_range = self.calculate_visible_range();
@@ -981,7 +977,6 @@ impl ChatScreenState {
         for idx in start..end {
             if let Some(ui_msg) = self.message_pane_data.ui_messages_mut().get_mut(idx) {
                 for attachment in &mut ui_msg.image_attachments {
-                    // Only process if image is ready and needs protocol update
                     if attachment.is_ready() {
                         attachment.update_protocol_if_needed(picker, terminal_width);
                     }
@@ -1498,6 +1493,7 @@ mod tests {
             create_test_user(),
             Arc::new(MarkdownService::new()),
             UserCache::new(),
+            false,
         );
 
         assert_eq!(state.focus(), ChatFocus::GuildsTree);
@@ -1518,6 +1514,7 @@ mod tests {
             create_test_user(),
             Arc::new(MarkdownService::new()),
             UserCache::new(),
+            false,
         );
 
         assert!(state.is_guilds_tree_visible());
@@ -1533,6 +1530,7 @@ mod tests {
             create_test_user(),
             Arc::new(MarkdownService::new()),
             UserCache::new(),
+            false,
         );
         state.toggle_guilds_tree();
         state.set_focus(ChatFocus::MessagesList);
@@ -1545,11 +1543,12 @@ mod tests {
     }
 
     #[test]
-    fn test_set_guilds() {
+    fn test_message_selection_focuses_list() {
         let mut state = ChatScreenState::new(
             create_test_user(),
             Arc::new(MarkdownService::new()),
             UserCache::new(),
+            false,
         );
         let guilds = vec![
             Guild::new(1_u64, "Guild One"),
@@ -1566,6 +1565,7 @@ mod tests {
             create_test_user(),
             Arc::new(MarkdownService::new()),
             UserCache::new(),
+            false,
         );
 
         let guild_a = Guild::new(1_u64, "Guild A");
@@ -1610,6 +1610,7 @@ mod tests {
             create_test_user(),
             Arc::new(MarkdownService::new()),
             UserCache::new(),
+            false,
         );
 
         let guild_a = Guild::new(1_u64, "Guild A");
@@ -1643,6 +1644,7 @@ mod tests {
             create_test_user(),
             Arc::new(MarkdownService::new()),
             UserCache::new(),
+            false,
         );
 
         let guild_a = Guild::new(1_u64, "Guild A");
@@ -1682,8 +1684,8 @@ mod tests {
     }
 
     #[test]
-    fn test_chat_screen_state_creation() {
-        let state = ChatScreenState::new(
+    fn test_chat_screen_state_creation_initial_focus() {
+        let mut state = ChatScreenState::new(
             create_test_user(),
             Arc::new(MarkdownService::new()),
             UserCache::new(),
@@ -1692,7 +1694,13 @@ mod tests {
 
         assert_eq!(state.focus(), ChatFocus::GuildsTree);
 
-        state.on_channel_selected(channel_a1.id());
+        let guild = Guild::new(1_u64, "Guild A");
+        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
+        state.set_guilds(vec![guild.clone()]);
+        state.set_channels(guild.id(), vec![channel.clone()]);
+
+        state.on_channel_selected(channel.id());
+        
         assert_eq!(
             state.focus(),
             ChatFocus::MessagesList,
@@ -1724,6 +1732,7 @@ mod tests {
             create_test_user(),
             Arc::new(MarkdownService::new()),
             UserCache::new(),
+            false,
         );
 
         state.focus_messages_list();
