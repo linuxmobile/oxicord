@@ -71,7 +71,9 @@ impl TokenStoragePort for KeyringTokenStorage {
             }
         })
         .await
-        .map_err(|e| AuthError::Unexpected { message: e.to_string() })?
+        .map_err(|e| AuthError::Unexpected {
+            message: e.to_string(),
+        })?
     }
 
     async fn store_token(&self, token: &AuthToken) -> Result<(), AuthError> {
@@ -94,7 +96,9 @@ impl TokenStoragePort for KeyringTokenStorage {
             Ok(())
         })
         .await
-        .map_err(|e| AuthError::Unexpected { message: e.to_string() })?
+        .map_err(|e| AuthError::Unexpected {
+            message: e.to_string(),
+        })?
     }
 
     async fn delete_token(&self) -> Result<(), AuthError> {
@@ -123,7 +127,9 @@ impl TokenStoragePort for KeyringTokenStorage {
             }
         })
         .await
-        .map_err(|e| AuthError::Unexpected { message: e.to_string() })?
+        .map_err(|e| AuthError::Unexpected {
+            message: e.to_string(),
+        })?
     }
 }
 

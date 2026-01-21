@@ -513,12 +513,8 @@ impl MessagePaneData {
 
             let mut rendered_embeds = Vec::new();
             for embed in message.embeds() {
-                let layout = calculate_embed_layout(
-                    embed,
-                    content_width,
-                    markdown_service,
-                    default_color,
-                );
+                let layout =
+                    calculate_embed_layout(embed, content_width, markdown_service, default_color);
                 height += layout.height;
                 rendered_embeds.push(layout);
             }
@@ -1008,13 +1004,8 @@ impl<'a> MessagePane<'a> {
         }
 
         for embed in message.embeds() {
-            height += calculate_embed_layout(
-                embed,
-                content_width,
-                markdown_service,
-                default_color,
-            )
-            .height;
+            height += calculate_embed_layout(embed, content_width, markdown_service, default_color)
+                .height;
         }
 
         height

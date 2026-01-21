@@ -6,8 +6,9 @@ use reqwest::{Client, StatusCode, header};
 use tracing::{debug, warn};
 
 use super::dto::{
-    AttachmentResponse, ChannelResponse, DmChannelResponse, EditMessagePayload, EmbedDto, ErrorResponse,
-    GuildResponse, MessageReferencePayload, MessageResponse, SendMessagePayload, UserResponse,
+    AttachmentResponse, ChannelResponse, DmChannelResponse, EditMessagePayload, EmbedDto,
+    ErrorResponse, GuildResponse, MessageReferencePayload, MessageResponse, SendMessagePayload,
+    UserResponse,
 };
 use crate::domain::entities::{
     Attachment, AuthToken, Channel, ChannelId, ChannelKind, Embed, EmbedProvider, EmbedThumbnail,

@@ -797,12 +797,7 @@ impl ChatScreenState {
         let added_height: u16 = new_messages
             .iter()
             .map(|m| {
-                pane.calculate_message_height(
-                    m,
-                    width,
-                    &self.markdown_service,
-                    self.theme.accent,
-                )
+                pane.calculate_message_height(m, width, &self.markdown_service, self.theme.accent)
             })
             .sum();
 

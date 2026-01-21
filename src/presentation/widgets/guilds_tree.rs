@@ -824,9 +824,8 @@ impl StatefulWidget for GuildsTree<'_> {
                         // If it is, we preserve its foreground color (Gray).
                         // If not, we apply the selected foreground color (Accent).
                         let content = span.content.as_ref();
-                        let is_guide = content.contains('├')
-                            || content.contains('└')
-                            || content.contains('│');
+                        let is_guide =
+                            content.contains('├') || content.contains('└') || content.contains('│');
 
                         if !is_guide {
                             if let Some(fg) = selected_style.fg {
@@ -843,11 +842,9 @@ impl StatefulWidget for GuildsTree<'_> {
             })
             .collect();
 
-        let list = List::new(items)
-            .block(block)
-            .highlight_style(
-                Style::default().bg(self.style.selected_style.bg.unwrap_or(Color::DarkGray)),
-            );
+        let list = List::new(items).block(block).highlight_style(
+            Style::default().bg(self.style.selected_style.bg.unwrap_or(Color::DarkGray)),
+        );
 
         StatefulWidget::render(list, area, buf, &mut state.list_state);
     }

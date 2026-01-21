@@ -676,14 +676,16 @@ impl EventParser {
             let mentions: Vec<User> = payload
                 .mentions
                 .into_iter()
-                .map(|m| User::new(
-                    m.id,
-                    m.username,
-                    m.discriminator,
-                    m.avatar,
-                    m.bot,
-                    m.member.and_then(|mem| mem.color),
-                ))
+                .map(|m| {
+                    User::new(
+                        m.id,
+                        m.username,
+                        m.discriminator,
+                        m.avatar,
+                        m.bot,
+                        m.member.and_then(|mem| mem.color),
+                    )
+                })
                 .collect();
             message = message.with_mentions(mentions);
         }
