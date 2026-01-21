@@ -1,4 +1,5 @@
 use crate::domain::keybinding::Keybind;
+use crate::presentation::theme::Theme;
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::{
     buffer::Buffer,
@@ -34,6 +35,21 @@ pub struct FooterBarStyle {
     pub action: Style,
     pub info: Style,
     pub focus_indicator: Style,
+}
+
+impl FooterBarStyle {
+    #[must_use]
+    pub fn from_theme(theme: &Theme) -> Self {
+        Self {
+            key: Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+            focus_indicator: Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+            ..Self::default()
+        }
+    }
 }
 
 impl Default for FooterBarStyle {

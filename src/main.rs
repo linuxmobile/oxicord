@@ -6,7 +6,7 @@ use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use oxicord::infrastructure::{AppConfig, DiscordClient, KeyringTokenStorage};
-use oxicord::presentation::App;
+use oxicord::presentation::{App, Theme};
 
 fn init_logging(config: &AppConfig) -> Result<()> {
     let filter = EnvFilter::try_from_default_env()
@@ -51,12 +51,14 @@ fn create_app() -> Result<(App, Option<String>)> {
 
     let discord_client = Arc::new(DiscordClient::new()?);
     let token_storage = Arc::new(KeyringTokenStorage::new());
+    let theme = Theme::new(&config.theme.accent_color);
 
     let app = App::new(
         discord_client.clone(),
         discord_client,
         token_storage,
         config.disable_user_colors,
+        theme,
     );
 
     Ok((app, cli_token))

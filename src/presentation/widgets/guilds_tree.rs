@@ -14,6 +14,7 @@ use ratatui::{
 use crate::domain::entities::{Channel, ChannelId, Guild, GuildId, ReadState};
 use crate::domain::keybinding::Action;
 use crate::presentation::commands::CommandRegistry;
+use crate::presentation::theme::Theme;
 use crate::presentation::ui::utils::clean_text;
 
 /// Unique identifier for nodes in the guilds tree.
@@ -126,8 +127,9 @@ impl GuildsTreeState {
         key: KeyEvent,
         data: &GuildsTreeData,
         registry: &CommandRegistry,
+        style: &GuildsTreeStyle,
     ) -> Option<GuildsTreeAction> {
-        let flattened = data.flatten(self, u16::MAX);
+        let flattened = data.flatten(self, u16::MAX, style);
 
         let current_index = self
             .selected
@@ -277,6 +279,31 @@ pub struct GuildsTreeStyle {
     pub category_style: Style,
     pub dm_style: Style,
     pub placeholder_style: Style,
+    pub tree_guide_style: Style,
+}
+
+impl GuildsTreeStyle {
+    #[must_use]
+    pub fn from_theme(theme: &Theme) -> Self {
+        Self {
+            border_style: Style::default().fg(Color::Gray),
+            border_style_focused: Style::default().fg(theme.accent),
+            title_style: Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+            selected_style: Style::default().bg(Color::DarkGray).fg(theme.accent),
+            active_guild_style: Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+            active_channel_style: Style::default()
+                .fg(theme.accent)
+                .bg(Color::Rgb(30, 40, 50))
+                .add_modifier(Modifier::BOLD),
+            dm_style: Style::default().fg(theme.accent),
+            tree_guide_style: Style::default().fg(Color::Gray),
+            ..Self::default()
+        }
+    }
 }
 
 impl Default for GuildsTreeStyle {
@@ -308,6 +335,7 @@ impl Default for GuildsTreeStyle {
             placeholder_style: Style::default()
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::ITALIC),
+            tree_guide_style: Style::default().fg(Color::Gray),
         }
     }
 }
@@ -448,14 +476,22 @@ impl GuildsTreeData {
     }
 
     #[must_use]
-    pub fn flatten<'a>(&'a self, state: &GuildsTreeState, width: u16) -> Vec<FlattenedNode<'a>> {
+    pub fn flatten<'a>(
+        &'a self,
+        state: &GuildsTreeState,
+        width: u16,
+        style: &GuildsTreeStyle,
+    ) -> Vec<FlattenedNode<'a>> {
         let mut nodes = Vec::new();
 
         let dm_expanded = state.expanded.contains(&TreeNodeId::DirectMessages);
         nodes.push(FlattenedNode {
             id: TreeNodeId::DirectMessages,
             label: Line::from(vec![
-                Span::raw(if dm_expanded { "▾ " } else { "▸ " }),
+                Span::styled(
+                    if dm_expanded { "▾ " } else { "▸ " },
+                    style.tree_guide_style,
+                ),
                 Span::raw("Direct Messages"),
             ]),
             depth: 0,
@@ -467,12 +503,12 @@ impl GuildsTreeData {
                 let prefix = if is_last { "└── " } else { "├── " };
 
                 let is_active = self.active_dm_user_id() == Some(id);
-                let style = if is_active {
+                let current_style = if is_active {
                     Style::default()
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(Color::Magenta)
+                    style.dm_style
                 };
 
                 let clean_name = clean_text(name);
@@ -480,9 +516,9 @@ impl GuildsTreeData {
                 nodes.push(FlattenedNode {
                     id: TreeNodeId::DirectMessageUser(id.clone()),
                     label: Line::from(vec![
-                        Span::raw(prefix),
-                        Span::styled("@ ", style),
-                        Span::styled(clean_name, style),
+                        Span::styled(prefix, style.tree_guide_style),
+                        Span::styled("@ ", current_style),
+                        Span::styled(clean_name, current_style),
                     ]),
                     depth: 1,
                 });
@@ -496,15 +532,11 @@ impl GuildsTreeData {
 
             let is_active = self.active_guild_id() == Some(guild_id);
             let guild_style = if is_active {
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
+                style.active_guild_style
             } else if guild.has_unread() {
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD)
+                style.guild_unread_style
             } else {
-                Style::default().fg(Color::White)
+                style.guild_style
             };
 
             let clean_name = clean_text(guild.name());
@@ -513,7 +545,7 @@ impl GuildsTreeData {
             nodes.push(FlattenedNode {
                 id: TreeNodeId::Guild(guild_id),
                 label: Line::from(vec![
-                    Span::raw(arrow),
+                    Span::styled(arrow, style.tree_guide_style),
                     Span::styled(clean_name, guild_style),
                 ]),
                 depth: 0,
@@ -521,16 +553,13 @@ impl GuildsTreeData {
 
             if expanded {
                 if let Some(channels) = self.channels(guild_id) {
-                    self.flatten_channels(&mut nodes, channels, state, width);
+                    self.flatten_channels(&mut nodes, channels, state, width, style);
                 } else {
                     nodes.push(FlattenedNode {
                         id: TreeNodeId::Placeholder(guild_id),
                         label: Line::from(vec![
-                            Span::raw("└── "),
-                            Span::styled(
-                                "Loading...",
-                                Style::default().add_modifier(Modifier::ITALIC),
-                            ),
+                            Span::styled("└── ", style.tree_guide_style),
+                            Span::styled("Loading...", style.placeholder_style),
                         ]),
                         depth: 1,
                     });
@@ -547,6 +576,7 @@ impl GuildsTreeData {
         channels: &'a [Channel],
         state: &GuildsTreeState,
         width: u16,
+        style: &GuildsTreeStyle,
     ) {
         let mut categories: std::collections::HashMap<ChannelId, Vec<&Channel>> =
             std::collections::HashMap::new();
@@ -569,7 +599,8 @@ impl GuildsTreeData {
         for (i, channel) in orphan_channels.iter().enumerate() {
             let is_last = i == orphan_channels.len() - 1 && category_channels.is_empty();
             let prefix = if is_last { "└── " } else { "├── " };
-            if let Some(node) = self.create_channel_node(channel, 1, is_last, prefix, width) {
+            if let Some(node) = self.create_channel_node(channel, 1, is_last, prefix, width, style)
+            {
                 nodes.push(node);
             }
         }
@@ -593,21 +624,14 @@ impl GuildsTreeData {
             nodes.push(FlattenedNode {
                 id: TreeNodeId::Category(category.id()),
                 label: Line::from(vec![
-                    Span::raw(cat_prefix),
-                    Span::raw(arrow),
-                    Span::styled(
-                        clean_name.to_uppercase(),
-                        Style::default()
-                            .fg(Color::DarkGray)
-                            .add_modifier(Modifier::ITALIC),
-                    ),
+                    Span::styled(cat_prefix, style.tree_guide_style),
+                    Span::styled(arrow, style.tree_guide_style),
+                    Span::styled(clean_name.to_uppercase(), style.category_style),
                 ]),
                 depth: 1,
             });
 
-            if expanded
-                && let Some(children) = categories.get(&category.id())
-            {
+            if expanded && let Some(children) = categories.get(&category.id()) {
                 let mut sorted_children = children.clone();
                 sorted_children.sort_by_key(|c| c.position());
 
@@ -621,7 +645,7 @@ impl GuildsTreeData {
                     });
 
                     if let Some(node) =
-                        self.create_channel_node(child, 2, is_last_child, &prefix, width)
+                        self.create_channel_node(child, 2, is_last_child, &prefix, width, style)
                     {
                         nodes.push(node);
                     }
@@ -637,22 +661,19 @@ impl GuildsTreeData {
         _is_last: bool,
         prefix: &str,
         width: u16,
+        style: &GuildsTreeStyle,
     ) -> Option<FlattenedNode<'a>> {
         if !channel.kind().is_text_based() && !channel.kind().is_voice() {
             return None;
         }
 
         let is_active = self.active_channel_id() == Some(channel.id());
-        let style = if is_active {
-            Style::default()
-                .fg(Color::Cyan)
-                .bg(Color::Rgb(30, 40, 50))
+        let channel_style = if is_active {
+            style.active_channel_style
         } else if channel.has_unread() {
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD)
+            style.channel_unread_style
         } else {
-            Style::default().fg(Color::Gray)
+            style.channel_style
         };
 
         let prefix_width =
@@ -668,9 +689,8 @@ impl GuildsTreeData {
         let name = channel.display_name();
         let mut clean_name = clean_text(&name);
 
-        let name_width =
-            u16::try_from(unicode_width::UnicodeWidthStr::width(clean_name.as_str()))
-                .unwrap_or(u16::MAX);
+        let name_width = u16::try_from(unicode_width::UnicodeWidthStr::width(clean_name.as_str()))
+            .unwrap_or(u16::MAX);
 
         if name_width > max_name_width {
             let mut w = 0;
@@ -686,8 +706,8 @@ impl GuildsTreeData {
             clean_name = clean_name[..new_len].to_string();
         }
 
-        let mut spans = vec![Span::raw(prefix.to_string())];
-        spans.push(Span::styled(clean_name.clone(), style));
+        let mut spans = vec![Span::styled(prefix.to_string(), style.tree_guide_style)];
+        spans.push(Span::styled(clean_name.clone(), channel_style));
 
         if channel.has_unread() {
             let used_width = prefix_width.saturating_add(
@@ -704,7 +724,7 @@ impl GuildsTreeData {
             } else {
                 spans.push(Span::raw(" "));
             }
-            spans.push(Span::styled("⦁", Style::default().fg(Color::White)));
+            spans.push(Span::styled("⦁", style.channel_unread_style));
         }
 
         Some(FlattenedNode {
@@ -773,7 +793,7 @@ impl StatefulWidget for GuildsTree<'_> {
 
         let inner_area = block.inner(area);
 
-        let flattened_nodes = self.data.flatten(state, inner_area.width);
+        let flattened_nodes = self.data.flatten(state, inner_area.width, &self.style);
 
         if let Some(selected_id) = &state.selected {
             if let Some(index) = flattened_nodes.iter().position(|n| &n.id == selected_id) {
@@ -793,7 +813,30 @@ impl StatefulWidget for GuildsTree<'_> {
                 let mut label = node.label.clone();
 
                 if is_selected {
-                    label = label.patch_style(self.style.selected_style);
+                    let selected_style = self.style.selected_style;
+                    for span in &mut label.spans {
+                        // Apply background to all spans to ensure continuous highlight
+                        if let Some(bg) = selected_style.bg {
+                            span.style = span.style.bg(bg);
+                        }
+
+                        // Check if this span is a tree guide (contains specific drawing characters)
+                        // If it is, we preserve its foreground color (Gray).
+                        // If not, we apply the selected foreground color (Accent).
+                        let content = span.content.as_ref();
+                        let is_guide = content.contains('├')
+                            || content.contains('└')
+                            || content.contains('│');
+
+                        if !is_guide {
+                            if let Some(fg) = selected_style.fg {
+                                span.style = span.style.fg(fg);
+                            }
+                            if !selected_style.add_modifier.is_empty() {
+                                span.style = span.style.add_modifier(selected_style.add_modifier);
+                            }
+                        }
+                    }
                 }
 
                 ListItem::new(label)
@@ -802,7 +845,9 @@ impl StatefulWidget for GuildsTree<'_> {
 
         let list = List::new(items)
             .block(block)
-            .highlight_style(self.style.selected_style);
+            .highlight_style(
+                Style::default().bg(self.style.selected_style.bg.unwrap_or(Color::DarkGray)),
+            );
 
         StatefulWidget::render(list, area, buf, &mut state.list_state);
     }
@@ -847,18 +892,20 @@ mod tests {
         let registry = CommandRegistry::default();
         let mut data = GuildsTreeData::new();
         data.set_guilds(vec![Guild::new(1_u64, "Test Guild")]);
+        let style = GuildsTreeStyle::default();
 
         state.handle_key(
             KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE),
             &data,
             &registry,
+            &style,
         );
-        let flattened = data.flatten(&state, 100);
+        let flattened = data.flatten(&state, 100, &style);
         state.select(flattened[0].id.clone());
 
         let key_j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
 
-        assert!(state.handle_key(key_j, &data, &registry).is_none());
+        assert!(state.handle_key(key_j, &data, &registry, &style).is_none());
     }
 
     #[test]
@@ -877,7 +924,8 @@ mod tests {
 
         data.set_guilds(guilds.clone());
         let state = GuildsTreeState::new();
-        let nodes = data.flatten(&state, 100);
+        let style = GuildsTreeStyle::default();
+        let nodes = data.flatten(&state, 100, &style);
 
         assert_eq!(nodes.len(), guilds.len() + 1);
 
@@ -897,7 +945,8 @@ mod tests {
 
         data.set_guilds(guilds);
         let state = GuildsTreeState::new();
-        let nodes = data.flatten(&state, 100);
+        let style = GuildsTreeStyle::default();
+        let nodes = data.flatten(&state, 100, &style);
 
         assert_eq!(nodes.len(), 101, "Should have DM node + 100 guilds");
     }

@@ -1,4 +1,5 @@
 use crate::domain::ConnectionStatus;
+use crate::presentation::theme::Theme;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -40,6 +41,18 @@ pub struct HeaderBarStyle {
     pub status_disconnected: Style,
     pub status_connecting: Style,
     pub status_error: Style,
+}
+
+impl HeaderBarStyle {
+    #[must_use]
+    pub fn from_theme(theme: &Theme) -> Self {
+        Self {
+            app_name: Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+            ..Self::default()
+        }
+    }
 }
 
 impl Default for HeaderBarStyle {

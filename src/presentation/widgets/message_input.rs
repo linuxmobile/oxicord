@@ -12,6 +12,7 @@ use tui_textarea::TextArea;
 use crate::domain::entities::MessageId;
 use crate::domain::keybinding::Action;
 use crate::presentation::commands::CommandRegistry;
+use crate::presentation::theme::Theme;
 
 const MAX_MESSAGE_LENGTH: usize = 2000;
 const PLACEHOLDER_TEXT: &str = "Type a message...";
@@ -297,14 +298,12 @@ impl MessageInputState<'_> {
         }
     }
 
-    fn setup_block(&self) -> Block<'static> {
-        let border_color = if self.focused {
-            Color::Cyan
+    fn setup_block<'a>(&self, style: &'a MessageInputStyle) -> Block<'a> {
+        let border_style = if self.focused {
+            style.border_style_focused
         } else {
-            Color::Gray
+            style.border_style
         };
-
-        let border_style = Style::default().fg(border_color);
 
         let mut block = Block::default()
             .borders(Borders::ALL)
@@ -313,11 +312,9 @@ impl MessageInputState<'_> {
         match &self.mode {
             MessageInputMode::Reply { author, .. } => {
                 let reply_title = format!(" Replying to @{author} ");
-                block = block.title(reply_title).title_style(
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::ITALIC),
-                );
+                block = block
+                    .title(reply_title)
+                    .title_style(style.reply_indicator_style);
             }
             MessageInputMode::Editing { .. } => {
                 let edit_title = " Editing Message ";
@@ -344,8 +341,8 @@ impl MessageInputState<'_> {
 
     /// Render using manual rendering instead of tui-textarea's widget
     /// to avoid ratatui version incompatibility (project: 0.30, tui-textarea: 0.29)
-    pub fn render(&mut self, area: Rect, buf: &mut Buffer) {
-        let block = self.setup_block();
+    pub fn render_with_style(&mut self, area: Rect, buf: &mut Buffer, style: &MessageInputStyle) {
+        let block = self.setup_block(style);
         let inner = block.inner(area);
         block.render(area, buf);
 
@@ -462,6 +459,20 @@ pub struct MessageInputStyle {
     pub reply_indicator_style: Style,
 }
 
+impl MessageInputStyle {
+    #[must_use]
+    pub fn from_theme(theme: &Theme) -> Self {
+        Self {
+            border_style: Style::default().fg(Color::Gray),
+            border_style_focused: Style::default().fg(theme.accent),
+            reply_indicator_style: Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::ITALIC),
+            ..Self::default()
+        }
+    }
+}
+
 impl Default for MessageInputStyle {
     fn default() -> Self {
         Self {
@@ -477,22 +488,34 @@ impl Default for MessageInputStyle {
     }
 }
 
-pub struct MessageInput;
+#[derive(Default)]
+pub struct MessageInput {
+    style: MessageInputStyle,
+}
 
 impl MessageInput {
     #[must_use]
     pub const fn new() -> Self {
-        Self
+        Self {
+            style: MessageInputStyle {
+                border_style: Style::new(),
+                border_style_focused: Style::new(),
+                text_style: Style::new(),
+                placeholder_style: Style::new(),
+                cursor_style: Style::new(),
+                reply_indicator_style: Style::new(),
+            },
+        }
     }
 
-    pub fn render(state: &mut MessageInputState<'_>, area: Rect, buf: &mut Buffer) {
-        state.render(area, buf);
+    #[must_use]
+    pub const fn style(mut self, style: MessageInputStyle) -> Self {
+        self.style = style;
+        self
     }
-}
 
-impl Default for MessageInput {
-    fn default() -> Self {
-        Self::new()
+    pub fn render(&self, state: &mut MessageInputState<'_>, area: Rect, buf: &mut Buffer) {
+        state.render_with_style(area, buf, &self.style);
     }
 }
 

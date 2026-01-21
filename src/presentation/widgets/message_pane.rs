@@ -19,6 +19,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::domain::entities::{ChannelId, Embed, Message, MessageId};
 
 use super::image_state::ImageAttachment;
+use crate::presentation::theme::Theme;
 use crate::presentation::ui::utils::{clean_text, get_author_color};
 
 const SCROLL_AMOUNT: u16 = 3;
@@ -166,6 +167,7 @@ fn calculate_embed_layout(
     embed: &Embed,
     width: u16,
     markdown_service: &MarkdownService,
+    default_color: Color,
 ) -> RenderedEmbed {
     let mut height = 0;
     let width = width.saturating_sub(2);
@@ -174,7 +176,12 @@ fn calculate_embed_layout(
     let mut description_text = None;
     let mut description_height = 0;
 
-    if embed.provider.as_ref().and_then(|p| p.name.as_ref()).is_some() {
+    if embed
+        .provider
+        .as_ref()
+        .and_then(|p| p.name.as_ref())
+        .is_some()
+    {
         height += 1;
     }
 
@@ -185,14 +192,13 @@ fn calculate_embed_layout(
 
     if let Some(description) = &embed.description {
         let text = markdown_service.render(description, None);
-        
+
         let mut lines_count = 0;
         for line in &text.lines {
             let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-            lines_count +=
-                u16::try_from(wrap_text(&line_text, width as usize).len()).unwrap_or(0);
+            lines_count += u16::try_from(wrap_text(&line_text, width as usize).len()).unwrap_or(0);
         }
-        
+
         description_height = lines_count;
         height += description_height;
         description_text = Some(text);
@@ -205,7 +211,7 @@ fn calculate_embed_layout(
             u8::try_from(c & 0xFF).unwrap_or(0),
         )
     } else {
-        Color::DarkGray
+        default_color
     };
 
     RenderedEmbed {
@@ -458,7 +464,12 @@ impl MessagePaneData {
         &mut self.messages
     }
 
-    pub fn update_layout(&mut self, width: u16, markdown_service: &MarkdownService) {
+    pub fn update_layout(
+        &mut self,
+        width: u16,
+        markdown_service: &MarkdownService,
+        default_color: Color,
+    ) {
         if !self.is_dirty && self.last_layout_width == Some(width) {
             return;
         }
@@ -502,7 +513,12 @@ impl MessagePaneData {
 
             let mut rendered_embeds = Vec::new();
             for embed in message.embeds() {
-                let layout = calculate_embed_layout(embed, content_width, markdown_service);
+                let layout = calculate_embed_layout(
+                    embed,
+                    content_width,
+                    markdown_service,
+                    default_color,
+                );
                 height += layout.height;
                 rendered_embeds.push(layout);
             }
@@ -585,8 +601,6 @@ impl MessagePaneState {
             last_width: 0,
         }
     }
-
-
 
     pub const fn set_focused(&mut self, focused: bool) {
         self.focused = focused;
@@ -729,7 +743,7 @@ impl MessagePaneState {
         } else {
             let max_scroll = content_height.saturating_sub(viewport_height as usize);
             if self.vertical_scroll > max_scroll {
-                 self.vertical_scroll = max_scroll;
+                self.vertical_scroll = max_scroll;
             }
         }
     }
@@ -874,6 +888,25 @@ pub struct MessagePaneStyle {
     pub scrollbar_thumb_style: Style,
 }
 
+impl MessagePaneStyle {
+    #[must_use]
+    pub fn from_theme(theme: &Theme) -> Self {
+        Self {
+            border_style: Style::default().fg(Color::Gray),
+            border_style_focused: Style::default().fg(theme.accent),
+            title_style: Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+            author_style: Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+            selected_style: Style::default().bg(Color::DarkGray),
+            loading_style: Style::default().fg(theme.accent),
+            ..Self::default()
+        }
+    }
+}
+
 impl Default for MessagePaneStyle {
     fn default() -> Self {
         Self {
@@ -946,6 +979,7 @@ impl<'a> MessagePane<'a> {
         message: &Message,
         width: u16,
         markdown_service: &MarkdownService,
+        default_color: Color,
     ) -> u16 {
         let indent_width = u16::try_from(CONTENT_INDENT).unwrap_or(0);
         let content_width = width
@@ -974,7 +1008,13 @@ impl<'a> MessagePane<'a> {
         }
 
         for embed in message.embeds() {
-            height += calculate_embed_layout(embed, content_width, markdown_service).height;
+            height += calculate_embed_layout(
+                embed,
+                content_width,
+                markdown_service,
+                default_color,
+            )
+            .height;
         }
 
         height
@@ -1019,29 +1059,27 @@ impl<'a> MessagePane<'a> {
             );
         }
 
-
         block
     }
 }
 
-fn render_embed(
-    embed: &RenderedEmbed,
-    start_y: i32,
-    area: Rect,
-    buf: &mut Buffer,
-) -> i32 {
+fn render_embed(embed: &RenderedEmbed, start_y: i32, area: Rect, buf: &mut Buffer) -> i32 {
     let mut current_y = start_y;
     let indent = u16::try_from(EMBED_INDENT).unwrap_or(0);
-    
+
     let border_color = embed.color;
 
     let content_x = area.x.saturating_add(indent);
-    let content_width = area.width.saturating_sub(indent).saturating_sub(SCROLLBAR_MARGIN).saturating_sub(2);
+    let content_width = area
+        .width
+        .saturating_sub(indent)
+        .saturating_sub(SCROLLBAR_MARGIN)
+        .saturating_sub(2);
 
     let mut render_line = |text: Line, is_bold: bool| {
         if current_y >= 0 && current_y < i32::from(area.height) {
             let y = u16::try_from(current_y).unwrap_or(0);
-            
+
             if let Some(cell) = buf.cell_mut((content_x, area.y + y)) {
                 cell.set_symbol("▎").set_fg(border_color);
             }
@@ -1050,7 +1088,7 @@ fn render_embed(
             if is_bold {
                 style = style.add_modifier(Modifier::BOLD);
             }
-            
+
             let para = Paragraph::new(text).style(style);
             let text_area = Rect::new(content_x + 2, area.y + y, content_width, 1);
             para.render(text_area, buf);
@@ -1064,57 +1102,59 @@ fn render_embed(
     }
 
     if !embed.title.is_empty() {
-        let mut style = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
+        let mut style = Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD);
         if embed.url.is_some() {
             style = style.add_modifier(Modifier::UNDERLINED);
         }
         for line in &embed.title {
-             let span = Span::styled(line, style);
-             render_line(Line::from(span), true);
+            let span = Span::styled(line, style);
+            render_line(Line::from(span), true);
         }
     }
 
     if let Some(text) = &embed.description {
         let desc_height = i32::from(embed.description_height);
-        
+
         if current_y + desc_height > 0 && current_y < i32::from(area.height) {
-             for i in 0..desc_height {
-                 let y = current_y + i;
-                 if y >= 0 && y < i32::from(area.height) {
-                     let y_u16 = u16::try_from(y).unwrap_or(0);
-                     if let Some(cell) = buf.cell_mut((content_x, area.y + y_u16)) {
-                         cell.set_symbol("▎").set_fg(border_color);
-                     }
-                 }
-             }
+            for i in 0..desc_height {
+                let y = current_y + i;
+                if y >= 0 && y < i32::from(area.height) {
+                    let y_u16 = u16::try_from(y).unwrap_or(0);
+                    if let Some(cell) = buf.cell_mut((content_x, area.y + y_u16)) {
+                        cell.set_symbol("▎").set_fg(border_color);
+                    }
+                }
+            }
 
-             let top_clip = if current_y < 0 {
-                 u16::try_from(current_y.unsigned_abs()).unwrap_or(0)
-             } else {
-                 0
-             };
+            let top_clip = if current_y < 0 {
+                u16::try_from(current_y.unsigned_abs()).unwrap_or(0)
+            } else {
+                0
+            };
 
-             let target_y = u16::try_from(current_y.max(0)).unwrap_or(0);
-             let available_height = area.height.saturating_sub(target_y);
-             let effective_height = u16::try_from(desc_height)
-                 .unwrap_or(0)
-                 .saturating_sub(top_clip)
-                 .min(available_height);
+            let target_y = u16::try_from(current_y.max(0)).unwrap_or(0);
+            let available_height = area.height.saturating_sub(target_y);
+            let effective_height = u16::try_from(desc_height)
+                .unwrap_or(0)
+                .saturating_sub(top_clip)
+                .min(available_height);
 
-             if effective_height > 0 {
-                 let para = Paragraph::new(text.clone())
-                     .wrap(ratatui::widgets::Wrap { trim: false })
-                     .style(Style::default().fg(Color::Gray))
-                     .scroll((top_clip, 0));
-                 
-                 let text_area = Rect::new(
-                     content_x + 2, 
-                     area.y + target_y, 
-                     content_width.saturating_sub(SCROLLBAR_MARGIN), 
-                     effective_height
-                 );
-                 para.render(text_area, buf);
-             }
+            if effective_height > 0 {
+                let para = Paragraph::new(text.clone())
+                    .wrap(ratatui::widgets::Wrap { trim: false })
+                    .style(Style::default().fg(Color::Gray))
+                    .scroll((top_clip, 0));
+
+                let text_area = Rect::new(
+                    content_x + 2,
+                    area.y + target_y,
+                    content_width.saturating_sub(SCROLLBAR_MARGIN),
+                    effective_height,
+                );
+                para.render(text_area, buf);
+            }
         }
         current_y += desc_height;
     }
@@ -1122,7 +1162,11 @@ fn render_embed(
     current_y - start_y
 }
 
-#[allow(clippy::too_many_lines, clippy::items_after_statements, clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_lines,
+    clippy::items_after_statements,
+    clippy::too_many_arguments
+)]
 fn render_ui_message(
     ui_msg: &mut UiMessage,
     style: &MessagePaneStyle,
@@ -1298,7 +1342,7 @@ fn render_ui_message(
 
     for attachment in message.attachments() {
         if attachment.is_image() {
-            continue; // Images are rendered separately below
+            continue;
         }
         if current_msg_y >= 0 && current_msg_y < i32::from(area.height) {
             let indent_span = Span::raw(" ".repeat(CONTENT_INDENT));
@@ -1392,7 +1436,12 @@ fn render_ui_message(
                         if let Some(ref mut protocol) = img_attachment.protocol {
                             use ratatui_image::{Resize, StatefulImage};
                             let image_widget = StatefulImage::default().resize(Resize::Crop(None));
-                            ratatui::widgets::StatefulWidget::render(image_widget, img_area, buf, protocol);
+                            ratatui::widgets::StatefulWidget::render(
+                                image_widget,
+                                img_area,
+                                buf,
+                                protocol,
+                            );
                         }
                     } else {
                         for y in img_area.top()..img_area.bottom() {
@@ -1426,7 +1475,6 @@ fn render_ui_message(
             current_msg_y += 1;
         }
     }
-
 
     for embed in &ui_msg.rendered_embeds {
         let height = render_embed(embed, current_msg_y, area, buf);
@@ -1546,7 +1594,7 @@ impl StatefulWidget for MessagePane<'_> {
             .glyph_set(GlyphSet::unicode())
             .track_style(style.scrollbar_track_style)
             .thumb_style(style.scrollbar_thumb_style);
-        
+
         let scrollbar_area = Rect {
             x: inner_area.x + inner_area.width.saturating_sub(1),
             y: inner_area.y,
@@ -1777,11 +1825,10 @@ mod tests {
         data.set_messages(messages);
 
         let markdown = MarkdownService::new();
-        data.update_layout(100, &markdown);
+        data.update_layout(100, &markdown, Color::Yellow);
 
         let mut state = MessagePaneState::new();
-        state.is_following = true; // Default
-
+        state.is_following = true;
 
         let content_height: usize = data
             .ui_messages()

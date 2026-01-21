@@ -17,6 +17,7 @@ use crate::domain::entities::{
 };
 use crate::domain::keybinding::{Action, Keybind};
 use crate::presentation::commands::{CommandRegistry, HasCommands};
+use crate::presentation::theme::Theme;
 use crate::presentation::widgets::{
     FileExplorerAction, FileExplorerComponent, FocusContext, FooterBar, GuildsTree,
     GuildsTreeAction, GuildsTreeData, GuildsTreeState, HeaderBar, ImageManager, MentionPopup,
@@ -130,6 +131,7 @@ pub struct ChatScreenState {
     /// Image manager for rendering image attachments.
     image_manager: ImageManager,
     disable_user_colors: bool,
+    theme: Theme,
 }
 
 impl ChatScreenState {
@@ -139,6 +141,7 @@ impl ChatScreenState {
         markdown_service: Arc<MarkdownService>,
         user_cache: UserCache,
         disable_user_colors: bool,
+        theme: Theme,
     ) -> Self {
         let mut guilds_tree_state = GuildsTreeState::new();
         guilds_tree_state.set_focused(true);
@@ -169,6 +172,7 @@ impl ChatScreenState {
             has_entered: false,
             image_manager: ImageManager::new(),
             disable_user_colors,
+            theme,
         }
     }
 
@@ -412,9 +416,13 @@ impl ChatScreenState {
     }
 
     fn handle_guilds_tree_key(&mut self, key: KeyEvent) -> ChatKeyResult {
+        use crate::presentation::widgets::GuildsTreeStyle;
+
+        let style = GuildsTreeStyle::from_theme(&self.theme);
+
         if let Some(action) =
             self.guilds_tree_state
-                .handle_key(key, &self.guilds_tree_data, &self.registry)
+                .handle_key(key, &self.guilds_tree_data, &self.registry, &style)
         {
             match action {
                 GuildsTreeAction::SelectChannel(channel_id) => {
@@ -788,7 +796,14 @@ impl ChatScreenState {
         let pane = MessagePane::new(&mut self.message_pane_data, &self.markdown_service);
         let added_height: u16 = new_messages
             .iter()
-            .map(|m| pane.calculate_message_height(m, width, &self.markdown_service))
+            .map(|m| {
+                pane.calculate_message_height(
+                    m,
+                    width,
+                    &self.markdown_service,
+                    self.theme.accent,
+                )
+            })
             .sum();
 
         let added_count = self.message_pane_data.prepend_messages(new_messages);
@@ -1370,11 +1385,18 @@ fn render_explorer_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buff
 }
 
 fn render_header_bar(state: &ChatScreenState, area: Rect, buf: &mut Buffer) {
-    let header = HeaderBar::new(NAME, VERSION).connection_status(state.connection_status());
+    use crate::presentation::widgets::HeaderBarStyle;
+
+    let style = HeaderBarStyle::from_theme(&state.theme);
+    let header = HeaderBar::new(NAME, VERSION)
+        .style(style)
+        .connection_status(state.connection_status());
     Widget::render(header, area, buf);
 }
 
 fn render_footer_bar(state: &ChatScreenState, area: Rect, buf: &mut Buffer) {
+    use crate::presentation::widgets::FooterBarStyle;
+
     let focus_context = state.focus().to_focus_context();
     let message_count = state.message_pane_data().message_count();
 
@@ -1386,7 +1408,9 @@ fn render_footer_bar(state: &ChatScreenState, area: Rect, buf: &mut Buffer) {
 
     let commands = state.get_commands(&state.registry);
 
+    let style = FooterBarStyle::from_theme(&state.theme);
     let footer = FooterBar::new(&commands)
+        .style(style)
         .focus_context(focus_context)
         .right_info(if right_info.is_empty() {
             None
@@ -1421,26 +1445,41 @@ fn render_content_area(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer
 }
 
 fn render_guilds_tree(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) {
+    use crate::presentation::widgets::GuildsTreeStyle;
+
+    let style = GuildsTreeStyle::from_theme(&state.theme);
     let (data, tree_state) = state.guilds_tree_parts_mut();
-    let tree = GuildsTree::new(data);
+    let tree = GuildsTree::new(data).style(style);
     StatefulWidget::render(tree, area, buf, tree_state);
 }
 
 fn render_message_pane(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) {
+    use crate::presentation::widgets::MessagePaneStyle;
+
     let service = state.markdown_service.clone();
     let disable_user_colors = state.disable_user_colors;
 
     let inner_width = area.width.saturating_sub(2);
     state
         .message_pane_data
-        .update_layout(inner_width, &service);
+        .update_layout(inner_width, &service, state.theme.accent);
+
+    let style = MessagePaneStyle::from_theme(&state.theme);
     let (data, pane_state) = state.message_pane_parts_mut();
-    let pane = MessagePane::new(data, &service).with_disable_user_colors(disable_user_colors);
+
+    let pane = MessagePane::new(data, &service)
+        .style(style)
+        .with_disable_user_colors(disable_user_colors);
     StatefulWidget::render(pane, area, buf, pane_state);
 }
 
 fn render_message_input(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) {
-    MessageInput::render(state.message_input_parts_mut(), area, buf);
+    use crate::presentation::widgets::MessageInputStyle;
+
+    let style = MessageInputStyle::from_theme(&state.theme);
+    MessageInput::new()
+        .style(style)
+        .render(state.message_input_parts_mut(), area, buf);
 }
 
 fn render_messages_area(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) {
@@ -1480,6 +1519,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            Theme::new("Orange"),
         );
 
         assert_eq!(state.focus(), ChatFocus::GuildsTree);
@@ -1494,6 +1534,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            Theme::new("Orange"),
         );
 
         assert_eq!(state.focus(), ChatFocus::GuildsTree);
@@ -1515,6 +1556,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            Theme::new("Orange"),
         );
 
         assert!(state.is_guilds_tree_visible());
@@ -1531,6 +1573,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            Theme::new("Orange"),
         );
         state.toggle_guilds_tree();
         state.set_focus(ChatFocus::MessagesList);
@@ -1549,6 +1592,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            Theme::new("Orange"),
         );
         let guilds = vec![
             Guild::new(1_u64, "Guild One"),
@@ -1566,6 +1610,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            Theme::new("Orange"),
         );
 
         let guild_a = Guild::new(1_u64, "Guild A");
@@ -1611,6 +1656,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            Theme::new("Orange"),
         );
 
         let guild_a = Guild::new(1_u64, "Guild A");
@@ -1645,6 +1691,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            Theme::new("Orange"),
         );
 
         let guild_a = Guild::new(1_u64, "Guild A");
@@ -1690,6 +1737,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            Theme::new("Orange"),
         );
 
         assert_eq!(state.focus(), ChatFocus::GuildsTree);
@@ -1700,7 +1748,7 @@ mod tests {
         state.set_channels(guild.id(), vec![channel.clone()]);
 
         state.on_channel_selected(channel.id());
-        
+
         assert_eq!(
             state.focus(),
             ChatFocus::MessagesList,
@@ -1733,6 +1781,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            Theme::new("Orange"),
         );
 
         state.focus_messages_list();

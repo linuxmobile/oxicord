@@ -25,6 +25,7 @@ use crate::infrastructure::discord::{
 };
 use crate::infrastructure::image::{ImageLoadedEvent, ImageLoader};
 use crate::presentation::events::{EventHandler, EventResult};
+use crate::presentation::theme::Theme;
 use crate::presentation::ui::{
     ChatKeyResult, ChatScreen, ChatScreenState, LoginAction, LoginScreen, SplashScreen,
     backend::{Action, Backend, BackendCommand},
@@ -79,6 +80,7 @@ pub struct App {
     /// Last time we checked for images to load.
     last_image_check: Instant,
     disable_user_colors: bool,
+    theme: Theme,
 }
 
 impl App {
@@ -88,6 +90,7 @@ impl App {
         discord_data: Arc<dyn DiscordDataPort>,
         storage_port: Arc<dyn TokenStoragePort>,
         disable_user_colors: bool,
+        theme: Theme,
     ) -> Self {
         let login_use_case = LoginUseCase::new(auth_port, storage_port.clone());
         let resolve_token_use_case = ResolveTokenUseCase::new(storage_port);
@@ -100,7 +103,7 @@ impl App {
 
         Self {
             state: AppState::Login,
-            screen: CurrentScreen::Login(LoginScreen::new()),
+            screen: CurrentScreen::Login(LoginScreen::new().with_theme(theme)),
             login_use_case,
             resolve_token_use_case,
             command_tx,
@@ -125,6 +128,7 @@ impl App {
             image_load_rx: None,
             last_image_check: Instant::now(),
             disable_user_colors,
+            theme,
         }
     }
 
@@ -874,6 +878,7 @@ impl App {
                     self.markdown_service.clone(),
                     self.user_cache.clone(),
                     self.disable_user_colors,
+                    self.theme,
                 );
 
                 chat_state.set_connection_status(self.connection_status);
@@ -1012,7 +1017,7 @@ impl App {
         self.pending_chat_state = None;
         self.typing_manager = TypingIndicatorManager::new();
         self.user_cache.clear();
-        self.screen = CurrentScreen::Login(LoginScreen::new());
+        self.screen = CurrentScreen::Login(LoginScreen::new().with_theme(self.theme));
     }
 
     fn handle_login_error(&mut self, error: &AuthError) {
@@ -1386,7 +1391,8 @@ mod tests {
         let auth = Arc::new(MockAuthPort::new(true));
         let data = Arc::new(MockDiscordData);
         let storage = Arc::new(MockTokenStorage::new());
-        let app = App::new(auth, data, storage, false);
+        let theme = Theme::new("Orange");
+        let app = App::new(auth, data, storage, false, theme);
 
         assert_eq!(app.state, AppState::Login);
     }

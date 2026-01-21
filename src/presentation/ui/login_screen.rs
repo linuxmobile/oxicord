@@ -9,6 +9,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Widget},
 };
 
+use crate::presentation::theme::Theme;
 use crate::presentation::widgets::TextInput;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +26,7 @@ pub struct LoginScreen {
     state: LoginState,
     error_message: Option<String>,
     persist_token: bool,
+    theme: Theme,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,7 +50,14 @@ impl LoginScreen {
             state: LoginState::Input,
             error_message: None,
             persist_token: true,
+            theme: Theme::default(),
         }
+    }
+
+    #[must_use]
+    pub fn with_theme(mut self, theme: Theme) -> Self {
+        self.theme = theme;
+        self
     }
 
     /// Returns current state.
@@ -167,7 +176,7 @@ impl LoginScreen {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan))
+            .border_style(Style::default().fg(self.theme.accent))
             .title(" Oxicord Login ");
 
         let inner = block.inner(content_area);
@@ -192,7 +201,7 @@ impl LoginScreen {
 
         let checkbox = if self.persist_token { "[x]" } else { "[ ]" };
         let persist_line = Line::from(vec![
-            Span::styled(checkbox, Style::default().fg(Color::Yellow)),
+            Span::styled(checkbox, Style::default().fg(self.theme.accent)),
             Span::raw(" Remember token (Tab to toggle)"),
         ]);
         let persist_para = Paragraph::new(persist_line);
@@ -209,7 +218,7 @@ impl LoginScreen {
             LoginState::Validating => Line::from(Span::styled(
                 "Validating token...",
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(self.theme.accent)
                     .add_modifier(Modifier::ITALIC),
             )),
             LoginState::Error => {

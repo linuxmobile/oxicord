@@ -84,6 +84,31 @@ pub struct AppConfig {
     /// Disable user colors (monochrome mode).
     #[arg(long, default_value_t = false)]
     pub disable_user_colors: bool,
+
+    /// Theme configuration.
+    #[command(flatten)]
+    pub theme: ThemeConfig,
+}
+
+/// Theme configuration.
+#[derive(Debug, Clone, clap::Args, Serialize, Deserialize)]
+pub struct ThemeConfig {
+    /// Accent color (name or hex code).
+    #[arg(long, default_value = "Yellow")]
+    #[serde(default = "default_accent_color")]
+    pub accent_color: String,
+}
+
+fn default_accent_color() -> String {
+    "Yellow".to_string()
+}
+
+impl Default for ThemeConfig {
+    fn default() -> Self {
+        Self {
+            accent_color: default_accent_color(),
+        }
+    }
 }
 
 impl AppConfig {
@@ -129,6 +154,7 @@ impl Default for AppConfig {
             log_level: LogLevel::Info,
             mouse: true,
             disable_user_colors: false,
+            theme: ThemeConfig::default(),
         }
     }
 }
