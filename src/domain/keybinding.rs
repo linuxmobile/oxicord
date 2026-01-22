@@ -10,7 +10,6 @@ pub enum Action {
     ToggleFileExplorer,
     ToggleHiddenFiles,
 
-    // Navigation / Focus
     FocusGuilds,
     FocusMessages,
     FocusInput,
@@ -25,7 +24,6 @@ pub enum Action {
     SelectFirst,
     SelectLast,
 
-    // Message List
     ScrollDown,
     ScrollUp,
     ScrollToTop,
@@ -33,7 +31,6 @@ pub enum Action {
     LoadHistory,
     ClearSelection,
 
-    // Message Actions
     SendMessage,
     Reply,
     ReplyNoMention,
@@ -45,12 +42,10 @@ pub enum Action {
     OpenAttachments,
     JumpToReply,
 
-    // Input
     OpenEditor,
     ClearInput,
     Cancel,
 
-    // Guilds Tree Specific
     Collapse,
     Expand,
     MoveToParent,

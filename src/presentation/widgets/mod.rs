@@ -24,7 +24,7 @@ pub use message_input::{
     MessageInput, MessageInputAction, MessageInputMode, MessageInputState, MessageInputStyle,
 };
 pub use message_pane::{
-    LoadingState, MessagePane, MessagePaneAction, MessagePaneData, MessagePaneState,
-    MessagePaneStyle, UiMessage,
+    ForumState, LoadingState, MessagePane, MessagePaneAction, MessagePaneData, MessagePaneState,
+    MessagePaneStyle, UiMessage, ViewMode,
 };
 pub use status_bar::{StatusBar, StatusLevel};

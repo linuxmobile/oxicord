@@ -21,7 +21,7 @@ impl ImageId {
         let mut hasher = Sha256::new();
         hasher.update(url.as_bytes());
         let result = hasher.finalize();
-        Self(hex::encode(&result[..16])) // Use first 16 bytes for shorter ID
+        Self(hex::encode(&result[..16]))
     }
 
     /// Returns the inner string.
@@ -200,7 +200,7 @@ mod tests {
         let url = "https://cdn.discordapp.com/attachments/123/456/image.png";
         let id = ImageId::from_url(url);
         assert!(!id.0.is_empty());
-        assert_eq!(id.0.len(), 32); // 16 bytes = 32 hex chars
+        assert_eq!(id.0.len(), 32);
     }
 
     #[test]

@@ -18,26 +18,22 @@ pub const DEFAULT_HEIGHT: u32 = 600;
 /// The optimized URL with query parameters, or the original URL if not a Discord CDN URL.
 #[must_use]
 pub fn optimize_cdn_url(url: &str, width: u32, height: u32) -> String {
-    // Only optimize Discord CDN URLs
     if !url.contains("cdn.discordapp.com") && !url.contains("media.discordapp.net") {
         return url.to_string();
     }
 
-    // Parse the URL to check for existing query params
     let (base_url, existing_params) = if let Some(idx) = url.find('?') {
         (&url[..idx], Some(&url[idx + 1..]))
     } else {
         (url, None)
     };
 
-    // Build the query string
     let mut params = vec![
         format!("format=webp"),
         format!("width={width}"),
         format!("height={height}"),
     ];
 
-    // Preserve any existing parameters that we don't override
     if let Some(existing) = existing_params {
         for param in existing.split('&') {
             let key = param.split('=').next().unwrap_or("");
@@ -59,18 +55,12 @@ pub fn optimize_cdn_url_default(url: &str) -> String {
 /// Extracts the attachment ID from a Discord CDN URL.
 #[must_use]
 pub fn extract_attachment_id(url: &str) -> Option<String> {
-    // Discord URLs look like:
-    // https://cdn.discordapp.com/attachments/{channel_id}/{attachment_id}/{filename}
-    // or
-    // https://media.discordapp.net/attachments/{channel_id}/{attachment_id}/{filename}
-
     if !url.contains("discordapp.com") && !url.contains("discordapp.net") {
         return None;
     }
 
     let path = url.split("attachments/").nth(1)?;
 
-    // Get channel_id/attachment_id part
     let parts: Vec<&str> = path.split('/').collect();
     if parts.len() >= 2 {
         Some(parts[1].split('?').next()?.to_string())

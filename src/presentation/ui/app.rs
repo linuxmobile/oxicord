@@ -171,7 +171,6 @@ impl App {
             };
             let terminal_event = terminal_events.next();
 
-            // Image load event future
             let image_load_future = match &mut self.image_load_rx {
                 Some(rx) => futures_util::future::Either::Left(rx.recv()),
                 None => futures_util::future::Either::Right(std::future::pending()),
@@ -213,7 +212,6 @@ impl App {
                         }
                     }
 
-                    // Debounced image load check
                     if self.last_image_check.elapsed() > IMAGE_CHECK_INTERVAL {
                         self.trigger_image_loads();
                         self.last_image_check = Instant::now();
@@ -294,7 +292,6 @@ impl App {
                 frame.render_widget(screen, frame.area());
             }
             CurrentScreen::Chat(state) => {
-                // Update image protocols before rendering (only when width changes)
                 let width = frame.area().width;
                 state.update_visible_image_protocols(width);
                 frame.render_stateful_widget(ChatScreen::new(), frame.area(), state);
@@ -302,6 +299,7 @@ impl App {
         }
     }
 
+#[allow(clippy::too_many_lines)]
     fn handle_key(&mut self, key: KeyEvent) -> EventResult {
         if EventHandler::is_quit_event(&key) && self.state == AppState::Login {
             return EventResult::Exit;
@@ -339,6 +337,16 @@ impl App {
                     self.subscribe_to_channel(guild_id, channel_id);
                 }
                 self.load_channel_messages(channel_id);
+            }
+            ChatKeyResult::LoadForumThreads {
+                channel_id,
+                guild_id,
+                offset,
+            } => {
+                if let Some(guild_id) = guild_id {
+                    self.subscribe_to_channel(guild_id, channel_id);
+                }
+                self.load_forum_threads(channel_id, guild_id, offset);
             }
             ChatKeyResult::LoadDmMessages {
                 channel_id,
@@ -465,7 +473,6 @@ impl App {
         self.screen = CurrentScreen::Splash(SplashScreen::new());
         self.gateway_ready = false;
 
-        // Initialize image loader
         let (img_tx, img_rx) = mpsc::unbounded_channel();
         let action_tx = self.action_tx.clone();
         tokio::spawn(async move {
@@ -822,6 +829,19 @@ impl App {
         }
     }
 
+    fn load_forum_threads(&mut self, channel_id: ChannelId, guild_id: Option<GuildId>, offset: u32) {
+        self.typing_manager.clear_channel(channel_id);
+
+        if let Some(ref token) = self.current_token {
+            let _ = self.command_tx.send(BackendCommand::LoadForumThreads {
+                channel_id,
+                guild_id,
+                token: token.clone(),
+                offset,
+            });
+        }
+    }
+
     /// Send a subscription to the gateway to receive typing events for a channel.
     /// This is required for user accounts to receive `TYPING_START` events.
     fn subscribe_to_channel(&mut self, guild_id: GuildId, channel_id: ChannelId) {
@@ -975,6 +995,21 @@ impl App {
                 {
                     state.set_message_error(error);
                     state.focus_guilds_tree();
+                }
+            }
+            Action::ForumThreadsLoaded { channel_id, threads, offset } => {
+                if let CurrentScreen::Chat(state) = &mut self.screen
+                    && state.message_pane_data().channel_id() == Some(channel_id)
+                {
+                    state.set_forum_threads(threads, offset);
+                }
+            }
+            Action::ForumThreadsLoadError { channel_id, error } => {
+                warn!(channel_id = %channel_id, error = %error, "Failed to load forum threads");
+                if let CurrentScreen::Chat(state) = &mut self.screen
+                    && state.message_pane_data().channel_id() == Some(channel_id)
+                {
+                    state.set_message_error(error);
                 }
             }
             Action::MessageSent(message) => {
@@ -1383,6 +1418,17 @@ mod tests {
             _message_id: MessageId,
         ) -> Result<(), AuthError> {
             Ok(())
+        }
+
+        async fn fetch_forum_threads(
+            &self,
+            _token: &AuthToken,
+            _channel_id: ChannelId,
+            _guild_id: Option<GuildId>,
+            _offset: u32,
+            _limit: Option<u8>,
+        ) -> Result<Vec<crate::domain::entities::ForumThread>, AuthError> {
+            Ok(vec![])
         }
     }
 

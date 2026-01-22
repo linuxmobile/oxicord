@@ -25,7 +25,6 @@ impl DiskImageCache {
     /// # Errors
     /// Returns error if cache directory cannot be created.
     pub async fn new(cache_dir: PathBuf, max_size: u64) -> CacheResult<Self> {
-        // Ensure cache directory exists
         fs::create_dir_all(&cache_dir)
             .await
             .map_err(|e| CacheError::IoError(format!("Failed to create cache dir: {e}")))?;
@@ -35,7 +34,6 @@ impl DiskImageCache {
             max_size,
         };
 
-        // Clean up old entries if over size
         cache.cleanup_if_needed().await;
 
         Ok(cache)
@@ -72,7 +70,6 @@ impl DiskImageCache {
     pub async fn get(&self, id: &ImageId) -> Option<Arc<image::DynamicImage>> {
         let bytes = self.get_bytes(id).await?;
 
-        // Decode in a blocking task to avoid blocking async runtime
         let result = tokio::task::spawn_blocking(move || image::load_from_memory(&bytes)).await;
 
         match result {
@@ -112,7 +109,6 @@ impl DiskImageCache {
 
         debug!(id = %id, path = %path.display(), size = bytes.len(), "Stored image in disk cache");
 
-        // Check if cleanup is needed
         self.cleanup_if_needed().await;
 
         Ok(())
@@ -209,7 +205,6 @@ impl DiskImageCache {
             "Disk cache over limit, cleaning up"
         );
 
-        // Get all cache files with their metadata
         let Ok(mut entries) = fs::read_dir(&self.cache_dir).await else {
             return;
         };
@@ -228,12 +223,10 @@ impl DiskImageCache {
             }
         }
 
-        // Sort by access time (oldest first)
         files.sort_by_key(|(_, time, _)| *time);
 
-        // Remove oldest files until under limit
         let mut freed = 0u64;
-        let target = current_size - self.max_size + (self.max_size / 10); // Free 10% extra
+        let target = current_size - self.max_size + (self.max_size / 10);
 
         for (path, _, size) in files {
             if freed >= target {

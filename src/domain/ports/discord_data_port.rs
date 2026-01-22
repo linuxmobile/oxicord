@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 
 use crate::domain::entities::{
-    AuthToken, Channel, ChannelId, Guild, Message, MessageId, ReadState,
+    AuthToken, Channel, ChannelId, ForumThread, Guild, GuildId, Message, MessageId, ReadState,
 };
 use crate::domain::errors::AuthError;
 
@@ -164,4 +164,14 @@ pub trait DiscordDataPort: Send + Sync {
         channel_id: ChannelId,
         message_id: MessageId,
     ) -> Result<(), AuthError>;
+
+    /// Fetches forum threads for a channel.
+    async fn fetch_forum_threads(
+        &self,
+        token: &AuthToken,
+        channel_id: ChannelId,
+        guild_id: Option<GuildId>,
+        offset: u32,
+        limit: Option<u8>,
+    ) -> Result<Vec<ForumThread>, AuthError>;
 }

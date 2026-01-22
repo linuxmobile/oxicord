@@ -140,8 +140,6 @@ impl ImageCachePort for MemoryImageCache {
     }
 
     fn len(&self) -> usize {
-        // This is a best-effort estimate; actual size may differ slightly
-        // due to concurrent modifications
         let cache = self.cache.try_read();
         cache.map(|c| c.len()).unwrap_or(0)
     }
@@ -193,7 +191,6 @@ mod tests {
         cache.put(id2.clone(), img.clone()).await;
         cache.put(id3.clone(), img.clone()).await;
 
-        // id1 should be evicted (LRU)
         assert!(cache.get(&id1).await.is_none());
         assert!(cache.get(&id2).await.is_some());
         assert!(cache.get(&id3).await.is_some());
@@ -207,9 +204,7 @@ mod tests {
 
         cache.put(id.clone(), img).await;
 
-        // Hit
         let _ = cache.get(&id).await;
-        // Miss
         let _ = cache.get(&ImageId::new("missing")).await;
 
         let stats = cache.stats();
@@ -229,10 +224,8 @@ mod tests {
         cache.put(id1.clone(), img.clone()).await;
         cache.put(id2.clone(), img.clone()).await;
 
-        // Peek at id1 (should not promote it)
         let _ = cache.peek(&id1).await;
 
-        // Add id3, should evict id1 (since peek doesn't promote)
         let id3 = ImageId::new("test3");
         cache.put(id3.clone(), img).await;
 

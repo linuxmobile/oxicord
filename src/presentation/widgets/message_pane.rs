@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::application::services::markdown_service::{MarkdownService, MentionResolver};
-use crate::domain::entities::ImageId;
+use crate::domain::entities::{ChannelId, Embed, ForumThread, ImageId, Message, MessageId};
 use crate::domain::keybinding::Action;
+
 use crate::presentation::commands::CommandRegistry;
 
 use crossterm::event::KeyEvent;
@@ -16,8 +17,6 @@ use ratatui::{
 use tui_scrollbar::{GlyphSet, ScrollBar, ScrollLengths};
 use unicode_width::UnicodeWidthStr;
 
-use crate::domain::entities::{ChannelId, Embed, Message, MessageId};
-
 use super::image_state::ImageAttachment;
 use crate::presentation::theme::Theme;
 use crate::presentation::ui::utils::{clean_text, get_author_color};
@@ -30,6 +29,7 @@ const DM_CHANNEL_PREFIX: &str = "[ ";
 const TIMESTAMP_WIDTH: usize = 6;
 const CONTENT_INDENT: usize = 6;
 const EMBED_INDENT: usize = 6;
+const THREAD_CARD_HEIGHT: u16 = 6;
 
 /// Pre-calculated layout data for an embed.
 pub struct RenderedEmbed {
@@ -242,6 +242,8 @@ pub enum MessagePaneAction {
     OpenAttachments(MessageId),
     JumpToReply(MessageId),
     LoadHistory,
+    OpenThread(ChannelId),
+    CloseThread,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -560,6 +562,22 @@ impl MessagePaneData {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ForumState {
+    pub threads: Vec<ForumThread>,
+    pub selected_idx: usize,
+    pub scroll_offset: u16,
+    /// When true, scroll should be recalculated on next render to show selection.
+    pub needs_scroll_to_selection: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum ViewMode {
+    #[default]
+    Messages,
+    Forum(ForumState),
+}
+
 impl MentionResolver for MessagePaneData {
     fn resolve(&self, user_id: &str) -> Option<String> {
         self.authors.get(user_id).cloned()
@@ -573,6 +591,7 @@ impl Default for MessagePaneData {
 }
 
 pub struct MessagePaneState {
+    pub view_mode: ViewMode,
     pub vertical_scroll: usize,
     selected_index: Option<usize>,
     focused: bool,
@@ -587,6 +606,7 @@ impl MessagePaneState {
     #[must_use]
     pub fn new() -> Self {
         Self {
+            view_mode: ViewMode::Messages,
             vertical_scroll: 0,
             selected_index: None,
             focused: false,
@@ -696,6 +716,7 @@ impl MessagePaneState {
         self.vertical_scroll = 0;
         self.content_height = 0;
         self.viewport_height = 0;
+        self.view_mode = ViewMode::Messages;
     }
 
     #[allow(clippy::missing_const_for_fn)]
@@ -744,12 +765,55 @@ impl MessagePaneState {
         }
     }
 
+#[allow(clippy::too_many_lines)]
     pub fn handle_key(
         &mut self,
         key: KeyEvent,
         data: &MessagePaneData,
         registry: &CommandRegistry,
     ) -> Option<MessagePaneAction> {
+        if let ViewMode::Forum(forum_state) = &mut self.view_mode {
+            match registry.find_action(key) {
+                Some(Action::NavigateDown) => {
+                    let count = forum_state.threads.len();
+                    if count > 0 {
+                        forum_state.selected_idx = (forum_state.selected_idx + 1).min(count - 1);
+                        
+                        let visible_items = self.viewport_height / THREAD_CARD_HEIGHT;
+                        let selected = u16::try_from(forum_state.selected_idx).unwrap_or(u16::MAX);
+                        let offset = forum_state.scroll_offset;
+                        
+                        if selected >= offset + visible_items {
+                             forum_state.scroll_offset = (selected + 1).saturating_sub(visible_items);
+                        }
+                    }
+                    return None;
+                }
+                Some(Action::NavigateUp) => {
+                    if forum_state.selected_idx == 0 {
+                        return Some(MessagePaneAction::LoadHistory);
+                    }
+                    forum_state.selected_idx = forum_state.selected_idx.saturating_sub(1);
+                    
+                    let selected = u16::try_from(forum_state.selected_idx).unwrap_or(0);
+                    if selected < forum_state.scroll_offset {
+                        forum_state.scroll_offset = selected;
+                    }
+                    return None;
+                }
+                Some(Action::Select | Action::NavigateRight) => {
+                    if let Some(thread) = forum_state.threads.get(forum_state.selected_idx) {
+                        return Some(MessagePaneAction::OpenThread(thread.id));
+                    }
+                    return None;
+                }
+                Some(Action::Cancel | Action::NavigateLeft) => {
+                    return Some(MessagePaneAction::CloseThread);
+                }
+                _ => return None,
+            }
+        }
+
         let message_count = data.message_count();
 
         match registry.find_action(key) {
@@ -801,8 +865,12 @@ impl MessagePaneState {
                 None
             }
             Some(Action::Cancel | Action::ClearSelection) => {
-                self.clear_selection();
-                Some(MessagePaneAction::ClearSelection)
+                if self.selected_index.is_some() {
+                    self.clear_selection();
+                    Some(MessagePaneAction::ClearSelection)
+                } else {
+                    Some(MessagePaneAction::CloseThread)
+                }
             }
             Some(Action::Reply) => {
                 self.get_selected_message_id(data)
@@ -1051,6 +1119,310 @@ impl<'a> MessagePane<'a> {
         }
 
         block
+    }
+
+    fn render_messages(&mut self, area: Rect, buf: &mut Buffer, state: &mut MessagePaneState) {
+        let block = self.build_block(state);
+        let inner_area = block.inner(area);
+        block.render(area, buf);
+
+        let MessagePane {
+            data,
+            style,
+            disable_user_colors,
+        } = self;
+
+        match data.loading_state() {
+            LoadingState::Loading => {
+                let loading = Paragraph::new("Loading messages...").style(style.loading_style);
+                loading.render(inner_area, buf);
+                return;
+            }
+            LoadingState::Error => {
+                let error_msg = data.error_message.as_deref().unwrap_or("Unknown error");
+                let error = Paragraph::new(format!("Error: {error_msg}")).style(style.error_style);
+                error.render(inner_area, buf);
+                return;
+            }
+            LoadingState::Idle => {
+                let empty =
+                    Paragraph::new("Select a channel to view messages").style(style.empty_style);
+                empty.render(inner_area, buf);
+                return;
+            }
+            LoadingState::Loaded => {}
+        }
+
+        if data.is_empty() {
+            let empty = Paragraph::new("No messages in this channel").style(style.empty_style);
+            empty.render(inner_area, buf);
+            return;
+        }
+
+        let content_height: usize = data
+            .ui_messages()
+            .iter()
+            .map(|m| m.estimated_height as usize)
+            .sum();
+        state.update_dimensions(content_height, inner_area.height);
+        state.last_width = inner_area.width;
+
+        let mut offset = state.vertical_scroll;
+
+        if let Some(selected_idx) = state.selected_index
+            && state.scroll_to_selection
+        {
+            let mut selection_y_start = 0;
+            let mut selection_height = 0;
+
+            for (i, msg) in data.ui_messages().iter().enumerate() {
+                let h = msg.estimated_height as usize;
+                if i == selected_idx {
+                    selection_height = h;
+                    break;
+                }
+                selection_y_start += h;
+            }
+
+            let selection_y_end = selection_y_start + selection_height;
+            let viewport_height = inner_area.height as usize;
+
+            if selection_y_start < offset {
+                offset = selection_y_start;
+            } else if selection_y_end > offset + viewport_height {
+                offset = selection_y_end.saturating_sub(viewport_height);
+            }
+
+            state.vertical_scroll = offset;
+            state.scroll_to_selection = false;
+        }
+
+        let mut current_y: i32 = 0;
+
+        for (idx, ui_msg) in data.ui_messages_mut().iter_mut().enumerate() {
+            let h = ui_msg.estimated_height as usize;
+            let current_y_usize = usize::try_from(current_y).unwrap_or(0);
+
+            if current_y_usize + h > offset && current_y_usize < offset + inner_area.height as usize
+            {
+                let render_y = current_y - i32::try_from(offset).unwrap_or(0);
+                render_ui_message(
+                    ui_msg,
+                    style,
+                    idx,
+                    render_y,
+                    inner_area,
+                    buf,
+                    state,
+                    *disable_user_colors,
+                );
+            }
+            current_y += i32::try_from(h).unwrap_or(0);
+        }
+
+        let scroll_lengths = ScrollLengths {
+            content_len: content_height,
+            viewport_len: inner_area.height as usize,
+        };
+
+        let scrollbar = ScrollBar::vertical(scroll_lengths)
+            .offset(state.vertical_scroll)
+            .glyph_set(GlyphSet::unicode())
+            .track_style(style.scrollbar_track_style)
+            .thumb_style(style.scrollbar_thumb_style);
+
+        let scrollbar_area = Rect {
+            x: inner_area.x + inner_area.width.saturating_sub(1),
+            y: inner_area.y,
+            width: 1,
+            height: inner_area.height,
+        };
+        scrollbar.render(scrollbar_area, buf);
+    }
+
+    fn render_forum(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        state: &mut MessagePaneState,
+    ) {
+        let focused = state.is_focused();
+        let block = self.build_block(state);
+        let inner_area = block.inner(area);
+        block.render(area, buf);
+        
+        state.update_dimensions(0, inner_area.height);
+
+        let ViewMode::Forum(forum_state) = &mut state.view_mode else {
+            return;
+        };
+
+        if forum_state.threads.is_empty() {
+            let empty = Paragraph::new("No threads found").style(self.style.empty_style);
+            empty.render(inner_area, buf);
+            return;
+        }
+
+        let visible_count = inner_area.height / THREAD_CARD_HEIGHT;
+        let visible_count_usize = usize::from(visible_count);
+        
+        if forum_state.needs_scroll_to_selection && visible_count > 0 {
+            let selected = u16::try_from(forum_state.selected_idx).unwrap_or(u16::MAX);
+            forum_state.scroll_offset = (selected + 1).saturating_sub(visible_count);
+            forum_state.needs_scroll_to_selection = false;
+        }
+        
+        let mut start_idx = forum_state.scroll_offset as usize;
+        
+        if start_idx >= forum_state.threads.len() {
+            start_idx = forum_state.threads.len().saturating_sub(1);
+            forum_state.scroll_offset = u16::try_from(start_idx).unwrap_or(0);
+        }
+
+        let count_to_render = visible_count_usize.min(forum_state.threads.len() - start_idx);
+        let end_idx = start_idx + count_to_render;
+        
+        let mut current_y = inner_area.y;
+        
+        for (i, thread) in forum_state.threads.iter().enumerate().skip(start_idx).take(count_to_render) {
+             let is_last = i == end_idx - 1;
+             
+             let height = if is_last {
+                 inner_area.bottom().saturating_sub(current_y)
+             } else {
+                 THREAD_CARD_HEIGHT
+             };
+             
+             if height == 0 { break; }
+
+             let card_area = Rect::new(inner_area.x, current_y, inner_area.width - 1, height);
+             self.render_thread_card(card_area, buf, thread, i == forum_state.selected_idx, focused);
+             
+             current_y += height;
+        }
+        
+        let scroll_lengths = ScrollLengths {
+            content_len: forum_state.threads.len(),
+            viewport_len: visible_count_usize,
+        };
+        let scrollbar = ScrollBar::vertical(scroll_lengths)
+            .offset(forum_state.scroll_offset as usize)
+            .glyph_set(GlyphSet::unicode())
+            .track_style(self.style.scrollbar_track_style)
+            .thumb_style(self.style.scrollbar_thumb_style);
+            
+        let scrollbar_area = Rect {
+            x: inner_area.x + inner_area.width.saturating_sub(1),
+            y: inner_area.y,
+            width: 1,
+            height: inner_area.height,
+        };
+        scrollbar.render(scrollbar_area, buf);
+    }
+
+    fn render_thread_card(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        thread: &ForumThread,
+        selected: bool,
+        focused: bool,
+    ) {
+         let card_style = if selected {
+             Style::default().bg(Color::Rgb(30, 30, 30))
+         } else {
+             Style::default()
+         };
+         
+         for y in area.top()..area.bottom() {
+             for x in area.left()..area.right() {
+                 if let Some(cell) = buf.cell_mut((x, y)) {
+                     cell.reset();
+                     cell.set_style(card_style);
+                 }
+             }
+         }
+         
+         if selected && focused {
+             for y in area.top()..area.bottom() {
+                 if let Some(cell) = buf.cell_mut((area.left(), y)) {
+                     cell.set_symbol("│");
+                     cell.set_style(self.style.border_style_focused);
+                 }
+             }
+         }
+
+         let content_area = Rect::new(area.x + 2, area.y + 1, area.width.saturating_sub(4), area.height.saturating_sub(2));
+         
+         let title_style = self.style.title_style;
+         let mut line1_spans = vec![
+             Span::styled(&thread.name, title_style),
+             Span::raw(" "),
+         ];
+         if thread.new {
+              line1_spans.push(Span::styled(" NEW ", Style::default().bg(Color::Yellow).fg(Color::Black).add_modifier(Modifier::BOLD)));
+         }
+         let line1 = Line::from(line1_spans);
+         buf.set_line(content_area.x, content_area.y, &line1, content_area.width);
+         
+         let author_name = thread.starter_message
+             .as_ref()
+             .map(|m| m.author().display_name())
+             .or_else(|| self.data.get_author_name(&thread.author_id).map(String::from))
+             .unwrap_or_else(|| thread.author_id.clone());
+         
+         let time_str = thread.last_activity_at
+             .as_deref()
+             .map_or_else(|| "?".to_string(), crate::presentation::ui::utils::format_iso_timestamp);
+         
+         let mut meta_spans = vec![
+             Span::styled(format!("@{author_name}"), self.style.author_style),
+             Span::styled(" • ", Style::default().fg(Color::Gray)),
+             Span::styled(time_str, Style::default().fg(Color::Gray)),
+             Span::styled(" | ", Style::default().fg(Color::Gray)),
+         ];
+         
+         for tag_id in &thread.applied_tags {
+             meta_spans.push(Span::styled(format!("[{tag_id}] "), Style::default().fg(Color::Blue)));
+         }
+         
+         let line2 = Line::from(meta_spans);
+         buf.set_line(content_area.x, content_area.y + 1, &line2, content_area.width);
+         
+         if let Some(starter) = &thread.starter_message {
+             let content = starter.content();
+             let wrapped = wrap_text(content, content_area.width as usize);
+             for i in 0..2 {
+                 if let Some(line) = wrapped.get(i) {
+                     buf.set_string(content_area.x, content_area.y + 2 + u16::try_from(i).unwrap_or(0), line, self.style.content_style);
+                 }
+             }
+         }
+         
+         let upvotes = thread.reaction_count;
+         
+         let replies = thread.message_count;
+         
+         let footer_text = format!("▲ {upvotes}  💬 {replies}");
+         let footer_span = Span::styled(footer_text, Style::default().fg(Color::Green));
+         let footer_line = Line::from(footer_span).alignment(Alignment::Right);
+         
+         let footer_para = Paragraph::new(footer_line);
+         let footer_area = Rect::new(content_area.x, area.bottom() - 2, content_area.width, 1);
+         footer_para.render(footer_area, buf);
+    }
+}
+
+impl StatefulWidget for MessagePane<'_> {
+    type State = MessagePaneState;
+
+    fn render(mut self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+        match &mut state.view_mode {
+            ViewMode::Messages => self.render_messages(area, buf, state),
+            ViewMode::Forum(_) => {
+                self.render_forum(area, buf, state);
+            }
+        }
     }
 }
 
@@ -1470,129 +1842,6 @@ fn render_ui_message(
     for embed in &ui_msg.rendered_embeds {
         let height = render_embed(embed, current_msg_y, area, buf);
         current_msg_y += height;
-    }
-}
-
-impl StatefulWidget for MessagePane<'_> {
-    type State = MessagePaneState;
-
-    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let block = self.build_block(state);
-        let inner_area = block.inner(area);
-        block.render(area, buf);
-
-        let MessagePane {
-            data,
-            style,
-            disable_user_colors,
-        } = self;
-
-        match data.loading_state() {
-            LoadingState::Loading => {
-                let loading = Paragraph::new("Loading messages...").style(style.loading_style);
-                loading.render(inner_area, buf);
-                return;
-            }
-            LoadingState::Error => {
-                let error_msg = data.error_message.as_deref().unwrap_or("Unknown error");
-                let error = Paragraph::new(format!("Error: {error_msg}")).style(style.error_style);
-                error.render(inner_area, buf);
-                return;
-            }
-            LoadingState::Idle => {
-                let empty =
-                    Paragraph::new("Select a channel to view messages").style(style.empty_style);
-                empty.render(inner_area, buf);
-                return;
-            }
-            LoadingState::Loaded => {}
-        }
-
-        if data.is_empty() {
-            let empty = Paragraph::new("No messages in this channel").style(style.empty_style);
-            empty.render(inner_area, buf);
-            return;
-        }
-
-        let content_height: usize = data
-            .ui_messages()
-            .iter()
-            .map(|m| m.estimated_height as usize)
-            .sum();
-        state.update_dimensions(content_height, inner_area.height);
-        state.last_width = inner_area.width;
-
-        let mut offset = state.vertical_scroll;
-
-        if let Some(selected_idx) = state.selected_index
-            && state.scroll_to_selection
-        {
-            let mut selection_y_start = 0;
-            let mut selection_height = 0;
-
-            for (i, msg) in data.ui_messages().iter().enumerate() {
-                let h = msg.estimated_height as usize;
-                if i == selected_idx {
-                    selection_height = h;
-                    break;
-                }
-                selection_y_start += h;
-            }
-
-            let selection_y_end = selection_y_start + selection_height;
-            let viewport_height = inner_area.height as usize;
-
-            if selection_y_start < offset {
-                offset = selection_y_start;
-            } else if selection_y_end > offset + viewport_height {
-                offset = selection_y_end.saturating_sub(viewport_height);
-            }
-
-            state.vertical_scroll = offset;
-            state.scroll_to_selection = false;
-        }
-
-        let mut current_y: i32 = 0;
-
-        for (idx, ui_msg) in data.ui_messages_mut().iter_mut().enumerate() {
-            let h = ui_msg.estimated_height as usize;
-            let current_y_usize = usize::try_from(current_y).unwrap_or(0);
-
-            if current_y_usize + h > offset && current_y_usize < offset + inner_area.height as usize
-            {
-                let render_y = current_y - i32::try_from(offset).unwrap_or(0);
-                render_ui_message(
-                    ui_msg,
-                    &style,
-                    idx,
-                    render_y,
-                    inner_area,
-                    buf,
-                    state,
-                    disable_user_colors,
-                );
-            }
-            current_y += i32::try_from(h).unwrap_or(0);
-        }
-
-        let scroll_lengths = ScrollLengths {
-            content_len: content_height,
-            viewport_len: inner_area.height as usize,
-        };
-
-        let scrollbar = ScrollBar::vertical(scroll_lengths)
-            .offset(state.vertical_scroll)
-            .glyph_set(GlyphSet::unicode())
-            .track_style(style.scrollbar_track_style)
-            .thumb_style(style.scrollbar_thumb_style);
-
-        let scrollbar_area = Rect {
-            x: inner_area.x + inner_area.width.saturating_sub(1),
-            y: inner_area.y,
-            width: 1,
-            height: inner_area.height,
-        };
-        scrollbar.render(scrollbar_area, buf);
     }
 }
 

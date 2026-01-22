@@ -19,7 +19,6 @@ pub enum Action {
         dms: Vec<DirectMessageChannel>,
         read_states: std::collections::HashMap<ChannelId, crate::domain::entities::ReadState>,
     },
-    // New Actions
     GuildChannelsLoaded {
         guild_id: GuildId,
         channels: Vec<crate::domain::entities::Channel>,
@@ -33,6 +32,15 @@ pub enum Action {
         messages: Vec<Message>,
     },
     ChannelMessagesLoadError {
+        channel_id: ChannelId,
+        error: String,
+    },
+    ForumThreadsLoaded {
+        channel_id: ChannelId,
+        threads: Vec<crate::domain::entities::ForumThread>,
+        offset: u32,
+    },
+    ForumThreadsLoadError {
         channel_id: ChannelId,
         error: String,
     },
@@ -60,6 +68,12 @@ pub enum BackendCommand {
     LoadChannelMessages {
         channel_id: ChannelId,
         token: AuthToken,
+    },
+    LoadForumThreads {
+        channel_id: ChannelId,
+        guild_id: Option<GuildId>,
+        token: AuthToken,
+        offset: u32,
     },
     LoadHistory {
         channel_id: ChannelId,
@@ -157,6 +171,27 @@ impl Backend {
                     Err(e) => {
                         warn!(channel_id = %channel_id, error = %e, "Failed to load messages for channel");
                         let _ = self.action_tx.send(Action::ChannelMessagesLoadError {
+                            channel_id,
+                            error: e.to_string(),
+                        });
+                    }
+                }
+            }
+            BackendCommand::LoadForumThreads { channel_id, guild_id, token, offset } => {
+                match self.discord_data.fetch_forum_threads(&token, channel_id, guild_id, offset, Some(50)).await {
+                    Ok(mut threads) => {
+                        debug!(channel_id = %channel_id, count = threads.len(), "Loaded forum threads");
+                        threads.reverse();
+                        
+                        let _ = self.action_tx.send(Action::ForumThreadsLoaded {
+                            channel_id,
+                            threads,
+                            offset,
+                        });
+                    }
+                    Err(e) => {
+                        warn!(channel_id = %channel_id, error = %e, "Failed to load forum threads");
+                        let _ = self.action_tx.send(Action::ForumThreadsLoadError {
                             channel_id,
                             error: e.to_string(),
                         });

@@ -363,9 +363,8 @@ fn handle_escape(
         nodes.push(MdNode::Text(input[*start..idx].to_string()));
     }
 
-    // Check if there is a character after the backslash
     let mut chars_iter = input[idx..].char_indices();
-    chars_iter.next(); // Skip the backslash
+    chars_iter.next();
 
     if let Some((_, ch)) = chars_iter.next() {
         nodes.push(MdNode::Text(ch.to_string()));
@@ -373,7 +372,6 @@ fn handle_escape(
         advance_chars(chars, end_total);
         *start = end_total;
     } else {
-        // Backslash at the end of the string, just treat as text
         nodes.push(MdNode::Text("\\".to_string()));
         let end_total = idx + 1;
         advance_chars(chars, end_total);

@@ -41,7 +41,7 @@ impl Default for ImageLoaderConfig {
     fn default() -> Self {
         Self {
             memory_cache_size: 50,
-            disk_cache_size: 200 * 1024 * 1024, // 200 MB
+            disk_cache_size: 200 * 1024 * 1024,
             max_concurrent_downloads: 4,
             timeout_secs: 30,
         }
@@ -113,7 +113,6 @@ impl ImageLoader {
     /// # Errors
     /// Returns error if image cannot be loaded from any source.
     pub async fn load(&self, id: &ImageId, url: &str) -> CacheResult<LoadedImage> {
-        // 1. Check memory cache
         if let Some(img) = self.memory_cache.get(id).await {
             return Ok(LoadedImage {
                 id: id.clone(),
@@ -122,9 +121,7 @@ impl ImageLoader {
             });
         }
 
-        // 2. Check disk cache
         if let Some(img) = self.disk_cache.get(id).await {
-            // Promote to memory cache
             self.memory_cache.put(id.clone(), img.clone()).await;
             return Ok(LoadedImage {
                 id: id.clone(),
@@ -133,13 +130,11 @@ impl ImageLoader {
             });
         }
 
-        // 3. Download from network
         let optimized_url = optimize_cdn_url_default(url);
         debug!(id = %id, url = %optimized_url, "Downloading image from network");
 
         let bytes = self.download(&optimized_url).await?;
 
-        // Store to disk cache in background (before decode consumes bytes)
         let disk_cache = self.disk_cache.clone();
         let id_for_disk = id.clone();
         let bytes_for_disk = bytes.clone();
@@ -149,7 +144,6 @@ impl ImageLoader {
             }
         });
 
-        // 4. Decode the image (CPU-intensive, use spawn_blocking)
         let decoded = tokio::task::spawn_blocking(move || image::load_from_memory(&bytes))
             .await
             .map_err(|e| CacheError::DecodeError(format!("Decode task panicked: {e}")))?
@@ -157,7 +151,6 @@ impl ImageLoader {
 
         let img = Arc::new(decoded);
 
-        // 5. Store in memory cache
         self.memory_cache.put(id.clone(), img.clone()).await;
 
         Ok(LoadedImage {
@@ -179,7 +172,6 @@ impl ImageLoader {
         };
 
         tokio::spawn(async move {
-            // Check and insert atomically within the task
             {
                 let mut pending = loader.pending_loads.write().await;
                 if pending.contains(&id) {
@@ -191,13 +183,11 @@ impl ImageLoader {
 
             let result = loader.load_image(&id, &url).await;
 
-            // Remove from pending
             {
                 let mut pending = loader.pending_loads.write().await;
                 pending.remove(&id);
             }
 
-            // Send result
             let event = ImageLoadedEvent {
                 id: id.clone(),
                 result,
@@ -271,10 +261,8 @@ impl ImageLoader {
 
     /// Evicts images that are far from the viewport.
     pub fn evict_distant(&self, visible_ids: &[ImageId], buffer: usize) {
-        // Build a set of IDs that should be kept
         let _keep_set: HashSet<_> = visible_ids.iter().collect();
 
-        // The LRU handles eviction automatically
         trace!(
             visible = visible_ids.len(),
             buffer = buffer,
@@ -309,7 +297,6 @@ struct ImageLoaderHandle {
 
 impl ImageLoaderHandle {
     async fn load_image(&self, id: &ImageId, url: &str) -> Result<LoadedImage, String> {
-        // 1. Check memory cache
         if let Some(img) = self.memory_cache.get(id).await {
             return Ok(LoadedImage {
                 id: id.clone(),
@@ -318,7 +305,6 @@ impl ImageLoaderHandle {
             });
         }
 
-        // 2. Check disk cache
         if let Some(img) = self.disk_cache.get(id).await {
             self.memory_cache.put(id.clone(), img.clone()).await;
             return Ok(LoadedImage {
@@ -328,7 +314,6 @@ impl ImageLoaderHandle {
             });
         }
 
-        // 3. Download
         let optimized_url = optimize_cdn_url_default(url);
         debug!(id = %id, "Downloading image: {}", optimized_url);
 
@@ -348,7 +333,6 @@ impl ImageLoaderHandle {
             .await
             .map_err(|e| format!("Failed to read body: {e}"))?;
 
-        // 4. Decode
         let bytes_clone = bytes.to_vec();
         let decoded = tokio::task::spawn_blocking(move || image::load_from_memory(&bytes_clone))
             .await
@@ -357,10 +341,8 @@ impl ImageLoaderHandle {
 
         let img = Arc::new(decoded);
 
-        // 5. Cache
         self.memory_cache.put(id.clone(), img.clone()).await;
 
-        // Store to disk in background
         let disk_cache = self.disk_cache.clone();
         let id_clone = id.clone();
         let bytes_vec = bytes.to_vec();

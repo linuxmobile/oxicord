@@ -11,7 +11,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, StatefulWidget, Widget},
 };
 
-use crate::domain::entities::{Channel, ChannelId, Guild, GuildId, ReadState};
+use crate::domain::entities::{Channel, ChannelId, ChannelKind, Guild, GuildId, ReadState};
 use crate::domain::keybinding::Action;
 use crate::presentation::commands::CommandRegistry;
 use crate::presentation::theme::Theme;
@@ -663,7 +663,10 @@ impl GuildsTreeData {
         width: u16,
         style: &GuildsTreeStyle,
     ) -> Option<FlattenedNode<'a>> {
-        if !channel.kind().is_text_based() && !channel.kind().is_voice() {
+        if !channel.kind().is_text_based()
+            && !channel.kind().is_voice()
+            && channel.kind() != ChannelKind::Forum
+        {
             return None;
         }
 
@@ -676,6 +679,10 @@ impl GuildsTreeData {
             style.channel_style
         };
 
+        let channel_icon = channel.kind().prefix();
+        let channel_icon_width =
+            u16::try_from(unicode_width::UnicodeWidthStr::width(channel_icon)).unwrap_or(0);
+
         let prefix_width =
             u16::try_from(unicode_width::UnicodeWidthStr::width(prefix)).unwrap_or(u16::MAX);
         let dot_width = 1;
@@ -683,11 +690,11 @@ impl GuildsTreeData {
 
         let max_name_width = width
             .saturating_sub(prefix_width)
+            .saturating_sub(channel_icon_width)
             .saturating_sub(dot_width)
             .saturating_sub(padding_right);
 
-        let name = channel.display_name();
-        let mut clean_name = clean_text(&name);
+        let mut clean_name = clean_text(channel.name());
 
         let name_width = u16::try_from(unicode_width::UnicodeWidthStr::width(clean_name.as_str()))
             .unwrap_or(u16::MAX);
@@ -707,13 +714,16 @@ impl GuildsTreeData {
         }
 
         let mut spans = vec![Span::styled(prefix.to_string(), style.tree_guide_style)];
+        spans.push(Span::styled(channel_icon.to_string(), channel_style));
         spans.push(Span::styled(clean_name.clone(), channel_style));
 
         if channel.has_unread() {
-            let used_width = prefix_width.saturating_add(
-                u16::try_from(unicode_width::UnicodeWidthStr::width(clean_name.as_str()))
-                    .unwrap_or(0),
-            );
+            let used_width = prefix_width
+                .saturating_add(channel_icon_width)
+                .saturating_add(
+                    u16::try_from(unicode_width::UnicodeWidthStr::width(clean_name.as_str()))
+                        .unwrap_or(0),
+                );
             let total_available = width
                 .saturating_sub(dot_width)
                 .saturating_sub(padding_right);
@@ -815,14 +825,10 @@ impl StatefulWidget for GuildsTree<'_> {
                 if is_selected {
                     let selected_style = self.style.selected_style;
                     for span in &mut label.spans {
-                        // Apply background to all spans to ensure continuous highlight
                         if let Some(bg) = selected_style.bg {
                             span.style = span.style.bg(bg);
                         }
 
-                        // Check if this span is a tree guide (contains specific drawing characters)
-                        // If it is, we preserve its foreground color (Gray).
-                        // If not, we apply the selected foreground color (Accent).
                         let content = span.content.as_ref();
                         let is_guide =
                             content.contains('├') || content.contains('└') || content.contains('│');

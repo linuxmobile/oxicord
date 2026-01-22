@@ -62,6 +62,8 @@ pub struct ChannelResponse {
     pub guild_id: Option<String>,
     /// Channel name.
     pub name: Option<String>,
+    /// Owner ID (for threads).
+    pub owner_id: Option<String>,
     /// Parent category ID.
     pub parent_id: Option<String>,
     /// Position in channel list.
@@ -71,6 +73,42 @@ pub struct ChannelResponse {
     pub topic: Option<String>,
     /// Last message ID.
     pub last_message_id: Option<String>,
+    /// Message count (for threads).
+    #[serde(default)]
+    pub message_count: Option<u32>,
+    /// Member count (for threads).
+    #[serde(default)]
+    pub member_count: Option<u32>,
+    /// Applied tags (for threads in forum channels).
+    #[serde(default)]
+    pub applied_tags: Vec<String>,
+    /// Thread metadata.
+    pub thread_metadata: Option<ThreadMetadataDto>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct ThreadMetadataDto {
+    pub archived: bool,
+    pub auto_archive_duration: i32,
+    pub archive_timestamp: String,
+    pub locked: bool,
+    pub create_timestamp: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct ReactionDto {
+    pub count: u32,
+    pub me: bool,
+    pub emoji: ReactionEmojiDto,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct ReactionEmojiDto {
+    pub id: Option<String>,
+    pub name: Option<String>,
 }
 
 /// Discord API DM recipient structure.
@@ -174,6 +212,9 @@ pub struct MessageResponse {
     pub pinned: bool,
     #[serde(default)]
     pub mentions: Vec<MentionUserResponse>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub reactions: Vec<ReactionDto>,
     pub member: Option<MemberResponse>,
 }
 
@@ -192,6 +233,29 @@ pub struct MentionUserResponse {
     #[serde(default)]
     pub bot: bool,
     pub member: Option<MemberResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct ThreadsResponse {
+    pub threads: Vec<ChannelResponse>,
+    #[serde(default)]
+    pub members: Vec<ThreadMemberResponse>,
+    #[serde(default)]
+    pub has_more: bool,
+    #[serde(default)]
+    pub first_messages: Option<Vec<MessageResponse>>,
+    #[serde(default)]
+    pub total_results: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct ThreadMemberResponse {
+    pub id: Option<String>,
+    pub user_id: Option<String>,
+    pub join_timestamp: String,
+    pub flags: u64,
 }
 
 #[derive(Debug, serde::Serialize)]

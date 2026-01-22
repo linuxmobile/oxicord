@@ -358,6 +358,21 @@ impl From<User> for MessageAuthor {
     }
 }
 
+/// Reaction emoji.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReactionEmoji {
+    pub id: Option<String>,
+    pub name: Option<String>,
+}
+
+/// Message reaction.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Reaction {
+    pub count: u32,
+    pub me: bool,
+    pub emoji: ReactionEmoji,
+}
+
 /// Discord message entity.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[allow(missing_docs)]
@@ -376,6 +391,8 @@ pub struct Message {
     pinned: bool,
     #[serde(default)]
     mentions: Vec<User>,
+    #[serde(default)]
+    reactions: Vec<Reaction>,
 }
 
 #[allow(missing_docs)]
@@ -402,6 +419,7 @@ impl Message {
             referenced: None,
             pinned: false,
             mentions: Vec::new(),
+            reactions: Vec::new(),
         }
     }
 
@@ -450,6 +468,12 @@ impl Message {
     #[must_use]
     pub fn with_mentions(mut self, mentions: Vec<User>) -> Self {
         self.mentions = mentions;
+        self
+    }
+
+    #[must_use]
+    pub fn with_reactions(mut self, reactions: Vec<Reaction>) -> Self {
+        self.reactions = reactions;
         self
     }
 
@@ -546,6 +570,11 @@ impl Message {
     #[must_use]
     pub fn mentions(&self) -> &[User] {
         &self.mentions
+    }
+
+    #[must_use]
+    pub fn reactions(&self) -> &[Reaction] {
+        &self.reactions
     }
 }
 

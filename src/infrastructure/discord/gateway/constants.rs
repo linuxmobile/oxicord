@@ -37,7 +37,6 @@ pub enum GatewayOpcode {
     Hello = 10,
     HeartbeatAck = 11,
     /// Opcode 14: Subscribe to guild events (typing, presence, etc.)
-    /// Required for user accounts to receive `TYPING_START` events.
     LazyRequest = 14,
 }
 

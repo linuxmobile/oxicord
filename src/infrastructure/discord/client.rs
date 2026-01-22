@@ -12,7 +12,8 @@ use super::dto::{
 };
 use crate::domain::entities::{
     Attachment, AuthToken, Channel, ChannelId, ChannelKind, Embed, EmbedProvider, EmbedThumbnail,
-    Guild, Message, MessageAuthor, MessageKind, MessageReference, ReadState, User,
+    ForumThread, Guild, GuildId, Message, MessageAuthor, MessageKind, MessageReference, ReadState,
+    Reaction, ReactionEmoji, User,
 };
 use crate::domain::errors::AuthError;
 use crate::domain::ports::{
@@ -162,6 +163,7 @@ impl DiscordClient {
             pinned,
             mentions,
             member,
+            reactions,
             ..
         } = response;
 
@@ -215,6 +217,21 @@ impl DiscordClient {
                 })
                 .collect();
             message = message.with_mentions(mentions);
+        }
+
+        if !reactions.is_empty() {
+            let reactions = reactions
+                .into_iter()
+                .map(|r| Reaction {
+                    count: r.count,
+                    me: r.me,
+                    emoji: ReactionEmoji {
+                        id: r.emoji.id,
+                        name: r.emoji.name,
+                    },
+                })
+                .collect();
+            message = message.with_reactions(reactions);
         }
 
         if let Some(edited) = edited_timestamp
@@ -776,9 +793,127 @@ impl DiscordDataPort for DiscordClient {
 
         Ok(())
     }
+
+    async fn fetch_forum_threads(
+        &self,
+        token: &AuthToken,
+        channel_id: ChannelId,
+        _guild_id: Option<GuildId>,
+        offset: u32,
+        limit: Option<u8>,
+    ) -> Result<Vec<ForumThread>, AuthError> {
+        let effective_limit = limit.unwrap_or(25).min(100);
+
+        let url = format!(
+            "{}/channels/{}/threads/search?archived=false&sort_by=last_message_time&sort_order=desc&limit={}&tag_setting=match_some&offset={}",
+            self.base_url,
+            channel_id.as_u64(),
+            effective_limit,
+            offset
+        );
+
+        debug!("Fetching forum threads from URL: {}", url);
+
+        let response = self
+            .client
+            .get(&url)
+            .header(header::AUTHORIZATION, token.as_str())
+            .send()
+            .await
+            .map_err(|e| {
+                warn!(error = %e, "Failed to fetch forum threads");
+                AuthError::network(e.to_string())
+            })?;
+
+        let status = response.status();
+        if !status.is_success() {
+             let error_text = response.text().await.unwrap_or_default();
+             warn!("Fetch forum threads failed: Status={} Body={}", status, error_text);
+             return Err(AuthError::unexpected(format!("Fetch threads failed: {status} - {error_text}")));
+        }
+
+        let threads_response: super::dto::ThreadsResponse = serde_json::from_str(&response.text().await.unwrap_or_default()).map_err(|e| {
+            warn!(error = %e, "Failed to parse threads response");
+            AuthError::unexpected(format!("failed to parse threads: {e}"))
+        })?;
+        
+        let threads = Self::process_threads_response(threads_response, None);
+        Ok(threads)
+    }
+}
+
+impl DiscordClient {
+    fn process_threads_response(response: super::dto::ThreadsResponse, parent_id: Option<ChannelId>) -> Vec<ForumThread> {
+        let threads_to_process: Vec<_> = response.threads
+            .into_iter()
+            .filter(|t| {
+                if let Some(target_parent) = parent_id {
+                    t.parent_id.as_deref().and_then(|p| p.parse::<u64>().ok()) == Some(target_parent.as_u64())
+                } else {
+                    true
+                }
+            })
+            .collect();
+
+        let mut starter_messages = std::collections::HashMap::new();
+        if let Some(msgs) = response.first_messages {
+            for msg_dto in msgs {
+                if let Ok(thread_id) = msg_dto.channel_id.parse::<u64>()
+                     && let Some(message) = Self::parse_message_response(msg_dto, thread_id) {
+                         starter_messages.insert(ChannelId(thread_id), message);
+                     }
+            }
+        }
+
+        threads_to_process
+            .into_iter()
+            .filter_map(|thread_dto| {
+                let thread_id = thread_dto.id.parse::<u64>().ok()?;
+                
+                let starter_message = starter_messages.remove(&ChannelId(thread_id));
+                
+                let reaction_count = starter_message.as_ref().map_or(0, |m| {
+                    m.reactions().iter().map(|r| r.count).sum()
+                });
+
+                Some(ForumThread {
+                    id: ChannelId(thread_id),
+                    guild_id: thread_dto
+                        .guild_id
+                        .and_then(|id| id.parse::<u64>().ok())
+                        .map(GuildId),
+                    parent_id: thread_dto
+                        .parent_id
+                        .and_then(|id| id.parse::<u64>().ok())
+                        .map(ChannelId),
+                    name: thread_dto.name.unwrap_or_default(),
+                    author_id: thread_dto.owner_id.unwrap_or_default(),
+                    message_count: thread_dto.message_count.unwrap_or(0),
+                    member_count: thread_dto.member_count.unwrap_or(0),
+                    last_activity_at: thread_dto
+                        .thread_metadata
+                        .as_ref()
+                        .map(|m| m.archive_timestamp.clone()),
+                    applied_tags: thread_dto
+                        .applied_tags
+                        .iter()
+                        .filter_map(|t| t.parse::<u64>().ok())
+                        .collect(),
+                    starter_message,
+                    last_message_id: thread_dto
+                        .last_message_id
+                        .and_then(|id| id.parse::<u64>().ok())
+                        .map(crate::domain::entities::MessageId::from),
+                    new: false,
+                    reaction_count,
+                })
+            })
+            .collect()
+    }
 }
 
 impl Default for DiscordClient {
+
     fn default() -> Self {
         Self::new().expect("failed to create default Discord client")
     }
@@ -852,5 +987,53 @@ mod tests {
             serde_json::from_str(json).expect("Should parse guild JSON with extra fields");
         assert_eq!(responses.len(), 1);
         assert_eq!(responses[0].name, "Test Guild");
+    }
+
+    #[test]
+    fn test_message_response_parsing_with_reactions() {
+        use super::MessageResponse;
+        
+        let json = r#"{
+            "id": "123456789",
+            "channel_id": "987654321",
+            "author": {
+                "id": "111222",
+                "username": "User",
+                "discriminator": "0000",
+                "avatar": null,
+                "bot": false
+            },
+            "content": "Hello",
+            "timestamp": "2023-01-01T12:00:00Z",
+            "type": 0,
+            "reactions": [
+                {
+                    "count": 5,
+                    "me": true,
+                    "emoji": { "id": null, "name": "👍" }
+                },
+                {
+                    "count": 2,
+                    "me": false,
+                    "emoji": { "id": "999", "name": "custom" }
+                }
+            ]
+        }"#;
+        
+        let response: MessageResponse = serde_json::from_str(json).expect("Should parse message JSON");
+        let message = DiscordClient::parse_message_response(response, 987654321).expect("Should convert to Message");
+        
+        assert_eq!(message.reactions().len(), 2);
+        
+        let r1 = &message.reactions()[0];
+        assert_eq!(r1.count, 5);
+        assert!(r1.me);
+        assert_eq!(r1.emoji.name.as_deref(), Some("👍"));
+        
+        let r2 = &message.reactions()[1];
+        assert_eq!(r2.count, 2);
+        assert!(!r2.me);
+        assert_eq!(r2.emoji.id.as_deref(), Some("999"));
+        assert_eq!(r2.emoji.name.as_deref(), Some("custom"));
     }
 }

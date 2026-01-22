@@ -1,5 +1,6 @@
 use std::sync::OnceLock;
 
+use chrono::{DateTime, Local, Utc};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::Color;
 use regex::Regex;
@@ -91,4 +92,28 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+/// Formats an ISO 8601 timestamp string to local time (HH:MM format).
+/// Falls back to the original string if parsing fails.
+#[must_use]
+pub fn format_iso_timestamp(iso_str: &str) -> String {
+    if let Ok(dt) = DateTime::parse_from_rfc3339(iso_str) {
+        let local: DateTime<Local> = dt.into();
+        return local.format("%H:%M").to_string();
+    }
+
+    if let Ok(dt) = iso_str.parse::<DateTime<Utc>>() {
+        let local: DateTime<Local> = dt.into();
+        return local.format("%H:%M").to_string();
+    }
+
+    if iso_str.len() >= 16 
+        && iso_str.contains('T') 
+        && let Some(time_part) = iso_str.split('T').nth(1) 
+        && time_part.len() >= 5 {
+            return time_part[..5].to_string();
+    }
+
+    iso_str.chars().take(10).collect()
 }
