@@ -50,6 +50,7 @@ fn create_app() -> Result<(App, Option<String>)> {
     info!(version = oxicord::VERSION, "Starting Oxicord");
 
     let discord_client = Arc::new(DiscordClient::new()?);
+    let identity = discord_client.identity.clone();
     let token_storage = Arc::new(KeyringTokenStorage::new());
     let theme = Theme::new(&config.theme.accent_color);
 
@@ -59,6 +60,7 @@ fn create_app() -> Result<(App, Option<String>)> {
         token_storage,
         config.disable_user_colors,
         theme,
+        identity,
     );
 
     Ok((app, cli_token))

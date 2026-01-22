@@ -3,6 +3,8 @@
 mod client;
 mod dto;
 pub mod gateway;
+pub mod identity;
+pub mod scraper;
 
 pub use client::DiscordClient;
 pub use gateway::{

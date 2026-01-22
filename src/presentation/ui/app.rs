@@ -21,7 +21,7 @@ use crate::domain::ports::{
 };
 use crate::infrastructure::discord::{
     DispatchEvent, GatewayClient, GatewayClientConfig, GatewayCommand, GatewayEventKind,
-    GatewayIntents, TypingIndicatorManager,
+    GatewayIntents, TypingIndicatorManager, identity::ClientIdentity,
 };
 use crate::infrastructure::image::{ImageLoadedEvent, ImageLoader};
 use crate::presentation::events::{EventHandler, EventResult};
@@ -81,6 +81,7 @@ pub struct App {
     last_image_check: Instant,
     disable_user_colors: bool,
     theme: Theme,
+    identity: Arc<ClientIdentity>,
 }
 
 impl App {
@@ -91,6 +92,7 @@ impl App {
         storage_port: Arc<dyn TokenStoragePort>,
         disable_user_colors: bool,
         theme: Theme,
+        identity: Arc<ClientIdentity>,
     ) -> Self {
         let login_use_case = LoginUseCase::new(auth_port, storage_port.clone());
         let resolve_token_use_case = ResolveTokenUseCase::new(storage_port);
@@ -129,6 +131,7 @@ impl App {
             last_image_check: Instant::now(),
             disable_user_colors,
             theme,
+            identity,
         }
     }
 
@@ -519,7 +522,7 @@ impl App {
             .with_auto_reconnect(true)
             .with_max_reconnect_attempts(10);
 
-        let mut client = GatewayClient::new(config);
+        let mut client = GatewayClient::new(config, self.identity.clone());
 
         match client.connect(token.as_str()) {
             Ok(rx) => {
@@ -1438,7 +1441,8 @@ mod tests {
         let data = Arc::new(MockDiscordData);
         let storage = Arc::new(MockTokenStorage::new());
         let theme = Theme::new("Orange");
-        let app = App::new(auth, data, storage, false, theme);
+        let identity = Arc::new(ClientIdentity::new());
+        let app = App::new(auth, data, storage, false, theme, identity);
 
         assert_eq!(app.state, AppState::Login);
     }

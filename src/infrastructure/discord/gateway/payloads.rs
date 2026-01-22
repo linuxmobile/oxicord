@@ -1,9 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::constants::{
-    CLIENT_PROPERTIES_BROWSER, CLIENT_PROPERTIES_DEVICE, CLIENT_PROPERTIES_OS, LARGE_THRESHOLD,
-};
+use super::constants::LARGE_THRESHOLD;
+use crate::infrastructure::discord::identity::SuperProperties;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GatewayPayload {
@@ -27,11 +26,22 @@ impl GatewayPayload {
     }
 
     #[must_use]
-    pub fn identify(token: &str, intents: u32) -> Self {
+    pub fn identify(token: &str, intents: u32, props: &SuperProperties) -> Self {
         let properties = IdentifyProperties {
-            os: CLIENT_PROPERTIES_OS.to_string(),
-            browser: CLIENT_PROPERTIES_BROWSER.to_string(),
-            device: CLIENT_PROPERTIES_DEVICE.to_string(),
+            os: props.os.clone(),
+            browser: props.browser.clone(),
+            device: props.device.clone(),
+            system_locale: props.system_locale.clone(),
+            browser_user_agent: props.browser_user_agent.clone(),
+            browser_version: props.browser_version.clone(),
+            os_version: props.os_version.clone(),
+            referrer: props.referrer.clone(),
+            referring_domain: props.referring_domain.clone(),
+            referrer_current: props.referrer_current.clone(),
+            referring_domain_current: props.referring_domain_current.clone(),
+            release_channel: props.release_channel.clone(),
+            client_build_number: props.client_build_number,
+            client_event_source: props.client_event_source.clone(),
         };
 
         let identify = IdentifyData {
@@ -108,6 +118,31 @@ struct IdentifyProperties {
     browser: String,
     #[serde(rename = "$device")]
     device: String,
+    #[serde(rename = "$system_locale")]
+    system_locale: String,
+    #[serde(rename = "$browser_user_agent")]
+    browser_user_agent: String,
+    #[serde(rename = "$browser_version")]
+    browser_version: String,
+    #[serde(rename = "$os_version")]
+    os_version: String,
+    #[serde(rename = "$referrer")]
+    referrer: String,
+    #[serde(rename = "$referring_domain")]
+    referring_domain: String,
+    #[serde(rename = "$referrer_current")]
+    referrer_current: String,
+    #[serde(rename = "$referring_domain_current")]
+    referring_domain_current: String,
+    #[serde(rename = "$release_channel")]
+    release_channel: String,
+    #[serde(rename = "$client_build_number")]
+    client_build_number: u32,
+    #[serde(
+        rename = "$client_event_source",
+        skip_serializing_if = "Option::is_none"
+    )]
+    client_event_source: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -369,7 +404,7 @@ mod tests {
 
     #[test]
     fn test_identify_payload_structure() {
-        let payload = GatewayPayload::identify("test_token", 513);
+        let payload = GatewayPayload::identify("test_token", 513, &SuperProperties::default());
         assert_eq!(payload.op, 2);
         assert!(payload.d.is_object());
 

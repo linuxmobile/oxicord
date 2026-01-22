@@ -2,7 +2,8 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Local, Utc};
-use reqwest::{Client, StatusCode, header};
+use reqwest::{Client, Method, StatusCode, header};
+use std::sync::Arc;
 use tracing::{debug, warn};
 
 use super::dto::{
@@ -10,6 +11,8 @@ use super::dto::{
     ErrorResponse, GuildResponse, MessageReferencePayload, MessageResponse, SendMessagePayload,
     UserResponse,
 };
+use super::identity::ClientIdentity;
+use super::scraper;
 use crate::domain::entities::{
     Attachment, AuthToken, Channel, ChannelId, ChannelKind, Embed, EmbedProvider, EmbedThumbnail,
     ForumThread, Guild, GuildId, Message, MessageAuthor, MessageKind, MessageReference, ReadState,
@@ -22,7 +25,6 @@ use crate::domain::ports::{
 };
 
 const DISCORD_API_BASE: &str = "https://discord.com/api/v10";
-const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 const MAX_IDLE_CONNECTIONS: usize = 10;
 const DEFAULT_MESSAGE_LIMIT: u8 = 50;
 
@@ -30,6 +32,7 @@ const DEFAULT_MESSAGE_LIMIT: u8 = 50;
 pub struct DiscordClient {
     client: Client,
     base_url: String,
+    pub identity: Arc<ClientIdentity>,
 }
 
 impl DiscordClient {
@@ -38,16 +41,24 @@ impl DiscordClient {
     /// # Errors
     /// Returns error if HTTP client creation fails.
     pub fn new() -> Result<Self, AuthError> {
-        Self::with_base_url(DISCORD_API_BASE)
+        let identity = Arc::new(ClientIdentity::new());
+        let id_clone = identity.clone();
+
+        tokio::spawn(async move {
+            if let Some(build) = scraper::fetch_latest_build_number().await {
+                id_clone.update_build_number(build);
+            }
+        });
+
+        Self::with_base_url(DISCORD_API_BASE, identity)
     }
 
     /// Creates a client with a custom base URL.
     ///
     /// # Errors
     /// Returns error if HTTP client creation fails.
-    pub fn with_base_url(base_url: impl Into<String>) -> Result<Self, AuthError> {
+    pub fn with_base_url(base_url: impl Into<String>, identity: Arc<ClientIdentity>) -> Result<Self, AuthError> {
         let client = Client::builder()
-            .user_agent(USER_AGENT)
             .timeout(std::time::Duration::from_secs(30))
             .pool_max_idle_per_host(MAX_IDLE_CONNECTIONS)
             .build()
@@ -56,7 +67,17 @@ impl DiscordClient {
         Ok(Self {
             client,
             base_url: base_url.into(),
+            identity,
         })
+    }
+
+    fn build_request(&self, method: Method, url: &str) -> reqwest::RequestBuilder {
+        self.client.request(method, url)
+            .header(header::USER_AGENT, &self.identity.get_props().browser_user_agent)
+            .header(header::ACCEPT_LANGUAGE, "en-US")
+            .header("X-Discord-Locale", "en-US")
+            .header(header::REFERER, "https://discord.com/channels/@me")
+            .header("X-Super-Properties", self.identity.get_header_value())
     }
 
     async fn handle_error_response(
@@ -267,8 +288,7 @@ impl AuthPort for DiscordClient {
         debug!("Validating token against Discord API");
 
         let response = self
-            .client
-            .get(&url)
+            .build_request(Method::GET, &url)
             .header(header::AUTHORIZATION, token.as_str())
             .send()
             .await
@@ -315,7 +335,7 @@ impl AuthPort for DiscordClient {
 
         debug!("Performing Discord API health check");
 
-        let response = self.client.get(&url).send().await.map_err(|e| {
+        let response = self.build_request(Method::GET, &url).send().await.map_err(|e| {
             if e.is_timeout() {
                 AuthError::network("request timed out")
             } else if e.is_connect() {
@@ -344,8 +364,7 @@ impl DiscordDataPort for DiscordClient {
         debug!("Fetching user guilds from Discord API");
 
         let response = self
-            .client
-            .get(&url)
+            .build_request(Method::GET, &url)
             .header(header::AUTHORIZATION, token.as_str())
             .send()
             .await
@@ -404,8 +423,7 @@ impl DiscordDataPort for DiscordClient {
         debug!(guild_id = guild_id, "Fetching channels from Discord API");
 
         let response = self
-            .client
-            .get(&url)
+            .build_request(Method::GET, &url)
             .header(header::AUTHORIZATION, token.as_str())
             .send()
             .await
@@ -443,8 +461,7 @@ impl DiscordDataPort for DiscordClient {
         debug!("Fetching DM channels from Discord API");
 
         let response = self
-            .client
-            .get(&url)
+            .build_request(Method::GET, &url)
             .header(header::AUTHORIZATION, token.as_str())
             .send()
             .await
@@ -524,8 +541,7 @@ impl DiscordDataPort for DiscordClient {
         );
 
         let response = self
-            .client
-            .get(&url)
+            .build_request(Method::GET, &url)
             .header(header::AUTHORIZATION, token.as_str())
             .send()
             .await
@@ -605,8 +621,7 @@ impl DiscordDataPort for DiscordClient {
         };
 
         let mut request_builder = self
-            .client
-            .post(&url)
+            .build_request(Method::POST, &url)
             .header(header::AUTHORIZATION, token.as_str());
 
         if request.attachments.is_empty() {
@@ -693,8 +708,7 @@ impl DiscordDataPort for DiscordClient {
         };
 
         let response = self
-            .client
-            .patch(&url)
+            .build_request(Method::PATCH, &url)
             .header(header::AUTHORIZATION, token.as_str())
             .header(header::CONTENT_TYPE, "application/json")
             .json(&payload)
@@ -732,8 +746,7 @@ impl DiscordDataPort for DiscordClient {
         debug!(channel_id = %channel_id, "Sending typing indicator");
 
         let response = self
-            .client
-            .post(&url)
+            .build_request(Method::POST, &url)
             .header(header::AUTHORIZATION, token.as_str())
             .send()
             .await
@@ -773,8 +786,7 @@ impl DiscordDataPort for DiscordClient {
         let payload = serde_json::json!({ "token": null });
 
         let response = self
-            .client
-            .post(&url)
+            .build_request(Method::POST, &url)
             .header(header::AUTHORIZATION, token.as_str())
             .header(header::CONTENT_TYPE, "application/json")
             .json(&payload)
@@ -815,8 +827,7 @@ impl DiscordDataPort for DiscordClient {
         debug!("Fetching forum threads from URL: {}", url);
 
         let response = self
-            .client
-            .get(&url)
+            .build_request(Method::GET, &url)
             .header(header::AUTHORIZATION, token.as_str())
             .send()
             .await
@@ -924,8 +935,8 @@ mod tests {
     use super::*;
     use crate::infrastructure::discord::dto::GuildResponse;
 
-    #[test]
-    fn test_client_creation() {
+    #[tokio::test]
+    async fn test_client_creation() {
         let client = DiscordClient::new();
         assert!(client.is_ok());
     }

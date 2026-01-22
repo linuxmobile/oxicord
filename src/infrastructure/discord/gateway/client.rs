@@ -17,6 +17,7 @@ use super::events::{GatewayCommand, GatewayEventKind};
 use super::heartbeat::HeartbeatManager;
 use super::payloads::GatewayPayload;
 use super::session::SessionInfo;
+use crate::infrastructure::discord::identity::ClientIdentity;
 
 pub struct GatewayClientConfig {
     pub intents: GatewayIntents,
@@ -63,21 +64,23 @@ pub struct GatewayClient {
     config: GatewayClientConfig,
     running: Arc<AtomicBool>,
     command_tx: Option<mpsc::UnboundedSender<GatewayCommand>>,
+    identity: Arc<ClientIdentity>,
 }
 
 impl GatewayClient {
     #[must_use]
-    pub fn new(config: GatewayClientConfig) -> Self {
+    pub fn new(config: GatewayClientConfig, identity: Arc<ClientIdentity>) -> Self {
         Self {
             config,
             running: Arc::new(AtomicBool::new(false)),
             command_tx: None,
+            identity,
         }
     }
 
     #[must_use]
-    pub fn with_default_config() -> Self {
-        Self::new(GatewayClientConfig::default())
+    pub fn with_default_config(identity: Arc<ClientIdentity>) -> Self {
+        Self::new(GatewayClientConfig::default(), identity)
     }
 
     /// # Errors
@@ -103,6 +106,7 @@ impl GatewayClient {
             max_attempts: self.config.max_reconnect_attempts,
         };
         let running = self.running.clone();
+        let identity = self.identity.clone();
 
         running.store(true, Ordering::SeqCst);
 
@@ -112,6 +116,7 @@ impl GatewayClient {
                 event_tx.clone(),
                 command_rx,
                 running.clone(),
+                identity,
             ));
 
             if let Err(panic_info) = result.catch_unwind().await {
@@ -165,6 +170,7 @@ async fn run_gateway_loop(
     event_tx: mpsc::UnboundedSender<GatewayEventKind>,
     mut command_rx: mpsc::UnboundedReceiver<GatewayCommand>,
     running: Arc<AtomicBool>,
+    identity: Arc<ClientIdentity>,
 ) {
     let mut reconnect_attempts: u32 = 0;
     let mut session = SessionInfo::new();
@@ -181,6 +187,7 @@ async fn run_gateway_loop(
             event_tx.clone(),
             payload_rx,
             ack_received.clone(),
+            identity.clone(),
         );
 
         let result = run_single_connection(
@@ -445,7 +452,8 @@ mod tests {
 
     #[test]
     fn test_client_initial_state() {
-        let client = GatewayClient::with_default_config();
+        let identity = Arc::new(ClientIdentity::new());
+        let client = GatewayClient::with_default_config(identity);
         assert!(!client.is_running());
     }
 }

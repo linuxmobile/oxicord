@@ -21,6 +21,7 @@ use super::events::{DispatchEvent, GatewayEventKind};
 use super::payloads::{GatewayMessage, GatewayPayload};
 use super::session::SessionInfo;
 use super::state::GatewayState;
+use crate::infrastructure::discord::identity::ClientIdentity;
 
 type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 type WsWriter = SplitSink<WsStream, WsMessage>;
@@ -167,6 +168,7 @@ pub struct GatewayConnectionHandler {
     event_tx: mpsc::UnboundedSender<GatewayEventKind>,
     payload_rx: mpsc::Receiver<String>,
     ack_received: Arc<AtomicBool>,
+    identity: Arc<ClientIdentity>,
 }
 
 impl GatewayConnectionHandler {
@@ -177,6 +179,7 @@ impl GatewayConnectionHandler {
         event_tx: mpsc::UnboundedSender<GatewayEventKind>,
         payload_rx: mpsc::Receiver<String>,
         ack_received: Arc<AtomicBool>,
+        identity: Arc<ClientIdentity>,
     ) -> Self {
         Self {
             connection,
@@ -187,6 +190,7 @@ impl GatewayConnectionHandler {
             event_tx,
             payload_rx,
             ack_received,
+            identity,
         }
     }
 
@@ -240,7 +244,7 @@ impl GatewayConnectionHandler {
     async fn identify(&mut self) -> GatewayResult<()> {
         self.state.transition_to_identifying();
 
-        let payload = GatewayPayload::identify(&self.token, self.intents.as_u32());
+        let payload = GatewayPayload::identify(&self.token, self.intents.as_u32(), &self.identity.get_props());
         self.connection.send(&payload).await?;
 
         self.await_ready().await

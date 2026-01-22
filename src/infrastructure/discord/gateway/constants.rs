@@ -16,10 +16,6 @@ pub const IDENTIFY_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub const TYPING_INDICATOR_TIMEOUT: Duration = Duration::from_secs(10);
 
-pub const CLIENT_PROPERTIES_OS: &str = "Linux";
-pub const CLIENT_PROPERTIES_BROWSER: &str = "Discord Client";
-pub const CLIENT_PROPERTIES_DEVICE: &str = "";
-
 pub const LARGE_THRESHOLD: u16 = 250;
 
 #[repr(u8)]
