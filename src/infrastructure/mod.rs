@@ -1,5 +1,6 @@
 //! Infrastructure layer with external service adapters.
 
+pub mod clipboard;
 /// Application configuration.
 pub mod config;
 /// Discord API client.
@@ -11,6 +12,7 @@ pub mod state_store;
 /// Token storage adapters.
 pub mod storage;
 
+pub use clipboard::ClipboardService;
 pub use config::{AppConfig, LogLevel};
 pub use discord::{
     DiscordClient, DispatchEvent, GatewayClient, GatewayClientConfig, GatewayCommand,

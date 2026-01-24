@@ -412,29 +412,34 @@ impl ChatScreenState {
         }
 
         if self.focus == ChatFocus::MessageInput {
-            if let KeyCode::Char(_) = key.code
-                && (key.modifiers.is_empty()
-                    || key.modifiers == crossterm::event::KeyModifiers::SHIFT)
-            {
-                return self.handle_message_input_key(key);
-            }
-
-            if let Some(result) = self.handle_global_key(key) {
+            let result = self.handle_message_input_key(key);
+            if result != ChatKeyResult::Ignored {
                 return result;
             }
-
-            self.handle_message_input_key(key)
         } else {
-            if let Some(result) = self.handle_global_key(key) {
-                return result;
-            }
-
-            match self.focus {
-                ChatFocus::GuildsTree => self.handle_guilds_tree_key(key),
-                ChatFocus::MessagesList => self.handle_messages_list_key(key),
-                ChatFocus::MessageInput | ChatFocus::ConfirmationModal => unreachable!(),
+             match self.focus {
+                ChatFocus::GuildsTree => {
+                    let result = self.handle_guilds_tree_key(key);
+                    if result != ChatKeyResult::Ignored {
+                        return result;
+                    }
+                }
+                ChatFocus::MessagesList => {
+                    let result = self.handle_messages_list_key(key);
+                    if result != ChatKeyResult::Ignored {
+                        return result;
+                    }
+                }
+                ChatFocus::ConfirmationModal => return ChatKeyResult::Consumed,
+                ChatFocus::MessageInput => unreachable!(),
             }
         }
+
+        if let Some(result) = self.handle_global_key(key) {
+            return result;
+        }
+
+        ChatKeyResult::Consumed
     }
 
     fn handle_global_key(&mut self, key: KeyEvent) -> Option<ChatKeyResult> {
@@ -512,7 +517,7 @@ impl ChatScreenState {
                 }
             }
         }
-        ChatKeyResult::Consumed
+        ChatKeyResult::Ignored
     }
 
     #[allow(clippy::too_many_lines)]
@@ -654,7 +659,7 @@ impl ChatScreenState {
                 }
             }
         }
-        ChatKeyResult::Consumed
+        ChatKeyResult::Ignored
     }
 
     fn handle_message_input_key(&mut self, key: KeyEvent) -> ChatKeyResult {
@@ -698,19 +703,24 @@ impl ChatScreenState {
                 MessageInputAction::ExitInput => {
                     self.focus_messages_list();
                 }
-                MessageInputAction::OpenEditor => {
-                    return ChatKeyResult::OpenEditor {
-                        initial_content: self.message_input_state.value(),
-                        message_id: match self.message_input_state.mode() {
-                            MessageInputMode::Editing { message_id } => Some(*message_id),
-                            _ => None,
-                        },
-                    };
-                }
-                MessageInputAction::StartTyping | MessageInputAction::CancelReply => {}
+            MessageInputAction::OpenEditor => {
+                let initial_content = self.message_input_state.value();
+                let message_id = match self.message_input_state.mode() {
+                    MessageInputMode::Editing { message_id } => Some(*message_id),
+                    _ => None,
+                };
+                return ChatKeyResult::OpenEditor {
+                    initial_content,
+                    message_id,
+                };
             }
-        } else {
-            let value = self.message_input_state.value();
+            MessageInputAction::Paste => {
+                return ChatKeyResult::Paste;
+            }
+            MessageInputAction::StartTyping | MessageInputAction::CancelReply => {}
+        }
+    } else {
+        let value = self.message_input_state.value();
             let cursor_idx = self.message_input_state.get_cursor_index();
             autocomplete_changed = self.autocomplete_service.process_input(&value, cursor_idx);
         }
@@ -720,7 +730,7 @@ impl ChatScreenState {
             return ChatKeyResult::StartTyping;
         }
 
-        ChatKeyResult::Consumed
+        ChatKeyResult::Ignored
     }
 
     fn handle_autocomplete_navigation(&mut self, key: KeyEvent) -> bool {
@@ -1053,9 +1063,9 @@ impl ChatScreenState {
         (&mut self.message_pane_data, &mut self.message_pane_state)
     }
 
-    pub fn start_reply(&mut self, message_id: MessageId, author_name: String) {
+    pub fn start_reply(&mut self, message_id: MessageId, author_name: String, mention: bool) {
         self.message_input_state
-            .start_reply(message_id, author_name);
+            .start_reply(message_id, author_name, mention);
         self.focus_message_input();
     }
 
@@ -1089,9 +1099,13 @@ impl ChatScreenState {
     }
 
     /// Get the current reply info (`message_id`, author) if in reply mode.
-    pub fn message_input_reply_info(&self) -> Option<(MessageId, String)> {
+    pub fn message_input_reply_info(&self) -> Option<(MessageId, String, bool)> {
         match self.message_input_state.mode() {
-            MessageInputMode::Reply { message_id, author } => Some((*message_id, author.clone())),
+            MessageInputMode::Reply {
+                message_id,
+                author,
+                mention,
+            } => Some((*message_id, author.clone(), *mention)),
             MessageInputMode::Normal | MessageInputMode::Editing { .. } => None,
         }
     }
@@ -1230,6 +1244,27 @@ impl ChatScreenState {
         }
     }
 
+    pub fn add_attachment(&mut self, path: std::path::PathBuf) {
+        self.message_input_state.add_attachment(path);
+        self.focus_message_input();
+    }
+
+    pub fn insert_text(&mut self, text: &str) {
+        self.message_input_state.insert_text_at_cursor(text);
+        self.focus_message_input();
+    }
+
+    pub fn jump_to_message(&mut self, message_id: crate::domain::entities::MessageId) {
+        if let Some(index) = self
+            .message_pane_data
+            .messages()
+            .iter()
+            .position(|m| m.message.id() == message_id)
+        {
+            self.message_pane_state.jump_to_index(index);
+        }
+    }
+
     pub fn toggle_file_explorer(&mut self) {
         self.show_file_explorer = !self.show_file_explorer;
         if self.show_file_explorer {
@@ -1277,17 +1312,17 @@ impl HasCommands for ChatScreenState {
         let mut commands = Vec::new();
 
         if self.show_help {
-            if let Some(key) = registry.get(Action::ToggleHelp) {
+            if let Some(key) = registry.get_first(Action::ToggleHelp) {
                 commands.push(Keybind::new(key, Action::ToggleHelp, "Close Help"));
             }
             return commands;
         }
 
         if self.show_file_explorer {
-            if let Some(key) = registry.get(Action::Select) {
+            if let Some(key) = registry.get_first(Action::Select) {
                 commands.push(Keybind::new(key, Action::Select, "Select"));
             }
-            if let Some(key) = registry.get(Action::ToggleFileExplorer) {
+            if let Some(key) = registry.get_first(Action::ToggleFileExplorer) {
                 commands.push(Keybind::new(key, Action::ToggleFileExplorer, "Close"));
             }
             commands.push(Keybind::new(
@@ -1298,38 +1333,38 @@ impl HasCommands for ChatScreenState {
         } else {
             match self.focus {
                 ChatFocus::GuildsTree => {
-                    if let Some(key) = registry.get(Action::NavigateUp) {
+                    if let Some(key) = registry.get_first(Action::NavigateUp) {
                         commands.push(Keybind::new(key, Action::NavigateUp, "Nav"));
                     }
-                    if let Some(key) = registry.get(Action::Select) {
+                    if let Some(key) = registry.get_first(Action::Select) {
                         commands.push(Keybind::new(key, Action::Select, "Select"));
                     }
-                    if let Some(key) = registry.get(Action::NavigateRight) {
+                    if let Some(key) = registry.get_first(Action::NavigateRight) {
                         commands.push(Keybind::new(key, Action::NavigateRight, "Expand"));
                     }
                 }
                 ChatFocus::MessagesList => {
-                    if let Some(key) = registry.get(Action::NavigateUp) {
+                    if let Some(key) = registry.get_first(Action::NavigateUp) {
                         commands.push(Keybind::new(key, Action::NavigateUp, "Nav"));
                     }
-                    if let Some(key) = registry.get(Action::Reply) {
+                    if let Some(key) = registry.get_first(Action::Reply) {
                         commands.push(Keybind::new(key, Action::Reply, "Reply"));
                     }
-                    if let Some(key) = registry.get(Action::EditMessage) {
+                    if let Some(key) = registry.get_first(Action::EditMessage) {
                         commands.push(Keybind::new(key, Action::EditMessage, "Edit"));
                     }
-                    if let Some(key) = registry.get(Action::DeleteMessage) {
+                    if let Some(key) = registry.get_first(Action::DeleteMessage) {
                         commands.push(Keybind::new(key, Action::DeleteMessage, "Del"));
                     }
                 }
                 ChatFocus::MessageInput => {
-                    if let Some(key) = registry.get(Action::SendMessage) {
+                    if let Some(key) = registry.get_first(Action::SendMessage) {
                         commands.push(Keybind::new(key, Action::SendMessage, "Send"));
                     }
-                    if let Some(key) = registry.get(Action::OpenEditor) {
+                    if let Some(key) = registry.get_first(Action::OpenEditor) {
                         commands.push(Keybind::new(key, Action::OpenEditor, "Editor"));
                     }
-                    if let Some(key) = registry.get(Action::Cancel) {
+                    if let Some(key) = registry.get_first(Action::Cancel) {
                         commands.push(Keybind::new(key, Action::Cancel, "Cancel"));
                     }
                 }
@@ -1347,10 +1382,10 @@ impl HasCommands for ChatScreenState {
                 }
             }
 
-            if let Some(key) = registry.get(Action::NextTab) {
+            if let Some(key) = registry.get_first(Action::NextTab) {
                 commands.push(Keybind::new(key, Action::NextTab, "Next"));
             }
-            if let Some(key) = registry.get(Action::ToggleHelp) {
+            if let Some(key) = registry.get_first(Action::ToggleHelp) {
                 commands.push(Keybind::new(key, Action::ToggleHelp, "Help"));
             }
         }
@@ -1362,6 +1397,7 @@ impl HasCommands for ChatScreenState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatKeyResult {
     Consumed,
+    Ignored,
     Quit,
     Logout,
     CopyToClipboard(String),
@@ -1405,6 +1441,7 @@ pub enum ChatKeyResult {
         initial_content: String,
         message_id: Option<crate::domain::entities::MessageId>,
     },
+    Paste,
     ToggleHelp,
 }
 
@@ -1493,7 +1530,6 @@ fn render_help_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) 
                 (Action::FocusMessages, "Focus Messages"),
                 (Action::FocusInput, "Focus Input"),
                 (Action::ToggleGuildsTree, "Toggle Guilds Tree"),
-                (Action::ToggleFileExplorer, "Toggle File Explorer"),
             ],
         ),
         (
@@ -1522,7 +1558,9 @@ fn render_help_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) 
         (
             "INPUT",
             vec![
+                (Action::ToggleFileExplorer, "Attachments"),
                 (Action::SendMessage, "Send Message"),
+                (Action::Paste, "Paste (Text/Image)"),
                 (Action::OpenEditor, "Open External Editor"),
                 (Action::ClearInput, "Clear Input"),
                 (Action::Cancel, "Cancel Reply / Exit"),
@@ -1533,42 +1571,44 @@ fn render_help_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) 
     let format_key = |action: Action| -> String {
         state.registry.get(action).map_or_else(
             || "N/A".to_string(),
-            |k| {
-                use std::fmt::Write;
-                let mut s = String::new();
-                if k.modifiers
-                    .contains(crossterm::event::KeyModifiers::CONTROL)
-                {
-                    s.push_str("Ctrl+");
-                }
-                if k.modifiers.contains(crossterm::event::KeyModifiers::ALT) {
-                    s.push_str("Alt+");
-                }
+            |keys| {
+                keys.iter()
+                    .map(|k| {
+                        use std::fmt::Write;
+                        let mut s = String::new();
+                        if k.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+                            s.push_str("Ctrl+");
+                        }
+                        if k.modifiers.contains(crossterm::event::KeyModifiers::ALT) {
+                            s.push_str("Alt+");
+                        }
+                        if k.modifiers.contains(crossterm::event::KeyModifiers::SHIFT) {
+                            match k.code {
+                                KeyCode::Char(c) if c.is_ascii_uppercase() => {}
+                                _ => s.push_str("Shift+"),
+                            }
+                        }
 
-                match k.code {
-                    KeyCode::Char(c) => s.push(c),
-                    KeyCode::Enter => s.push_str("Enter"),
-                    KeyCode::Esc => s.push_str("Esc"),
-                    KeyCode::Tab => s.push_str("Tab"),
-                    KeyCode::Up => s.push_str("Up"),
-                    KeyCode::Down => s.push_str("Down"),
-                    KeyCode::Left => s.push_str("Left"),
-                    KeyCode::Right => s.push_str("Right"),
-                    KeyCode::F(n) => {
-                        let _ = write!(s, "F{n}");
-                    }
-                    KeyCode::Backspace => s.push_str("Backspace"),
-                    KeyCode::Delete => s.push_str("Delete"),
-                    KeyCode::Home => s.push_str("Home"),
-                    KeyCode::End => s.push_str("End"),
-                    KeyCode::PageUp => s.push_str("PageUp"),
-                    KeyCode::PageDown => s.push_str("PageDown"),
-                    KeyCode::BackTab => s.push_str("BackTab"),
-                    _ => {
-                        let _ = write!(s, "{:?}", k.code);
-                    }
-                }
-                s
+                        match k.code {
+                            KeyCode::Char(c) => s.push(c),
+                            KeyCode::Enter => s.push_str("Enter"),
+                            KeyCode::Esc => s.push_str("Esc"),
+                            KeyCode::Tab => s.push_str("Tab"),
+                            KeyCode::Up => s.push_str("Up"),
+                            KeyCode::Down => s.push_str("Down"),
+                            KeyCode::Left => s.push_str("Left"),
+                            KeyCode::Right => s.push_str("Right"),
+                            KeyCode::F(n) => {
+                                let _ = write!(s, "F{n}");
+                            }
+                            _ => {
+                                let _ = write!(s, "{k:?}");
+                            }
+                        }
+                        s
+                    })
+                    .collect::<Vec<String>>()
+                    .join(", ")
             },
         )
     };

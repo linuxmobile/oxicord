@@ -63,6 +63,8 @@ pub enum Action {
     LoginFailure(crate::domain::errors::AuthError),
     /// Image loader has been initialized and is ready to use.
     ImageLoaderReady(Arc<ImageLoader>),
+    PasteImageLoaded(std::path::PathBuf),
+    PasteTextLoaded(String),
 }
 
 #[derive(Debug)]

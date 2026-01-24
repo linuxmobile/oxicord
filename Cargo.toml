@@ -58,6 +58,8 @@ regex = "1.11"
 bitflags = { version = "2.6", features = ["serde"] }
 tui-scrollbar = "0.2.2"
 uuid = { version = "1.19.0", features = ["v4", "fast-rng"] }
+parking_lot = "0.12.5"
+arboard = { version = "3.6.1", features = ["wayland-data-control"] }
 
 [dev-dependencies]
 tokio-test = "0.4"

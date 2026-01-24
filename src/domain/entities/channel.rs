@@ -107,9 +107,9 @@ impl ChannelKind {
     pub const fn prefix(self) -> &'static str {
         match self {
             Self::Voice | Self::StageVoice | Self::Lobby => "🔊",
-            Self::Dm | Self::GroupDm | Self::LfgGroupDm | Self::EphemeralDm => "@",
+            Self::Dm | Self::GroupDm | Self::LfgGroupDm | Self::EphemeralDm => "@ ",
             Self::Category => "",
-            Self::Forum | Self::Media => "📋",
+            Self::Forum | Self::Media => "󰭹 ",
             _ => "#",
         }
     }

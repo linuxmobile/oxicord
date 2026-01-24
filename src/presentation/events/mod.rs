@@ -13,6 +13,8 @@ pub enum EventResult {
     Exit,
     /// Event was consumed.
     Consumed,
+    /// Event was ignored.
+    Ignored,
     /// Open external editor for message input.
     OpenEditor {
         initial_content: String,

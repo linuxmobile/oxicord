@@ -23,8 +23,8 @@ use crate::infrastructure::discord::{
     DispatchEvent, GatewayClient, GatewayClientConfig, GatewayCommand, GatewayEventKind,
     GatewayIntents, TypingIndicatorManager, identity::ClientIdentity,
 };
+use crate::infrastructure::{ClipboardService, StateStore};
 use crate::infrastructure::image::{ImageLoadedEvent, ImageLoader};
-use crate::infrastructure::state_store::StateStore;
 use crate::presentation::events::{EventHandler, EventResult};
 use crate::presentation::theme::Theme;
 use crate::presentation::ui::{
@@ -85,6 +85,8 @@ pub struct App {
     identity: Arc<ClientIdentity>,
     state_store: StateStore,
     state_save_tx: mpsc::UnboundedSender<(Option<GuildId>, Option<ChannelId>)>,
+    clipboard_service: ClipboardService,
+    notification: Option<(String, std::time::Instant)>,
 }
 
 impl App {
@@ -171,6 +173,8 @@ impl App {
             identity,
             state_store,
             state_save_tx,
+            clipboard_service: ClipboardService::new(),
+            notification: None,
         }
     }
 
@@ -329,6 +333,10 @@ impl App {
         }
     }
 
+    pub fn show_notification(&mut self, message: String) {
+        self.notification = Some((message, std::time::Instant::now()));
+    }
+
     fn render(&mut self, frame: &mut Frame) {
         match &mut self.screen {
             CurrentScreen::Login(screen) => {
@@ -342,6 +350,34 @@ impl App {
                 state.update_visible_image_protocols(width);
                 frame.render_stateful_widget(ChatScreen::new(), frame.area(), state);
             }
+        }
+
+        if let Some((message, time)) = &self.notification 
+            && time.elapsed() < std::time::Duration::from_secs(3) {
+            use ratatui::widgets::{Block, Borders, Paragraph};
+            use ratatui::layout::Rect;
+            use ratatui::style::{Style, Color, Modifier};
+
+            let area = frame.area();
+            let max_width = area.width.saturating_sub(2); // Keep some margin
+            let width = u16::try_from(message.len())
+                .unwrap_or(u16::MAX)
+                .saturating_add(4)
+                .min(max_width);
+            let height = 3;
+            let x = area.width.saturating_sub(width).saturating_sub(1);
+            let y = 1;
+
+            let rect = Rect::new(x, y, width, height);
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Green));
+            let para = Paragraph::new(message.as_str())
+                .block(block)
+                .style(Style::default().add_modifier(Modifier::BOLD));
+            
+            frame.render_widget(ratatui::widgets::Clear, rect);
+            frame.render_widget(para, rect);
         }
     }
 
@@ -376,6 +412,8 @@ impl App {
             }
             ChatKeyResult::CopyToClipboard(text) => {
                 debug!(text = %text, "Copy to clipboard requested");
+                self.clipboard_service.set_text(text);
+                self.show_notification("Copied to clipboard".to_string());
             }
             ChatKeyResult::LoadGuildChannels(guild_id) => {
                 self.load_guild_channels(guild_id);
@@ -421,7 +459,7 @@ impl App {
                 mention,
             } => {
                 debug!(message_id = %message_id, mention = mention, "Reply to message requested");
-                self.handle_reply_to_message(message_id);
+                self.handle_reply_to_message(message_id, mention);
             }
             ChatKeyResult::SubmitEdit {
                 message_id,
@@ -441,6 +479,9 @@ impl App {
             }
             ChatKeyResult::JumpToMessage(message_id) => {
                 debug!(message_id = %message_id, "Jump to message requested");
+                if let CurrentScreen::Chat(state) = &mut self.screen {
+                    state.jump_to_message(message_id);
+                }
             }
             ChatKeyResult::SendMessage {
                 content,
@@ -461,7 +502,34 @@ impl App {
                     message_id,
                 };
             }
-            ChatKeyResult::ToggleHelp | ChatKeyResult::Consumed => {}
+            ChatKeyResult::Paste => {
+                let clipboard = self.clipboard_service.clone();
+                let tx = self.action_tx.clone();
+                
+                tokio::task::spawn_blocking(move || {
+                    if let Some(image) = clipboard.get_image() {
+                        let temp_dir = std::env::temp_dir();
+                        let filename = format!("paste_{}.png", uuid::Uuid::new_v4());
+                        let path = temp_dir.join(filename);
+                        
+                        if let Some(img) = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
+                            u32::try_from(image.width).unwrap_or_default(),
+                            u32::try_from(image.height).unwrap_or_default(),
+                            image.bytes.into_owned()
+                        ) {
+                            if img.save(&path).is_ok() {
+                                let _ = tx.send(Action::PasteImageLoaded(path));
+                                return;
+                            }
+                        }
+                    } 
+                    
+                    if let Some(text) = clipboard.get_text() {
+                        let _ = tx.send(Action::PasteTextLoaded(text));
+                    }
+                });
+            }
+            ChatKeyResult::ToggleHelp | ChatKeyResult::Consumed | ChatKeyResult::Ignored => {}
         }
 
         EventResult::Continue
@@ -1151,8 +1219,18 @@ impl App {
             }
             Action::TypingIndicatorSent(_) => {}
             Action::ImageLoaderReady(loader) => {
-                info!("Image loader initialized");
                 self.image_loader = Some(loader);
+            }
+            Action::PasteImageLoaded(path) => {
+                if let CurrentScreen::Chat(state) = &mut self.screen {
+                    state.add_attachment(path);
+                    self.show_notification("Image pasted as attachment".to_string());
+                }
+            }
+            Action::PasteTextLoaded(text) => {
+                if let CurrentScreen::Chat(state) = &mut self.screen {
+                    state.insert_text(&text);
+                }
             }
         }
     }
@@ -1189,11 +1267,15 @@ impl App {
         }
     }
 
-    fn handle_reply_to_message(&mut self, message_id: crate::domain::entities::MessageId) {
+    fn handle_reply_to_message(
+        &mut self,
+        message_id: crate::domain::entities::MessageId,
+        mention: bool,
+    ) {
         if let CurrentScreen::Chat(ref mut state) = self.screen
             && let Some(author_name) = state.get_reply_author(message_id)
         {
-            state.start_reply(message_id, author_name);
+            state.start_reply(message_id, author_name, mention);
         }
     }
 

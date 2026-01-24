@@ -23,6 +23,8 @@ pub enum Action {
     Select,
     SelectFirst,
     SelectLast,
+    Collapse,
+    MoveToParent,
 
     ScrollDown,
     ScrollUp,
@@ -45,10 +47,7 @@ pub enum Action {
     OpenEditor,
     ClearInput,
     Cancel,
-
-    Collapse,
-    Expand,
-    MoveToParent,
+    Paste,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

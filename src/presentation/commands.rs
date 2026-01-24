@@ -3,19 +3,19 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashMap;
 
 pub struct CommandRegistry {
-    display_bindings: HashMap<Action, KeyEvent>,
+    display_bindings: HashMap<Action, Vec<KeyEvent>>,
     input_bindings: Vec<(KeyEvent, Action)>,
 }
 
 #[allow(clippy::too_many_lines)]
 impl Default for CommandRegistry {
     fn default() -> Self {
-        let mut display_bindings = HashMap::new();
+        let mut display_bindings: HashMap<Action, Vec<KeyEvent>> = HashMap::new();
         let mut input_bindings = Vec::new();
 
-        let mut register = |action: Action, key: KeyEvent, is_primary: bool| {
-            if is_primary {
-                display_bindings.insert(action, key);
+        let mut register = |action: Action, key: KeyEvent, is_display: bool| {
+            if is_display {
+                display_bindings.entry(action).or_default().push(key);
             }
             input_bindings.push((key, action));
         };
@@ -110,7 +110,7 @@ impl Default for CommandRegistry {
         register(
             Action::NavigateUp,
             KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE),
-            false,
+            true,
         );
         register(
             Action::NavigateDown,
@@ -120,7 +120,7 @@ impl Default for CommandRegistry {
         register(
             Action::NavigateDown,
             KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
-            false,
+            true,
         );
         register(
             Action::NavigateLeft,
@@ -130,7 +130,7 @@ impl Default for CommandRegistry {
         register(
             Action::NavigateLeft,
             KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE),
-            false,
+            true,
         );
         register(
             Action::NavigateRight,
@@ -140,7 +140,7 @@ impl Default for CommandRegistry {
         register(
             Action::NavigateRight,
             KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE),
-            false,
+            true,
         );
 
         register(
@@ -229,7 +229,7 @@ impl Default for CommandRegistry {
         );
         register(
             Action::YankId,
-            KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE),
+            KeyEvent::new(KeyCode::Char('Y'), KeyModifiers::SHIFT),
             true,
         );
         register(
@@ -263,6 +263,37 @@ impl Default for CommandRegistry {
             KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
             true,
         );
+        register(
+            Action::Paste,
+            KeyEvent::new(KeyCode::Char('v'), KeyModifiers::CONTROL),
+            true,
+        );
+        register(
+            Action::Paste,
+            KeyEvent::new(
+                KeyCode::Char('V'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
+            false,
+        );
+        register(
+            Action::Paste,
+            KeyEvent::new(
+                KeyCode::Char('v'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
+            false,
+        );
+        register(
+            Action::Paste,
+            KeyEvent::new(KeyCode::Char('V'), KeyModifiers::CONTROL),
+            false,
+        );
+        register(
+            Action::Paste,
+            KeyEvent::new(KeyCode::Insert, KeyModifiers::SHIFT),
+            false,
+        );
 
         Self {
             display_bindings,
@@ -278,8 +309,15 @@ impl CommandRegistry {
     }
 
     #[must_use]
-    pub fn get(&self, action: Action) -> Option<KeyEvent> {
-        self.display_bindings.get(&action).copied()
+    pub fn get(&self, action: Action) -> Option<&Vec<KeyEvent>> {
+        self.display_bindings.get(&action)
+    }
+
+    #[must_use]
+    pub fn get_first(&self, action: Action) -> Option<KeyEvent> {
+        self.display_bindings
+            .get(&action)
+            .and_then(|v| v.first().copied())
     }
 
     #[must_use]

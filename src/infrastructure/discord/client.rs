@@ -240,6 +240,40 @@ impl DiscordClient {
         }
     }
 
+    fn parse_mentions(
+        mentions: Vec<super::dto::MentionUserResponse>,
+    ) -> Vec<crate::domain::entities::User> {
+        mentions
+            .into_iter()
+            .map(|m| {
+                crate::domain::entities::User::new(
+                    m.id,
+                    m.username,
+                    m.discriminator,
+                    m.avatar,
+                    m.bot,
+                    m.member.and_then(|mb| mb.color),
+                )
+            })
+            .collect()
+    }
+
+    fn parse_reactions(
+        reactions: Vec<super::dto::ReactionDto>,
+    ) -> Vec<crate::domain::entities::Reaction> {
+        reactions
+            .into_iter()
+            .map(|r| crate::domain::entities::Reaction {
+                count: r.count,
+                me: r.me,
+                emoji: crate::domain::entities::ReactionEmoji {
+                    id: r.emoji.id,
+                    name: r.emoji.name,
+                },
+            })
+            .collect()
+    }
+
     fn parse_message_response(response: MessageResponse, channel_id: u64) -> Option<Message> {
         let MessageResponse {
             id,
@@ -317,35 +351,11 @@ impl DiscordClient {
         }
 
         if !mentions.is_empty() {
-            let mentions = mentions
-                .into_iter()
-                .map(|m| {
-                    crate::domain::entities::User::new(
-                        m.id,
-                        m.username,
-                        m.discriminator,
-                        m.avatar,
-                        m.bot,
-                        m.member.and_then(|mb| mb.color),
-                    )
-                })
-                .collect();
-            message = message.with_mentions(mentions);
+            message = message.with_mentions(Self::parse_mentions(mentions));
         }
 
         if !reactions.is_empty() {
-            let reactions = reactions
-                .into_iter()
-                .map(|r| crate::domain::entities::Reaction {
-                    count: r.count,
-                    me: r.me,
-                    emoji: crate::domain::entities::ReactionEmoji {
-                        id: r.emoji.id,
-                        name: r.emoji.name,
-                    },
-                })
-                .collect();
-            message = message.with_reactions(reactions);
+            message = message.with_reactions(Self::parse_reactions(reactions));
         }
 
         if let Some(f) = flags

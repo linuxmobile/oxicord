@@ -651,6 +651,12 @@ impl MessagePaneState {
         self.content_height = self.content_height.saturating_add(added_height);
     }
 
+    pub fn jump_to_index(&mut self, index: usize) {
+        self.selected_index = Some(index);
+        self.scroll_to_selection = true;
+        self.is_following = false;
+    }
+
     pub fn select_next(&mut self, message_count: usize) {
         if message_count == 0 {
             return;
@@ -965,7 +971,10 @@ impl MessagePaneStyle {
             author_style: Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
-            selected_style: Style::default().bg(Color::DarkGray),
+            selected_style: Style::default()
+                .bg(Color::DarkGray)
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
             loading_style: Style::default().fg(theme.accent),
             ..Self::default()
         }

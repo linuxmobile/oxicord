@@ -25,6 +25,7 @@ pub enum MessageInputMode {
     Reply {
         message_id: MessageId,
         author: String,
+        mention: bool,
     },
     Editing {
         message_id: MessageId,
@@ -46,6 +47,7 @@ pub enum MessageInputAction {
     CancelReply,
     ExitInput,
     OpenEditor,
+    Paste,
 }
 
 pub struct MessageInputState<'a> {
@@ -128,8 +130,12 @@ impl MessageInputState<'_> {
         matches!(self.mode, MessageInputMode::Editing { .. })
     }
 
-    pub fn start_reply(&mut self, message_id: MessageId, author: String) {
-        self.mode = MessageInputMode::Reply { message_id, author };
+    pub fn start_reply(&mut self, message_id: MessageId, author: String, mention: bool) {
+        self.mode = MessageInputMode::Reply {
+            message_id,
+            author,
+            mention,
+        };
     }
 
     pub fn start_edit(&mut self, message_id: MessageId, content: &str) {
@@ -150,6 +156,10 @@ impl MessageInputState<'_> {
     pub fn set_content(&mut self, content: &str) {
         self.textarea.select_all();
         self.textarea.cut();
+        self.textarea.insert_str(content);
+    }
+
+    pub fn insert_text_at_cursor(&mut self, content: &str) {
         self.textarea.insert_str(content);
     }
 
@@ -225,9 +235,17 @@ impl MessageInputState<'_> {
             registry.find_action(key)
         } {
             Some(Action::Cancel) => {
-                if self.is_replying() || self.is_editing() {
+                if self.is_editing() {
+                    self.reset_mode();
+                    self.clear();
+                    Some(MessageInputAction::CancelReply)
+                } else if self.is_replying() {
                     self.reset_mode();
                     Some(MessageInputAction::CancelReply)
+                } else if !self.is_empty() || !self.attachments.is_empty() {
+                    self.clear();
+                    self.clear_attachments();
+                    None
                 } else {
                     Some(MessageInputAction::ExitInput)
                 }
@@ -265,6 +283,7 @@ impl MessageInputState<'_> {
                 self.clear();
                 None
             }
+            Some(Action::Paste) => Some(MessageInputAction::Paste),
             _ => {
                 if let KeyCode::Char(c) = key.code
                     && (key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT)
@@ -581,7 +600,7 @@ mod tests {
     #[test]
     fn test_reply_mode() {
         let mut state = MessageInputState::new();
-        state.start_reply(MessageId(123), "testuser".to_string());
+        state.start_reply(MessageId(123), "testuser".to_string(), true);
         assert!(state.is_replying());
         state.reset_mode();
         assert!(!state.is_replying());
@@ -619,7 +638,7 @@ mod tests {
             KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE),
             &registry,
         );
-        state.start_reply(MessageId(123), "user".to_string());
+        state.start_reply(MessageId(123), "user".to_string(), true);
 
         let action = state.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &registry);
 
