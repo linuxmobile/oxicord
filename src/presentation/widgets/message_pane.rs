@@ -12,7 +12,7 @@ use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Padding, Paragraph, StatefulWidget, Widget},
+    widgets::{Block, Borders, Padding, Paragraph, StatefulWidget, Widget, Clear},
 };
 use tui_scrollbar::{GlyphSet, ScrollBar, ScrollLengths};
 use unicode_width::UnicodeWidthStr;
@@ -1157,6 +1157,27 @@ impl<'a> MessagePane<'a> {
             let empty = Paragraph::new("No messages in this channel").style(style.empty_style);
             empty.render(inner_area, buf);
             return;
+        }
+
+        if let Some(error_msg) = &data.error_message {
+            // Render error as a red message at the bottom if not loading/empty
+            // If loading state is Error, it's handled above. This handles transient errors
+            // while messages are still visible.
+             if matches!(data.loading_state(), LoadingState::Loaded) {
+                 let error_para = Paragraph::new(format!("Error: {error_msg}"))
+                    .style(style.error_style)
+                    .alignment(Alignment::Center);
+                 
+                 let error_area = Rect::new(
+                     inner_area.x, 
+                     inner_area.bottom().saturating_sub(1), 
+                     inner_area.width, 
+                     1
+                 );
+                 // Clear the area first to ensure legibility
+                 Clear.render(error_area, buf);
+                 error_para.render(error_area, buf);
+             }
         }
 
         let content_height: usize = data

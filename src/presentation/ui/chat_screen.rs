@@ -22,7 +22,7 @@ use crate::presentation::widgets::{
     FileExplorerAction, FileExplorerComponent, FocusContext, FooterBar, GuildsTree,
     GuildsTreeAction, GuildsTreeData, GuildsTreeState, HeaderBar, ImageManager, MentionPopup,
     MessageInput, MessageInputAction, MessageInputMode, MessageInputState, MessagePane,
-    MessagePaneAction, MessagePaneData, MessagePaneState, ViewMode, ForumState,
+    MessagePaneAction, MessagePaneData, MessagePaneState, ViewMode, ForumState, ConfirmationModal,
 };
 use crate::{NAME, VERSION};
 
@@ -34,20 +34,21 @@ pub enum ChatFocus {
     GuildsTree,
     MessagesList,
     MessageInput,
+    ConfirmationModal,
 }
 
 impl ChatFocus {
     const fn next(self, guilds_visible: bool) -> Self {
         if guilds_visible {
             match self {
-                Self::GuildsTree => Self::MessagesList,
                 Self::MessagesList => Self::MessageInput,
                 Self::MessageInput => Self::GuildsTree,
+                Self::GuildsTree | Self::ConfirmationModal => Self::MessagesList,
             }
         } else {
             match self {
                 Self::MessagesList => Self::MessageInput,
-                Self::MessageInput | Self::GuildsTree => Self::MessagesList,
+                Self::MessageInput | Self::GuildsTree | Self::ConfirmationModal => Self::MessagesList,
             }
         }
     }
@@ -57,12 +58,12 @@ impl ChatFocus {
             match self {
                 Self::GuildsTree => Self::MessageInput,
                 Self::MessagesList => Self::GuildsTree,
-                Self::MessageInput => Self::MessagesList,
+                Self::MessageInput | Self::ConfirmationModal => Self::MessagesList,
             }
         } else {
             match self {
                 Self::MessagesList => Self::MessageInput,
-                Self::MessageInput | Self::GuildsTree => Self::MessagesList,
+                Self::MessageInput | Self::GuildsTree | Self::ConfirmationModal => Self::MessagesList,
             }
         }
     }
@@ -73,6 +74,7 @@ impl ChatFocus {
             Self::GuildsTree => FocusContext::GuildsTree,
             Self::MessagesList => FocusContext::MessagesList,
             Self::MessageInput => FocusContext::MessageInput,
+            Self::ConfirmationModal => FocusContext::ConfirmationModal,
         }
     }
 }
@@ -133,6 +135,7 @@ pub struct ChatScreenState {
     disable_user_colors: bool,
     theme: Theme,
     forum_states: std::collections::HashMap<ChannelId, crate::presentation::widgets::ForumState>,
+    pending_deletion_id: Option<MessageId>,
 }
 
 impl ChatScreenState {
@@ -175,6 +178,7 @@ impl ChatScreenState {
             disable_user_colors,
             theme,
             forum_states: std::collections::HashMap::new(),
+            pending_deletion_id: None,
         }
     }
 
@@ -339,6 +343,25 @@ impl ChatScreenState {
             return ChatKeyResult::Consumed;
         }
 
+        if self.focus == ChatFocus::ConfirmationModal {
+            match key.code {
+                KeyCode::Enter => {
+                    if let Some(id) = self.pending_deletion_id.take() {
+                        self.set_focus(ChatFocus::MessagesList);
+                        return ChatKeyResult::DeleteMessage(id);
+                    }
+                    self.set_focus(ChatFocus::MessagesList);
+                    return ChatKeyResult::Consumed;
+                }
+                KeyCode::Esc | KeyCode::Char('n') => {
+                    self.pending_deletion_id = None;
+                    self.set_focus(ChatFocus::MessagesList);
+                    return ChatKeyResult::Consumed;
+                }
+                _ => return ChatKeyResult::Consumed,
+            }
+        }
+
         if self.show_file_explorer {
             if let Some(action) = self.registry.find_action(key)
                 && (action == Action::ToggleFileExplorer || action == Action::Cancel)
@@ -370,7 +393,7 @@ impl ChatScreenState {
             match self.focus {
                 ChatFocus::GuildsTree => self.handle_guilds_tree_key(key),
                 ChatFocus::MessagesList => self.handle_messages_list_key(key),
-                ChatFocus::MessageInput => unreachable!(),
+                ChatFocus::MessageInput | ChatFocus::ConfirmationModal => unreachable!(),
             }
         }
     }
@@ -496,7 +519,17 @@ impl ChatScreenState {
                     }
                 }
                 MessagePaneAction::Delete(message_id) => {
-                    return ChatKeyResult::DeleteMessage(message_id);
+                    if let Some(message) = self
+                        .message_pane_data
+                        .messages()
+                        .iter()
+                        .find(|m| m.message.id() == message_id)
+                        && message.message.author().id() == self.user.id_str()
+                    {
+                        self.pending_deletion_id = Some(message_id);
+                        self.set_focus(ChatFocus::ConfirmationModal);
+                        return ChatKeyResult::Consumed;
+                    }
                 }
                 MessagePaneAction::YankContent(content) | MessagePaneAction::YankUrl(content) => {
                     return ChatKeyResult::CopyToClipboard(content);
@@ -1193,20 +1226,20 @@ impl HasCommands for ChatScreenState {
     fn get_commands(&self, registry: &CommandRegistry) -> Vec<Keybind> {
         let mut commands = Vec::new();
 
-        let mut add = |action: Action, label: &'static str| {
-            if let Some(key) = registry.get(action) {
-                commands.push(Keybind::new(key, action, label));
-            }
-        };
-
         if self.show_help {
-            add(Action::ToggleHelp, "Close Help");
+            if let Some(key) = registry.get(Action::ToggleHelp) {
+                commands.push(Keybind::new(key, Action::ToggleHelp, "Close Help"));
+            }
             return commands;
         }
 
         if self.show_file_explorer {
-            add(Action::Select, "Select");
-            add(Action::ToggleFileExplorer, "Close");
+            if let Some(key) = registry.get(Action::Select) {
+                commands.push(Keybind::new(key, Action::Select, "Select"));
+            }
+            if let Some(key) = registry.get(Action::ToggleFileExplorer) {
+                commands.push(Keybind::new(key, Action::ToggleFileExplorer, "Close"));
+            }
             commands.push(Keybind::new(
                 KeyEvent::from(KeyCode::Char('.')),
                 Action::ToggleHiddenFiles,
@@ -1215,25 +1248,53 @@ impl HasCommands for ChatScreenState {
         } else {
             match self.focus {
                 ChatFocus::GuildsTree => {
-                    add(Action::NavigateUp, "Nav");
-                    add(Action::Select, "Select");
-                    add(Action::NavigateRight, "Expand");
+                    if let Some(key) = registry.get(Action::NavigateUp) {
+                        commands.push(Keybind::new(key, Action::NavigateUp, "Nav"));
+                    }
+                    if let Some(key) = registry.get(Action::Select) {
+                        commands.push(Keybind::new(key, Action::Select, "Select"));
+                    }
+                    if let Some(key) = registry.get(Action::NavigateRight) {
+                        commands.push(Keybind::new(key, Action::NavigateRight, "Expand"));
+                    }
                 }
                 ChatFocus::MessagesList => {
-                    add(Action::NavigateUp, "Nav");
-                    add(Action::Reply, "Reply");
-                    add(Action::EditMessage, "Edit");
-                    add(Action::DeleteMessage, "Del");
+                    if let Some(key) = registry.get(Action::NavigateUp) {
+                        commands.push(Keybind::new(key, Action::NavigateUp, "Nav"));
+                    }
+                    if let Some(key) = registry.get(Action::Reply) {
+                        commands.push(Keybind::new(key, Action::Reply, "Reply"));
+                    }
+                    if let Some(key) = registry.get(Action::EditMessage) {
+                        commands.push(Keybind::new(key, Action::EditMessage, "Edit"));
+                    }
+                    if let Some(key) = registry.get(Action::DeleteMessage) {
+                        commands.push(Keybind::new(key, Action::DeleteMessage, "Del"));
+                    }
                 }
                 ChatFocus::MessageInput => {
-                    add(Action::SendMessage, "Send");
-                    add(Action::OpenEditor, "Editor");
-                    add(Action::Cancel, "Cancel");
+                    if let Some(key) = registry.get(Action::SendMessage) {
+                        commands.push(Keybind::new(key, Action::SendMessage, "Send"));
+                    }
+                    if let Some(key) = registry.get(Action::OpenEditor) {
+                        commands.push(Keybind::new(key, Action::OpenEditor, "Editor"));
+                    }
+                    if let Some(key) = registry.get(Action::Cancel) {
+                        commands.push(Keybind::new(key, Action::Cancel, "Cancel"));
+                    }
+                }
+                ChatFocus::ConfirmationModal => {
+                    commands.push(Keybind::new(KeyEvent::from(KeyCode::Enter), Action::Select, "Confirm"));
+                    commands.push(Keybind::new(KeyEvent::from(KeyCode::Esc), Action::Cancel, "Cancel"));
                 }
             }
 
-            add(Action::NextTab, "Next");
-            add(Action::ToggleHelp, "Help");
+            if let Some(key) = registry.get(Action::NextTab) {
+                commands.push(Keybind::new(key, Action::NextTab, "Next"));
+            }
+            if let Some(key) = registry.get(Action::ToggleHelp) {
+                commands.push(Keybind::new(key, Action::ToggleHelp, "Help"));
+            }
         }
 
         commands
@@ -1321,6 +1382,15 @@ impl StatefulWidget for ChatScreen {
 
         if state.show_file_explorer {
             render_explorer_popup(state, area, buf);
+        }
+
+        if state.focus == ChatFocus::ConfirmationModal {
+            let modal = ConfirmationModal::new(
+                "Delete Message",
+                "Are you sure you want to delete this message?",
+                state.theme,
+            );
+            modal.render(area, buf);
         }
 
         if state.show_help {

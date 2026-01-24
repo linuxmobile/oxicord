@@ -48,6 +48,8 @@ pub enum Action {
     MessageSendError(String),
     MessageEdited(Message),
     MessageEditError(String),
+    MessageDeleted(MessageId),
+    MessageDeleteError(String),
     TypingIndicatorSent(ChannelId),
     LoginSuccess {
         user: crate::domain::entities::User,
@@ -87,6 +89,11 @@ pub enum BackendCommand {
     EditMessage {
         token: AuthToken,
         request: EditMessageRequest,
+    },
+    DeleteMessage {
+        token: AuthToken,
+        channel_id: ChannelId,
+        message_id: MessageId,
     },
     SendTypingIndicator {
         channel_id: ChannelId,
@@ -244,6 +251,26 @@ impl Backend {
                     Err(e) => {
                         error!(error = %e, "Failed to edit message");
                         let _ = self.action_tx.send(Action::MessageEditError(e.to_string()));
+                    }
+                }
+            }
+            BackendCommand::DeleteMessage {
+                token,
+                channel_id,
+                message_id,
+            } => {
+                match self
+                    .discord_data
+                    .delete_message(&token, channel_id, message_id)
+                    .await
+                {
+                    Ok(()) => {
+                        info!(message_id = %message_id, "Message deleted successfully");
+                        let _ = self.action_tx.send(Action::MessageDeleted(message_id));
+                    }
+                    Err(e) => {
+                        error!(error = %e, "Failed to delete message");
+                        let _ = self.action_tx.send(Action::MessageDeleteError(e.to_string()));
                     }
                 }
             }

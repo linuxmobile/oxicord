@@ -1,4 +1,5 @@
 mod channel_header;
+mod confirmation_modal;
 mod file_explorer;
 mod footer_bar;
 mod guilds_tree;
@@ -11,6 +12,7 @@ mod message_pane;
 mod status_bar;
 
 pub use channel_header::{ChannelHeader, ChannelHeaderStyle};
+pub use confirmation_modal::ConfirmationModal;
 pub use file_explorer::{FileExplorerAction, FileExplorerComponent};
 pub use footer_bar::{FocusContext, FooterBar, FooterBarStyle};
 pub use guilds_tree::{

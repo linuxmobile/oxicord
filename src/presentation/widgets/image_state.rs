@@ -196,12 +196,10 @@ impl ImageManager {
                 attachment.clear_protocol();
             }
 
-            if idx < memory_start || idx > memory_end {
-                if attachment.image.is_some() {
-                    attachment.image = None;
-                    if matches!(attachment.status, ImageStatus::Ready) {
-                        attachment.status = ImageStatus::NotStarted;
-                    }
+            if (idx < memory_start || idx > memory_end) && attachment.image.is_some() {
+                attachment.image = None;
+                if matches!(attachment.status, ImageStatus::Ready) {
+                    attachment.status = ImageStatus::NotStarted;
                 }
             }
         }

@@ -15,7 +15,7 @@ use super::identity::ClientIdentity;
 use super::scraper;
 use crate::domain::entities::{
     Attachment, AuthToken, Channel, ChannelId, ChannelKind, Embed, EmbedProvider, EmbedThumbnail,
-    ForumThread, Guild, GuildId, Message, MessageAuthor, ReadState,
+    ForumThread, Guild, GuildId, Message, MessageAuthor, MessageId, ReadState,
     User,
 };
 use crate::domain::errors::AuthError;
@@ -800,6 +800,46 @@ impl DiscordDataPort for DiscordClient {
 
         Self::parse_message_response(message_response, request.channel_id.as_u64())
             .ok_or_else(|| AuthError::unexpected("failed to parse edited message"))
+    }
+
+    async fn delete_message(
+        &self,
+        token: &AuthToken,
+        channel_id: ChannelId,
+        message_id: MessageId,
+    ) -> Result<(), AuthError> {
+        let url = format!(
+            "{}/channels/{}/messages/{}",
+            self.base_url,
+            channel_id.as_u64(),
+            message_id.as_u64()
+        );
+
+        debug!(
+            channel_id = %channel_id,
+            message_id = %message_id,
+            "Deleting message via Discord API"
+        );
+
+        let response = self
+            .build_request(Method::DELETE, &url)
+            .header(header::AUTHORIZATION, token.as_str())
+            .send()
+            .await
+            .map_err(|e| {
+                warn!(error = %e, "Failed to delete message");
+                AuthError::network(e.to_string())
+            })?;
+
+        let status = response.status();
+
+        if !status.is_success() && status != StatusCode::NO_CONTENT {
+            return Err(self.handle_error_response(status, response).await);
+        }
+
+        debug!(message_id = %message_id, "Message deleted successfully");
+
+        Ok(())
     }
 
     async fn send_typing_indicator(

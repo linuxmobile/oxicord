@@ -383,6 +383,7 @@ impl App {
             }
             ChatKeyResult::DeleteMessage(message_id) => {
                 debug!(message_id = %message_id, "Delete message requested");
+                self.handle_delete_message(message_id);
             }
             ChatKeyResult::OpenAttachments(message_id) => {
                 debug!(message_id = %message_id, "Open attachments requested");
@@ -1039,6 +1040,18 @@ impl App {
                     state.set_message_error(format!("Failed to edit: {error}"));
                 }
             }
+            Action::MessageDeleted(message_id) => {
+                debug!(message_id = %message_id, "Message delete confirmed by backend");
+                if let CurrentScreen::Chat(ref mut state) = self.screen {
+                    state.remove_message(message_id);
+                }
+            }
+            Action::MessageDeleteError(error) => {
+                error!(error = %error, "Failed to delete message");
+                if let CurrentScreen::Chat(ref mut state) = self.screen {
+                    state.set_message_error(format!("Failed to delete: {error}"));
+                }
+            }
             Action::TypingIndicatorSent(_) => {}
             Action::ImageLoaderReady(loader) => {
                 info!("Image loader initialized");
@@ -1158,6 +1171,34 @@ impl App {
         let _ = self.command_tx.send(BackendCommand::EditMessage {
             token: token.clone(),
             request,
+        });
+    }
+
+    fn handle_delete_message(&mut self, message_id: crate::domain::entities::MessageId) {
+        let channel_id = if let CurrentScreen::Chat(ref state) = self.screen {
+            state
+                .selected_channel()
+                .map(crate::domain::entities::Channel::id)
+        } else {
+            None
+        };
+
+        let Some(channel_id) = channel_id else {
+            warn!("Cannot delete message: no channel selected");
+            return;
+        };
+
+        let Some(ref token) = self.current_token else {
+            warn!("Cannot delete message: no token available");
+            return;
+        };
+
+        debug!(channel_id = %channel_id, message_id = %message_id, "Deleting message");
+
+        let _ = self.command_tx.send(BackendCommand::DeleteMessage {
+            token: token.clone(),
+            channel_id,
+            message_id,
         });
     }
 
@@ -1345,6 +1386,15 @@ mod tests {
 
     #[async_trait::async_trait]
     impl DiscordDataPort for MockDiscordData {
+        async fn delete_message(
+            &self,
+            _token: &AuthToken,
+            _channel_id: ChannelId,
+            _message_id: MessageId,
+        ) -> Result<(), AuthError> {
+            Ok(())
+        }
+
         async fn fetch_guilds(&self, _token: &AuthToken) -> Result<Vec<Guild>, AuthError> {
             Ok(vec![Guild::new(1_u64, "Test Guild")])
         }

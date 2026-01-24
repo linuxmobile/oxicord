@@ -15,6 +15,7 @@ pub enum FocusContext {
     GuildsTree,
     MessagesList,
     MessageInput,
+    ConfirmationModal,
 }
 
 impl FocusContext {
@@ -24,6 +25,7 @@ impl FocusContext {
             Self::GuildsTree => "GUILDS",
             Self::MessagesList => "MESSAGES",
             Self::MessageInput => "INPUT",
+            Self::ConfirmationModal => "CONFIRM",
         }
     }
 }

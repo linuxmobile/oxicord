@@ -150,6 +150,14 @@ pub trait DiscordDataPort: Send + Sync {
         request: EditMessageRequest,
     ) -> Result<Message, AuthError>;
 
+    /// Deletes a message.
+    async fn delete_message(
+        &self,
+        token: &AuthToken,
+        channel_id: ChannelId,
+        message_id: MessageId,
+    ) -> Result<(), AuthError>;
+
     /// Sends a typing indicator to a channel.
     async fn send_typing_indicator(
         &self,
