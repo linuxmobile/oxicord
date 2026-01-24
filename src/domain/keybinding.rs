@@ -48,6 +48,7 @@ pub enum Action {
     ClearInput,
     Cancel,
     Paste,
+    SecureLogout,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

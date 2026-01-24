@@ -5,6 +5,7 @@ use color_eyre::eyre::Result;
 use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
+use oxicord::application::dto::TokenSource;
 use oxicord::infrastructure::{AppConfig, DiscordClient, KeyringTokenStorage};
 use oxicord::presentation::{App, Theme};
 
@@ -41,9 +42,24 @@ fn init_logging(config: &AppConfig) -> Result<()> {
     Ok(())
 }
 
-fn create_app() -> Result<(App, Option<String>)> {
+fn create_app() -> Result<(App, Option<(String, TokenSource)>)> {
     let config = AppConfig::parse();
-    let cli_token = config.token.clone();
+    
+    let external_token = if let Ok(env_token) = std::env::var("OXICORD_TOKEN") {
+        if let Some(ref token) = config.token {
+            if token == &env_token {
+                Some((token.clone(), TokenSource::Environment))
+            } else {
+                Some((token.clone(), TokenSource::CommandLine))
+            }
+        } else {
+            // This fallback handles cases where clap might not have picked it up
+            // (though it should have given the config struct definition)
+            Some((env_token, TokenSource::Environment))
+        }
+    } else {
+        config.token.clone().map(|t| (t, TokenSource::CommandLine))
+    };
 
     init_logging(&config)?;
 
@@ -69,18 +85,18 @@ fn create_app() -> Result<(App, Option<String>)> {
         identity,
     );
 
-    Ok((app, cli_token))
+    Ok((app, external_token))
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
 
-    let (app, cli_token) = create_app()?;
+    let (app, external_token) = create_app()?;
 
     let mut terminal = ratatui::init();
 
-    let result = app.run(&mut terminal, cli_token).await;
+    let result = app.run(&mut terminal, external_token).await;
 
     ratatui::restore();
 

@@ -208,9 +208,9 @@ impl App {
     pub async fn run(
         mut self,
         terminal: &mut DefaultTerminal,
-        cli_token: Option<String>,
+        external_token: Option<(String, TokenSource)>,
     ) -> color_eyre::Result<()> {
-        if let Some(resolved) = self.resolve_token_use_case.execute(cli_token).await? {
+        if let Some(resolved) = self.resolve_token_use_case.execute(external_token).await? {
             info!(source = %resolved.source, "Found existing token");
             self.pending_token = Some((resolved.token.as_str().to_string(), resolved.source));
         }
@@ -343,6 +343,21 @@ impl App {
     fn handle_terminal_event(&mut self, event: &Event) -> EventResult {
         match event {
             Event::Key(key) => self.handle_key(*key),
+            Event::Paste(text) => self.handle_paste(text.clone()),
+            _ => EventResult::Continue,
+        }
+    }
+
+    fn handle_paste(&mut self, text: String) -> EventResult {
+        match &mut self.screen {
+            CurrentScreen::Login(screen) => {
+                screen.paste_token(&text);
+                EventResult::Continue
+            }
+            CurrentScreen::Chat(state) => {
+                state.insert_text(&text);
+                EventResult::Continue
+            }
             _ => EventResult::Continue,
         }
     }
@@ -358,7 +373,11 @@ impl App {
             login_screen.set_validating();
         }
 
-        let request = LoginRequest::new(token.clone(), source);
+        let mut request = LoginRequest::new(token.clone(), source);
+        if source == TokenSource::Environment {
+            request = request.without_persistence();
+        }
+
         match self.login_use_case.execute(request).await {
             Ok(response) => {
                 info!(user = %response.user.display_name(), "Auto-login successful");
@@ -458,6 +477,7 @@ impl App {
                 match screen.handle_key(key) {
                     LoginAction::Submit => self.handle_login_submit(),
                     LoginAction::DeleteToken => self.handle_delete_token(),
+                    LoginAction::Paste => self.handle_login_paste(),
                     LoginAction::None => {}
                 }
                 return EventResult::Continue;
@@ -474,6 +494,10 @@ impl App {
         match result {
             ChatKeyResult::Quit => return EventResult::Exit,
             ChatKeyResult::Logout => {
+                self.transition_to_login();
+            }
+            ChatKeyResult::SecureLogout => {
+                self.handle_delete_token(); // This deletes from keyring
                 self.transition_to_login();
             }
             ChatKeyResult::CopyToClipboard(text) => {
@@ -634,6 +658,17 @@ impl App {
                 Err(e) => {
                     let _ = tx.send(Action::LoginFailure(e));
                 }
+            }
+        });
+    }
+
+    fn handle_login_paste(&mut self) {
+        let clipboard = self.clipboard_service.clone();
+        let tx = self.action_tx.clone();
+
+        tokio::task::spawn_blocking(move || {
+            if let Some(text) = clipboard.get_text() {
+                let _ = tx.send(Action::PasteTextLoaded(text));
             }
         });
     }
@@ -1403,6 +1438,8 @@ impl App {
             Action::PasteTextLoaded(text) => {
                 if let CurrentScreen::Chat(state) = &mut self.screen {
                     state.insert_text(&text);
+                } else if let CurrentScreen::Login(screen) = &mut self.screen {
+                    screen.paste_token(&text);
                 }
             }
         }

@@ -31,6 +31,11 @@ impl Default for CommandRegistry {
             true,
         );
         register(
+            Action::SecureLogout,
+            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::ALT),
+            true,
+        );
+        register(
             Action::ToggleHelp,
             KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE),
             true,

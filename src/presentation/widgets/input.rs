@@ -89,6 +89,12 @@ impl TextInput {
         self.cursor += 1;
     }
 
+    /// Inserts string at cursor.
+    pub fn insert_str(&mut self, text: &str) {
+        self.value.insert_str(self.cursor, text);
+        self.cursor += text.len();
+    }
+
     /// Deletes character before cursor.
     pub fn backspace(&mut self) {
         if self.cursor > 0 {

@@ -482,6 +482,7 @@ impl ChatScreenState {
         match self.registry.find_action(key) {
             Some(Action::Quit) => Some(ChatKeyResult::Quit),
             Some(Action::Logout) => Some(ChatKeyResult::Logout),
+            Some(Action::SecureLogout) => Some(ChatKeyResult::SecureLogout),
             Some(Action::FocusGuilds) => {
                 self.focus_guilds_tree();
                 Some(ChatKeyResult::Consumed)
@@ -1467,6 +1468,7 @@ pub enum ChatKeyResult {
     Ignored,
     Quit,
     Logout,
+    SecureLogout,
     CopyToClipboard(String),
     LoadGuildChannels(GuildId),
     LoadChannelMessages {

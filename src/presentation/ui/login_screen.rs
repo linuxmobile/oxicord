@@ -34,6 +34,7 @@ pub enum LoginAction {
     None,
     Submit,
     DeleteToken,
+    Paste,
 }
 
 impl LoginScreen {
@@ -70,7 +71,11 @@ impl LoginScreen {
     #[must_use]
     pub fn token(&self) -> Option<&str> {
         let value = self.token_input.value();
-        if value.is_empty() { None } else { Some(value) }
+        if value.is_empty() {
+            None
+        } else {
+            Some(value)
+        }
     }
 
     /// Returns persistence preference.
@@ -103,6 +108,16 @@ impl LoginScreen {
         self.error_message = None;
     }
 
+    /// Sets the token value.
+    pub fn set_token(&mut self, token: String) {
+        self.token_input.set_value(token);
+    }
+
+    /// Inserts text at the current cursor position.
+    pub fn paste_token(&mut self, text: &str) {
+        self.token_input.insert_str(text);
+    }
+
     /// Handles key event, returns action.
     pub fn handle_key(&mut self, key: KeyEvent) -> LoginAction {
         if self.state == LoginState::Validating {
@@ -122,6 +137,20 @@ impl LoginScreen {
             }
             KeyCode::Char('d') if key.modifiers.contains(crossterm::event::KeyModifiers::ALT) => {
                 return LoginAction::DeleteToken;
+            }
+            KeyCode::Char('u')
+                if key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
+            {
+                self.token_input.clear();
+            }
+            KeyCode::Char('v')
+                if key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
+            {
+                return LoginAction::Paste;
             }
             KeyCode::Char(c) => {
                 self.token_input.input_char(c);
@@ -156,14 +185,14 @@ impl LoginScreen {
     fn render_inner(&self, area: Rect, buf: &mut Buffer) {
         let vertical = Layout::vertical([
             Constraint::Fill(1),
-            Constraint::Length(12),
+            Constraint::Min(15),
             Constraint::Fill(1),
         ]);
         let [_, center, _] = vertical.areas(area);
 
         let horizontal = Layout::horizontal([
             Constraint::Fill(1),
-            Constraint::Min(50),
+            Constraint::Min(60),
             Constraint::Fill(1),
         ]);
         let [_, content_area, _] = horizontal.areas(center);
@@ -178,22 +207,52 @@ impl LoginScreen {
         let inner = block.inner(content_area);
         block.render(content_area, buf);
 
-        let inner_layout = Layout::vertical([
+        let mut constraints = vec![
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(3),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ]);
-        let areas = inner_layout.areas::<7>(inner);
+        ];
+
+        let token_val = self.token_input.value();
+        let has_quote = token_val.contains('"') || token_val.contains('\'');
+        let too_long = token_val.len() > 72;
+        let show_tip = has_quote || too_long;
+
+        if show_tip {
+            constraints.push(Constraint::Length(2));
+        } else {
+            constraints.push(Constraint::Length(1));
+        }
+
+        constraints.push(Constraint::Length(1));
+        constraints.push(Constraint::Length(1));
+        constraints.push(Constraint::Min(2));
+
+        let inner_layout = Layout::vertical(constraints);
+        let areas = inner_layout.split(inner);
 
         let title = Paragraph::new("Enter your Discord token to login")
             .style(Style::default().fg(Color::White));
         title.render(areas[0], buf);
 
         (&self.token_input).render(areas[2], buf);
+
+        if show_tip {
+            let mut tips = Vec::new();
+            if has_quote {
+                tips.push("Token should not contain quotes");
+            }
+            if too_long {
+                tips.push("Token seems too long");
+            }
+            let tip_text = format!("Tip! {}", tips.join(", "));
+            let tip_para = Paragraph::new(tip_text).style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            );
+            tip_para.render(areas[3], buf);
+        }
 
         let checkbox = if self.persist_token { "[x]" } else { "[ ]" };
         let persist_line = Line::from(vec![
@@ -229,7 +288,8 @@ impl LoginScreen {
                 Style::default().fg(Color::Green),
             )),
         };
-        let status_para = Paragraph::new(status);
+
+        let status_para = Paragraph::new(status).wrap(ratatui::widgets::Wrap { trim: true });
         status_para.render(areas[6], buf);
     }
 }
@@ -304,5 +364,23 @@ mod tests {
         let mut screen = LoginScreen::new();
         let event = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::ALT);
         assert_eq!(screen.handle_key(event), LoginAction::DeleteToken);
+    }
+
+    #[test]
+    fn test_ctrl_u_clears_input() {
+        let mut screen = LoginScreen::new();
+        screen.handle_key(key(KeyCode::Char('t')));
+        screen.handle_key(key(KeyCode::Char('e')));
+        assert_eq!(screen.token(), Some("te"));
+
+        screen.handle_key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+        assert!(screen.token().is_none());
+    }
+
+    #[test]
+    fn test_ctrl_v_returns_paste_action() {
+        let mut screen = LoginScreen::new();
+        let action = screen.handle_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::CONTROL));
+        assert_eq!(action, LoginAction::Paste);
     }
 }
