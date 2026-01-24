@@ -224,6 +224,7 @@ pub struct Channel {
     name: String,
     kind: ChannelKind,
     parent_id: Option<ChannelId>,
+    #[serde(default)]
     position: i32,
     topic: Option<String>,
     last_message_id: Option<MessageId>,
@@ -233,7 +234,7 @@ pub struct Channel {
     #[serde(default)]
     bitrate: Option<u32>,
     #[serde(default)]
-    user_limit: Option<u8>,
+    user_limit: Option<u32>,
     #[serde(default)]
     rate_limit_per_user: Option<u16>,
     #[serde(default)]
@@ -325,7 +326,7 @@ impl Channel {
     }
 
     #[must_use]
-    pub const fn with_user_limit(mut self, user_limit: u8) -> Self {
+    pub const fn with_user_limit(mut self, user_limit: u32) -> Self {
         self.user_limit = Some(user_limit);
         self
     }
@@ -436,7 +437,7 @@ impl Channel {
     }
 
     #[must_use]
-    pub const fn user_limit(&self) -> Option<u8> {
+    pub const fn user_limit(&self) -> Option<u32> {
         self.user_limit
     }
 

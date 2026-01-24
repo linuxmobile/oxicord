@@ -85,7 +85,7 @@ pub struct ChannelResponse {
     #[serde(default)]
     pub bitrate: Option<u32>,
     #[serde(default)]
-    pub user_limit: Option<u8>,
+    pub user_limit: Option<u32>,
     #[serde(default)]
     pub rate_limit_per_user: Option<u16>,
     #[serde(default)]
@@ -373,5 +373,41 @@ mod tests {
             serde_json::from_str(json).expect("Should handle missing optional fields");
         assert_eq!(decoded.name, None);
         assert_eq!(decoded.topic, None);
+    }
+
+    #[test]
+    fn test_large_user_limit_decoding() {
+        let json = r#"
+            {
+                "id": "1407144417625772032",
+                "type": 13,
+                "last_message_id": "1421571427806478356",
+                "flags": 0,
+                "guild_id": "1405283270484037762",
+                "name": "karaoke event stage!",
+                "parent_id": "1405283272103035073",
+                "rate_limit_per_user": 0,
+                "bitrate": 64000,
+                "user_limit": 10000,
+                "rtc_region": null,
+                "topic": null,
+                "position": 0,
+                "permission_overwrites": [
+                    {
+                        "id": "323773153379876864",
+                        "type": 1,
+                        "allow": "4503599648342032",
+                        "deny": "0"
+                    }
+                ],
+                "nsfw": false
+            }
+        "#;
+
+        let decoded: ChannelResponse =
+            serde_json::from_str(json).expect("Should decode large user_limit");
+        assert_eq!(decoded.user_limit, Some(10000));
+        assert_eq!(decoded.bitrate, Some(64000));
+        assert_eq!(decoded.permission_overwrites[0].allow, "4503599648342032");
     }
 }
