@@ -64,11 +64,13 @@ pub struct ChannelResponse {
     pub kind: u8,
     #[allow(dead_code)]
     pub guild_id: Option<String>,
+    #[serde(default)]
     pub name: Option<String>,
     pub owner_id: Option<String>,
     pub parent_id: Option<String>,
     #[serde(default)]
     pub position: i32,
+    #[serde(default)]
     pub topic: Option<String>,
     pub last_message_id: Option<String>,
     #[serde(default)]
@@ -337,4 +339,39 @@ pub struct MessageReferencePayload {
 #[derive(Debug, serde::Serialize)]
 pub struct EditMessagePayload {
     pub content: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_channel_decoding_with_special_chars() {
+        let json = r#"{
+            "id": "123456789",
+            "type": 0,
+            "name": "︓·⠄₊⊹",
+            "topic": "Aesthetic topic ︓·⠄₊⊹",
+            "guild_id": "987654321",
+            "position": 1,
+            "nsfw": false
+        }"#;
+
+        let decoded: ChannelResponse =
+            serde_json::from_str(json).expect("Should decode special chars");
+        assert_eq!(decoded.name.as_deref(), Some("︓·⠄₊⊹"));
+        assert_eq!(decoded.topic.as_deref(), Some("Aesthetic topic ︓·⠄₊⊹"));
+    }
+
+    #[test]
+    fn test_channel_decoding_missing_fields() {
+        let json = r#"{
+            "id": "123",
+            "type": 0
+         }"#;
+        let decoded: ChannelResponse =
+            serde_json::from_str(json).expect("Should handle missing optional fields");
+        assert_eq!(decoded.name, None);
+        assert_eq!(decoded.topic, None);
+    }
 }

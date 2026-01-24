@@ -1742,7 +1742,7 @@ mod tests {
         let storage = Arc::new(MockTokenStorage::new());
         let theme = Theme::new("Orange");
         let identity = Arc::new(ClientIdentity::new());
-        let app = App::new(auth, data, storage, false, theme, identity);
+        let app = App::new(auth, data, storage, false, false, theme, identity);
 
         assert_eq!(app.state, AppState::Login);
     }

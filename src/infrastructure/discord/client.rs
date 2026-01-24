@@ -201,7 +201,7 @@ impl DiscordClient {
             }),
             thumbnail: embed.thumbnail.map(|t| EmbedThumbnail {
                 url: t.url,
-                proxy_url: None, // DTO doesn't have proxy_url yet, effectively
+                proxy_url: None,
                 height: t.height,
                 width: t.width,
             }),
@@ -330,7 +330,6 @@ impl DiscordClient {
         }
 
         if let Some(ref_msg) = referenced_message {
-            // referenced_message is Box<MessageResponse>
             let ref_cid = ref_msg.channel_id.parse().unwrap_or(channel_id);
             if let Some(parsed_ref) = Self::parse_message_response(*ref_msg, ref_cid) {
                 message = message.with_referenced_message(Some(parsed_ref));
@@ -536,8 +535,14 @@ impl DiscordDataPort for DiscordClient {
             return Err(self.handle_error_response(status, response).await);
         }
 
-        let channel_responses: Vec<ChannelResponse> = response.json().await.map_err(|e| {
+        let body_text = response.text().await.map_err(|e| {
+            warn!(error = %e, "Failed to read channels response body");
+            AuthError::network(e.to_string())
+        })?;
+
+        let channel_responses: Vec<ChannelResponse> = serde_json::from_str(&body_text).map_err(|e| {
             warn!(error = %e, "Failed to parse channels response");
+            debug!(body = %body_text, "Raw response body causing decode failure");
             AuthError::unexpected(format!("failed to parse channels: {e}"))
         })?;
 
