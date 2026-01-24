@@ -417,7 +417,7 @@ impl ChatScreenState {
                 return result;
             }
         } else {
-             match self.focus {
+            match self.focus {
                 ChatFocus::GuildsTree => {
                     let result = self.handle_guilds_tree_key(key);
                     if result != ChatKeyResult::Ignored {
@@ -703,24 +703,24 @@ impl ChatScreenState {
                 MessageInputAction::ExitInput => {
                     self.focus_messages_list();
                 }
-            MessageInputAction::OpenEditor => {
-                let initial_content = self.message_input_state.value();
-                let message_id = match self.message_input_state.mode() {
-                    MessageInputMode::Editing { message_id } => Some(*message_id),
-                    _ => None,
-                };
-                return ChatKeyResult::OpenEditor {
-                    initial_content,
-                    message_id,
-                };
+                MessageInputAction::OpenEditor => {
+                    let initial_content = self.message_input_state.value();
+                    let message_id = match self.message_input_state.mode() {
+                        MessageInputMode::Editing { message_id } => Some(*message_id),
+                        _ => None,
+                    };
+                    return ChatKeyResult::OpenEditor {
+                        initial_content,
+                        message_id,
+                    };
+                }
+                MessageInputAction::Paste => {
+                    return ChatKeyResult::Paste;
+                }
+                MessageInputAction::StartTyping | MessageInputAction::CancelReply => {}
             }
-            MessageInputAction::Paste => {
-                return ChatKeyResult::Paste;
-            }
-            MessageInputAction::StartTyping | MessageInputAction::CancelReply => {}
-        }
-    } else {
-        let value = self.message_input_state.value();
+        } else {
+            let value = self.message_input_state.value();
             let cursor_idx = self.message_input_state.get_cursor_index();
             autocomplete_changed = self.autocomplete_service.process_input(&value, cursor_idx);
         }
@@ -1576,7 +1576,9 @@ fn render_help_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) 
                     .map(|k| {
                         use std::fmt::Write;
                         let mut s = String::new();
-                        if k.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+                        if k.modifiers
+                            .contains(crossterm::event::KeyModifiers::CONTROL)
+                        {
                             s.push_str("Ctrl+");
                         }
                         if k.modifiers.contains(crossterm::event::KeyModifiers::ALT) {

@@ -5,6 +5,7 @@ use tracing::{error, warn};
 pub struct ClipboardService {}
 
 impl ClipboardService {
+    #[must_use]
     pub fn new() -> Self {
         Self {}
     }
@@ -64,8 +65,8 @@ mod tests {
     async fn test_clipboard_service_lifecycle() {
         let service = ClipboardService::new();
         let result = service.get_text();
-        assert!(result.is_none() || result.is_some()); 
-        
+        assert!(result.is_none() || result.is_some());
+
         service.set_text("test");
     }
 }

@@ -206,13 +206,12 @@ impl App {
 
     async fn validate_auth_status(&self) -> bool {
         match self.token_source {
-            Some(TokenSource::Keyring) => match self.resolve_token_use_case.execute(None).await {
-                Ok(Some(_)) => true,
-                _ => false,
-            },
-            Some(TokenSource::CommandLine)
-            | Some(TokenSource::Environment)
-            | Some(TokenSource::UserInput) => true,
+            Some(TokenSource::Keyring) => {
+                matches!(self.resolve_token_use_case.execute(None).await, Ok(Some(_)))
+            }
+            Some(TokenSource::CommandLine | TokenSource::Environment | TokenSource::UserInput) => {
+                true
+            }
             None => false,
         }
     }

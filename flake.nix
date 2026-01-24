@@ -38,7 +38,7 @@
             lockFile = ./Cargo.lock;
           };
 
-          nativeBuildInputs = [pkgs.pkg-config];
+          nativeBuildInputs = [pkgs.pkg-config pkgs.clang pkgs.mold];
 
           buildInputs =
             [
@@ -60,10 +60,13 @@
         };
 
         devShells.default = pkgs.mkShell {
+          RUSTFLAGS = "-C link-arg=-fuse-ld=mold";
           packages = [
             rustToolchain
             pkgs.cargo-watch
             pkgs.pkg-config
+            pkgs.clang
+            pkgs.mold
           ];
 
           buildInputs =
