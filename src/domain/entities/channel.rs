@@ -230,6 +230,8 @@ pub struct Channel {
     last_message_id: Option<MessageId>,
     has_unread: bool,
     #[serde(default)]
+    mention_count: u32,
+    #[serde(default)]
     nsfw: bool,
     #[serde(default)]
     bitrate: Option<u32>,
@@ -264,6 +266,7 @@ impl Channel {
             topic: None,
             last_message_id: None,
             has_unread: false,
+            mention_count: 0,
             nsfw: false,
             bitrate: None,
             user_limit: None,
@@ -424,6 +427,19 @@ impl Channel {
 
     pub const fn set_unread(&mut self, has_unread: bool) {
         self.has_unread = has_unread;
+    }
+
+    #[must_use]
+    pub const fn mention_count(&self) -> u32 {
+        self.mention_count
+    }
+
+    pub fn set_mention_count(&mut self, count: u32) {
+        self.mention_count = count;
+    }
+
+    pub fn increment_mention_count(&mut self) {
+        self.mention_count += 1;
     }
 
     #[must_use]

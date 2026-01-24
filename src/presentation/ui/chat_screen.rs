@@ -321,7 +321,6 @@ impl ChatScreenState {
     }
 
     pub fn on_message_received(&mut self, message: &Message) {
-        // Handle guild channels
         if let Some(channel) = self.guilds_tree_data.get_channel_mut(message.channel_id()) {
             channel.set_last_message_id(Some(message.id()));
 
@@ -339,8 +338,10 @@ impl ChatScreenState {
             }
         }
 
-        // Handle DM channels
-        if let Some(dm_info) = self.dm_channels.get(message.channel_id().to_string().as_str()) {
+        if let Some(dm_info) = self
+            .dm_channels
+            .get(message.channel_id().to_string().as_str())
+        {
             let mut current_dms = self.guilds_tree_data.dm_users().to_vec();
             if let Some(dm) = current_dms
                 .iter_mut()
@@ -348,8 +349,20 @@ impl ChatScreenState {
             {
                 dm.last_message_id = Some(message.id());
             }
-            // This will trigger the re-sort inside set_dm_users
             self.guilds_tree_data.set_dm_users(current_dms);
+
+            let is_own_message = message.author().id() == self.user.id_str();
+            let is_active_channel = self
+                .selected_channel
+                .as_ref()
+                .map(crate::domain::entities::Channel::id)
+                == Some(message.channel_id());
+
+            if is_own_message || is_active_channel {
+                self.mark_channel_read(message.channel_id(), message.id());
+            } else {
+                self.recalculate_all_unread();
+            }
         }
     }
 
@@ -855,7 +868,16 @@ impl ChatScreenState {
             None
         };
 
-        if let Some((guild_id, channel, topic)) = channel_info {
+        if let Some((guild_id, mut channel, topic)) = channel_info {
+            if let Some(rs) = self.read_states.get_mut(&channel.id()) {
+                rs.mention_count = 0;
+            }
+            self.recalculate_all_unread();
+
+            if let Some(ch) = self.guilds_tree_data.get_channel(channel.id()) {
+                channel = ch.clone();
+            }
+
             self.selected_guild = Some(guild_id);
             self.selected_channel = Some(channel.clone());
 
@@ -926,32 +948,38 @@ impl ChatScreenState {
     }
 
     fn on_dm_selected(&mut self, dm_channel_id: &str) -> Option<ChatKeyResult> {
-        if let Some(dm_info) = self.dm_channels.get(dm_channel_id) {
-            let channel_id = dm_info.channel_id();
-            let recipient_name = dm_info.recipient_name().to_string();
+        let (channel_id, recipient_name) =
+            if let Some(dm_info) = self.dm_channels.get(dm_channel_id) {
+                (dm_info.channel_id(), dm_info.recipient_name().to_string())
+            } else {
+                return None;
+            };
 
-            let dm_channel = Channel::new(channel_id, recipient_name.clone(), ChannelKind::Dm);
-            self.selected_channel = Some(dm_channel);
-            self.selected_guild = None;
-            self.guilds_tree_data.set_active_guild(None);
-            self.guilds_tree_data.set_active_channel(None);
-            self.guilds_tree_data
-                .set_active_dm_user(Some(dm_channel_id.to_string()));
-
-            let display_name = format!("@{recipient_name}");
-            self.message_pane_data.set_channel(channel_id, display_name);
-            self.message_pane_state.on_channel_change();
-            self.message_input_state.set_has_channel(true);
-            self.message_input_state.clear();
-
-            self.focus_messages_list();
-
-            return Some(ChatKeyResult::LoadDmMessages {
-                channel_id,
-                recipient_name,
-            });
+        if let Some(rs) = self.read_states.get_mut(&channel_id) {
+            rs.mention_count = 0;
         }
-        None
+        self.recalculate_all_unread();
+
+        let dm_channel = Channel::new(channel_id, recipient_name.clone(), ChannelKind::Dm);
+        self.selected_channel = Some(dm_channel);
+        self.selected_guild = None;
+        self.guilds_tree_data.set_active_guild(None);
+        self.guilds_tree_data.set_active_channel(None);
+        self.guilds_tree_data
+            .set_active_dm_user(Some(dm_channel_id.to_string()));
+
+        let display_name = format!("@{recipient_name}");
+        self.message_pane_data.set_channel(channel_id, display_name);
+        self.message_pane_state.on_channel_change();
+        self.message_input_state.set_has_channel(true);
+        self.message_input_state.clear();
+
+        self.focus_messages_list();
+
+        Some(ChatKeyResult::LoadDmMessages {
+            channel_id,
+            recipient_name,
+        })
     }
 
     #[must_use]
@@ -1286,6 +1314,22 @@ impl ChatScreenState {
         {
             self.message_pane_state.jump_to_index(index);
         }
+    }
+
+    pub fn increment_mention_count(&mut self, channel_id: ChannelId) {
+        if let Some(read_state) = self.read_states.get_mut(&channel_id) {
+            read_state.mention_count += 1;
+        } else {
+            let mut rs = crate::domain::entities::ReadState::new(channel_id, None);
+            rs.mention_count = 1;
+            self.read_states.insert(channel_id, rs);
+        }
+        self.recalculate_all_unread();
+    }
+
+    #[must_use]
+    pub fn get_channel(&self, channel_id: ChannelId) -> Option<&Channel> {
+        self.guilds_tree_data.get_channel(channel_id)
     }
 
     pub fn toggle_file_explorer(&mut self) {

@@ -72,6 +72,8 @@ pub enum DispatchEvent {
         resume_gateway_url: Option<String>,
         user_id: String,
         guilds: Vec<UnavailableGuild>,
+        /// Channels for guilds received in READY (User accounts)
+        initial_guild_channels: std::collections::HashMap<GuildId, Vec<Channel>>,
         read_states: Vec<ReadState>,
         guild_folders: Vec<GuildFolder>,
     },

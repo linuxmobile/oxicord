@@ -347,6 +347,8 @@ impl GatewayConnectionHandler {
             session_id,
             resume_gateway_url,
             user_id,
+            guilds,
+            initial_guild_channels: _,
             ..
         } = &dispatch
         {
@@ -354,7 +356,7 @@ impl GatewayConnectionHandler {
                 .set_session(session_id.clone(), resume_gateway_url.clone());
             self.session.set_user_id(user_id.clone());
 
-            info!(session_id = %session_id, "Gateway ready");
+            info!(session_id = %session_id, guild_count = guilds.len(), "Gateway ready");
 
             let _ = self.event_tx.send(GatewayEventKind::Connected {
                 session_id: session_id.clone(),

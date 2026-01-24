@@ -105,6 +105,8 @@ pub struct Guild {
     owner_id: Option<UserId>,
     has_unread: bool,
     #[serde(default)]
+    mention_count: u32,
+    #[serde(default)]
     description: Option<String>,
     #[serde(default)]
     splash: Option<String>,
@@ -141,6 +143,7 @@ impl Guild {
             icon: None,
             owner_id: None,
             has_unread: false,
+            mention_count: 0,
             description: None,
             splash: None,
             banner: None,
@@ -276,6 +279,15 @@ impl Guild {
     #[must_use]
     pub const fn has_unread(&self) -> bool {
         self.has_unread
+    }
+
+    #[must_use]
+    pub const fn mention_count(&self) -> u32 {
+        self.mention_count
+    }
+
+    pub fn set_mention_count(&mut self, count: u32) {
+        self.mention_count = count;
     }
 
     pub const fn set_unread(&mut self, has_unread: bool) {

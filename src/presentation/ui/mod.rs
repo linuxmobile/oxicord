@@ -8,7 +8,8 @@ mod main_screen;
 pub mod splash_screen;
 pub mod utils;
 
-pub use app::App;
+pub use app::{App, AppConfig};
+
 pub use backend::{Action, Backend, BackendCommand};
 pub use chat_screen::{ChatFocus, ChatKeyResult, ChatScreen, ChatScreenState};
 pub use login_screen::{LoginAction, LoginScreen};

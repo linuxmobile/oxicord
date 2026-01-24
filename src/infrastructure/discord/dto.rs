@@ -257,6 +257,7 @@ pub struct MessageResponse {
     pub id: String,
     #[allow(dead_code)]
     pub channel_id: String,
+    pub guild_id: Option<String>,
     pub author: MessageAuthorResponse,
     pub content: String,
     pub timestamp: String,

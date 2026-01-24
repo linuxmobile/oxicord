@@ -18,6 +18,10 @@ pub struct DirectMessageChannel {
     pub recipient_name: String,
     /// The ID of the last message sent in this channel.
     pub last_message_id: Option<MessageId>,
+    /// Whether the channel has unread messages.
+    pub has_unread: bool,
+    /// The number of mentions in this channel.
+    pub mention_count: u32,
 }
 
 /// Options for fetching messages from a channel.

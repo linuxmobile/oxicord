@@ -81,6 +81,11 @@ pub struct AppConfig {
     #[arg(long, default_value_t = true)]
     pub mouse: bool,
 
+    /// Enable desktop notifications.
+    #[arg(long, default_value_t = true)]
+    #[serde(default = "default_true")]
+    pub enable_desktop_notifications: bool,
+
     /// Disable user colors (monochrome mode).
     #[arg(long, default_value_t = false)]
     pub disable_user_colors: bool,
@@ -115,6 +120,10 @@ pub struct ThemeConfig {
 
 fn default_accent_color() -> String {
     "Yellow".to_string()
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for ThemeConfig {
@@ -167,6 +176,7 @@ impl Default for AppConfig {
             log_path: None,
             log_level: LogLevel::Info,
             mouse: true,
+            enable_desktop_notifications: true,
             disable_user_colors: false,
             ui: UiConfig::default(),
             theme: ThemeConfig::default(),

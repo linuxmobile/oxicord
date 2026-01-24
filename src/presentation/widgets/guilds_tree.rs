@@ -293,6 +293,7 @@ pub struct GuildsTreeStyle {
     pub placeholder_style: Style,
     pub tree_guide_style: Style,
     pub folder_style: Style,
+    pub mention_style: Style,
 }
 
 impl GuildsTreeStyle {
@@ -315,6 +316,7 @@ impl GuildsTreeStyle {
             dm_style: Style::default().fg(theme.accent),
             tree_guide_style: Style::default().fg(Color::Gray),
             folder_style: Style::default().fg(theme.accent),
+            mention_style: Style::default().fg(theme.accent),
             ..Self::default()
         }
     }
@@ -337,9 +339,7 @@ impl Default for GuildsTreeStyle {
                 .bg(Color::Rgb(30, 40, 50))
                 .add_modifier(Modifier::BOLD),
             guild_style: Style::default().fg(Color::White),
-            guild_unread_style: Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
+            guild_unread_style: Style::default().fg(Color::White),
             channel_style: Style::default().fg(Color::Gray),
             channel_unread_style: Style::default().fg(Color::White),
             category_style: Style::default()
@@ -351,6 +351,7 @@ impl Default for GuildsTreeStyle {
                 .add_modifier(Modifier::ITALIC),
             tree_guide_style: Style::default().fg(Color::Gray),
             folder_style: Style::default().fg(Color::Blue),
+            mention_style: Style::default().fg(Color::Red),
         }
     }
 }
@@ -421,7 +422,8 @@ impl GuildsTreeData {
             }
         }
 
-        self.guilds.sort_by_key(crate::domain::entities::Guild::position);
+        self.guilds
+            .sort_by_key(crate::domain::entities::Guild::position);
     }
 
     pub fn set_group_guilds(&mut self, group: bool) {
@@ -442,7 +444,10 @@ impl GuildsTreeData {
         users.sort_by(|a, b| {
             b.last_message_id
                 .map_or(0, crate::domain::entities::MessageId::as_u64)
-                .cmp(&a.last_message_id.map_or(0, crate::domain::entities::MessageId::as_u64))
+                .cmp(
+                    &a.last_message_id
+                        .map_or(0, crate::domain::entities::MessageId::as_u64),
+                )
         });
         self.dm_users = users;
     }
@@ -508,6 +513,16 @@ impl GuildsTreeData {
         None
     }
 
+    #[must_use]
+    pub fn get_channel(&self, channel_id: ChannelId) -> Option<&Channel> {
+        for channels in self.channels_by_guild.values() {
+            if let Some(channel) = channels.iter().find(|c| c.id() == channel_id) {
+                return Some(channel);
+            }
+        }
+        None
+    }
+
     pub fn update_unread_status(
         &mut self,
         read_states: &std::collections::HashMap<ChannelId, ReadState>,
@@ -526,8 +541,51 @@ impl GuildsTreeData {
                     } else {
                         channel.set_unread(false);
                     }
+                    channel.set_mention_count(read_state.mention_count);
                 } else {
                     channel.set_unread(false);
+                    channel.set_mention_count(0);
+                }
+            }
+        }
+
+        for guild in &mut self.guilds {
+
+            if let Some(channels) = self.channels_by_guild.get(&guild.id()) {
+                let mut guild_mentions = 0;
+                let mut guild_unread = false;
+
+                for channel in channels {
+                    guild_mentions += channel.mention_count();
+                    if channel.has_unread() {
+                        guild_unread = true;
+                    }
+                }
+
+                guild.set_mention_count(guild_mentions);
+                guild.set_unread(guild_unread || guild_mentions > 0);
+            }
+        }
+
+        for dm in &mut self.dm_users {
+            if let Ok(channel_id) = dm.channel_id.parse::<u64>() {
+                let channel_id = ChannelId(channel_id);
+                if let Some(read_state) = read_states.get(&channel_id) {
+                    if let Some(last_msg_id) = dm.last_message_id {
+                        let is_unread = if let Some(last_read_id) = read_state.last_read_message_id
+                        {
+                            last_msg_id.as_u64() > last_read_id.as_u64()
+                        } else {
+                            true
+                        };
+                        dm.has_unread = is_unread;
+                    } else {
+                        dm.has_unread = false;
+                    }
+                    dm.mention_count = read_state.mention_count;
+                } else {
+                    dm.has_unread = false;
+                    dm.mention_count = 0;
                 }
             }
         }
@@ -586,7 +644,7 @@ impl GuildsTreeData {
 
             match item {
                 RootItem::Dm => {
-                    self.render_dm_node(&mut nodes, state, style, children_base_indent);
+                    self.render_dm_node(&mut nodes, state, width, style, children_base_indent);
                 }
                 RootItem::Folder(folder) => {
                     self.render_folder_node(
@@ -619,18 +677,41 @@ impl GuildsTreeData {
         &'a self,
         nodes: &mut Vec<FlattenedNode<'a>>,
         state: &GuildsTreeState,
+        width: u16,
         style: &GuildsTreeStyle,
         children_base_indent: &'a str,
     ) {
         let expanded = state.expanded.contains(&TreeNodeId::DirectMessages);
         let arrow = if expanded { "▾ " } else { "▸ " };
 
+        let total_mentions: u32 = self.dm_users.iter().map(|dm| dm.mention_count).sum();
+        let any_unread = self.dm_users.iter().any(|dm| dm.has_unread);
+
+        let mut spans = vec![
+            Span::styled(arrow, style.tree_guide_style),
+            Span::raw("Direct Messages"),
+        ];
+
+        if total_mentions > 0 || any_unread {
+            let used_width = 2 + 15;
+            let padding_needed = width.saturating_sub(used_width).saturating_sub(2);
+
+            if padding_needed > 0 {
+                spans.push(Span::raw(" ".repeat(padding_needed as usize)));
+            } else {
+                spans.push(Span::raw(" "));
+            }
+
+            if total_mentions > 0 {
+                spans.push(Span::styled("⦁", style.mention_style));
+            } else {
+                spans.push(Span::styled("⦁", style.channel_unread_style));
+            }
+        }
+
         nodes.push(FlattenedNode {
             id: TreeNodeId::DirectMessages,
-            label: Line::from(vec![
-                Span::styled(arrow, style.tree_guide_style),
-                Span::raw("Direct Messages"),
-            ]),
+            label: Line::from(spans),
             depth: 0,
         });
 
@@ -641,23 +722,52 @@ impl GuildsTreeData {
 
                 let is_active = self.active_dm_user_id() == Some(&dm.channel_id);
                 let current_style = if is_active {
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD)
+                    style.active_channel_style
+                } else if dm.has_unread {
+                    style.channel_unread_style
                 } else {
                     style.dm_style
                 };
 
                 let clean_name = clean_text(&dm.recipient_name);
 
+                let mut spans = vec![
+                    Span::styled(children_base_indent, style.tree_guide_style),
+                    Span::styled(prefix, style.tree_guide_style),
+                    Span::styled("@ ", current_style),
+                    Span::styled(clean_name.clone(), current_style),
+                ];
+
+                if dm.mention_count > 0 || dm.has_unread {
+                    let base_indent_width =
+                        u16::try_from(unicode_width::UnicodeWidthStr::width(children_base_indent))
+                            .unwrap_or(0);
+                    let prefix_width =
+                        u16::try_from(unicode_width::UnicodeWidthStr::width(prefix)).unwrap_or(0);
+                    let at_width = 2;
+                    let name_width =
+                        u16::try_from(unicode_width::UnicodeWidthStr::width(clean_name.as_str()))
+                            .unwrap_or(0);
+
+                    let used_width = base_indent_width + prefix_width + at_width + name_width;
+                    let padding_needed = width.saturating_sub(used_width).saturating_sub(2);
+
+                    if padding_needed > 0 {
+                        spans.push(Span::raw(" ".repeat(padding_needed as usize)));
+                    } else {
+                        spans.push(Span::raw(" "));
+                    }
+
+                    if dm.mention_count > 0 {
+                        spans.push(Span::styled("⦁", style.mention_style));
+                    } else {
+                        spans.push(Span::styled("⦁", style.channel_unread_style));
+                    }
+                }
+
                 nodes.push(FlattenedNode {
                     id: TreeNodeId::DirectMessageUser(dm.channel_id.clone()),
-                    label: Line::from(vec![
-                        Span::styled(children_base_indent, style.tree_guide_style),
-                        Span::styled(prefix, style.tree_guide_style),
-                        Span::styled("@ ", current_style),
-                        Span::styled(clean_name, current_style),
-                    ]),
+                    label: Line::from(spans),
                     depth: 1,
                 });
             }
@@ -700,11 +810,15 @@ impl GuildsTreeData {
             for (i, guild_id) in folder.guild_ids.iter().enumerate() {
                 if let Some(guild) = self.guilds.iter().find(|g| g.id() == *guild_id) {
                     let is_last_in_folder = i == folder.guild_ids.len() - 1;
-                    
-                    let prefix = if is_last_in_folder { "└── " } else { "├── " };
-                    
+
+                    let prefix = if is_last_in_folder {
+                        "└── "
+                    } else {
+                        "├── "
+                    };
+
                     let guild_sibling_indent = if is_last_in_folder { "    " } else { "│   " };
-                    
+
                     self.render_guild_node_nested(
                         nodes,
                         guild,
@@ -713,7 +827,7 @@ impl GuildsTreeData {
                         style,
                         children_base_indent,
                         prefix,
-                        guild_sibling_indent
+                        guild_sibling_indent,
                     );
                 }
             }
@@ -747,20 +861,55 @@ impl GuildsTreeData {
         let clean_name = clean_text(guild.name());
         let arrow = if expanded { "▾ " } else { "▸ " };
 
+        let mut spans = vec![
+            Span::styled(base_indent_1, style.tree_guide_style),
+            Span::styled(connector, style.tree_guide_style),
+            Span::styled(arrow, style.tree_guide_style),
+            Span::styled(clean_name.clone(), guild_style),
+        ];
+
+        if guild.mention_count() > 0 || guild.has_unread() {
+            let used_width = u16::try_from(unicode_width::UnicodeWidthStr::width(base_indent_1))
+                .unwrap_or(0)
+                .saturating_add(
+                    u16::try_from(unicode_width::UnicodeWidthStr::width(connector)).unwrap_or(0),
+                )
+                .saturating_add(2)
+                .saturating_add(
+                    u16::try_from(unicode_width::UnicodeWidthStr::width(clean_name.as_str()))
+                        .unwrap_or(0),
+                );
+
+            let padding_needed = width.saturating_sub(used_width).saturating_sub(2);
+
+            if padding_needed > 0 {
+                spans.push(Span::raw(" ".repeat(padding_needed as usize)));
+            } else {
+                spans.push(Span::raw(" "));
+            }
+
+            if guild.mention_count() > 0 {
+                spans.push(Span::styled("⦁", style.mention_style));
+            }
+        }
+
         nodes.push(FlattenedNode {
             id: TreeNodeId::Guild(guild_id),
-            label: Line::from(vec![
-                Span::styled(base_indent_1, style.tree_guide_style),
-                Span::styled(connector, style.tree_guide_style),
-                Span::styled(arrow, style.tree_guide_style),
-                Span::styled(clean_name, guild_style),
-            ]),
-            depth: 0, 
+            label: Line::from(spans),
+            depth: 0,
         });
 
         if expanded {
             if let Some(channels) = self.channels(guild_id) {
-                self.flatten_channels_nested(nodes, channels, state, width, style, base_indent_1, base_indent_2);
+                self.flatten_channels_nested(
+                    nodes,
+                    channels,
+                    state,
+                    width,
+                    style,
+                    base_indent_1,
+                    base_indent_2,
+                );
             } else {
                 nodes.push(FlattenedNode {
                     id: TreeNodeId::Placeholder(guild_id),
@@ -802,12 +951,31 @@ impl GuildsTreeData {
         let clean_name = clean_text(guild.name());
         let arrow = if expanded { "▾ " } else { "▸ " };
 
+        let mut spans = vec![
+            Span::styled(arrow, style.tree_guide_style),
+            Span::styled(clean_name.clone(), guild_style),
+        ];
+
+        if guild.mention_count() > 0 || guild.has_unread() {
+            let used_width =
+                2 + u16::try_from(unicode_width::UnicodeWidthStr::width(clean_name.as_str()))
+                    .unwrap_or(0);
+            let padding_needed = width.saturating_sub(used_width).saturating_sub(2);
+
+            if padding_needed > 0 {
+                spans.push(Span::raw(" ".repeat(padding_needed as usize)));
+            } else {
+                spans.push(Span::raw(" "));
+            }
+
+            if guild.mention_count() > 0 {
+                spans.push(Span::styled("⦁", style.mention_style));
+            }
+        }
+
         nodes.push(FlattenedNode {
             id: TreeNodeId::Guild(guild_id),
-            label: Line::from(vec![
-                Span::styled(arrow, style.tree_guide_style),
-                Span::styled(clean_name, guild_style),
-            ]),
+            label: Line::from(spans),
             depth: 0,
         });
 
@@ -840,7 +1008,7 @@ impl GuildsTreeData {
         self.flatten_channels_nested(nodes, channels, state, width, style, base_indent, "");
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn flatten_channels_nested<'a>(
         &'a self,
         nodes: &mut Vec<FlattenedNode<'a>>,
@@ -873,14 +1041,16 @@ impl GuildsTreeData {
                         // If positions are equal, prioritize Text/Forum over Voice
                         let a_is_text = a.kind().is_text_based() || a.kind() == ChannelKind::Forum;
                         let b_is_text = b.kind().is_text_based() || b.kind() == ChannelKind::Forum;
-                        
+
                         match (a_is_text, b_is_text) {
                             (true, false) => std::cmp::Ordering::Less,
                             (false, true) => std::cmp::Ordering::Greater,
                             _ => {
                                 // Secondary sort by kind
                                 match (a.kind() as u8).cmp(&(b.kind() as u8)) {
-                                    std::cmp::Ordering::Equal => a.id().as_u64().cmp(&b.id().as_u64()),
+                                    std::cmp::Ordering::Equal => {
+                                        a.id().as_u64().cmp(&b.id().as_u64())
+                                    }
                                     other => other,
                                 }
                             }
@@ -897,30 +1067,84 @@ impl GuildsTreeData {
         for (i, channel) in orphan_channels.iter().enumerate() {
             let is_last = i == orphan_channels.len() - 1 && category_channels.is_empty();
             let prefix = if is_last { "└── " } else { "├── " };
-            if let Some(node) = self.create_channel_node(channel, 1, prefix, width, style, base_indent_1, base_indent_2)
-            {
+            if let Some(node) = self.create_channel_node(
+                channel,
+                1,
+                prefix,
+                width,
+                style,
+                base_indent_1,
+                base_indent_2,
+            ) {
                 nodes.push(node);
             }
         }
 
         for (i, category) in category_channels.iter().enumerate() {
             let is_last_category = i == category_channels.len() - 1;
-            let cat_prefix = if is_last_category { "└── " } else { "├── " };
+            let cat_prefix = if is_last_category {
+                "└── "
+            } else {
+                "├── "
+            };
             let child_indent_comp = if is_last_category { "    " } else { "│   " };
 
-            let expanded = state.expanded.contains(&TreeNodeId::Category(category.id()));
+            let expanded = state
+                .expanded
+                .contains(&TreeNodeId::Category(category.id()));
             let arrow = if expanded { "▾ " } else { "▸ " };
             let clean_name = clean_text(category.name());
 
+            let mut cat_mentions = 0;
+
+            if let Some(children) = categories.get(&category.id()) {
+                for child in children {
+                    cat_mentions += child.mention_count();
+                }
+            }
+
+            let mut spans = vec![
+                Span::styled(base_indent_1, style.tree_guide_style),
+                Span::styled(base_indent_2, style.tree_guide_style),
+                Span::styled(cat_prefix, style.tree_guide_style),
+                Span::styled(arrow, style.tree_guide_style),
+                Span::styled(clean_name.to_uppercase(), style.category_style),
+            ];
+
+            if cat_mentions > 0 {
+                let used_width = u16::try_from(unicode_width::UnicodeWidthStr::width(base_indent_1))
+                    .unwrap_or(0)
+                    .saturating_add(
+                        u16::try_from(unicode_width::UnicodeWidthStr::width(base_indent_2))
+                            .unwrap_or(0),
+                    )
+                    .saturating_add(
+                        u16::try_from(unicode_width::UnicodeWidthStr::width(cat_prefix))
+                            .unwrap_or(0),
+                    )
+                    .saturating_add(2)
+                    .saturating_add(
+                        u16::try_from(unicode_width::UnicodeWidthStr::width(
+                            clean_name.to_uppercase().as_str(),
+                        ))
+                        .unwrap_or(0),
+                    );
+
+                let total_available = width.saturating_sub(2);
+                let padding_needed = total_available.saturating_sub(used_width);
+
+                if padding_needed > 0 {
+                    spans.push(Span::raw(" ".repeat(padding_needed as usize)));
+                } else {
+                    spans.push(Span::raw(" "));
+                }
+
+                spans.push(Span::styled("⦁", style.mention_style));
+            }
+
             nodes.push(FlattenedNode {
                 id: TreeNodeId::Category(category.id()),
-                label: Line::from(vec![
-                    Span::styled(base_indent_1, style.tree_guide_style),
-                    Span::styled(base_indent_2, style.tree_guide_style),
-                    Span::styled(cat_prefix, style.tree_guide_style),
-                    Span::styled(arrow, style.tree_guide_style),
-                    Span::styled(clean_name.to_uppercase(), style.category_style),
-                ]),
+                label: Line::from(spans),
                 depth: 1,
             });
 
@@ -931,16 +1155,20 @@ impl GuildsTreeData {
                 for (j, child) in sorted_children.iter().enumerate() {
                     let is_last_child = j == sorted_children.len() - 1;
                     let mut prefix = child_indent_comp.to_string();
-                    prefix.push_str(if is_last_child { "└── " } else { "├── " });
+                    prefix.push_str(if is_last_child {
+                        "└── "
+                    } else {
+                        "├── "
+                    });
 
                     if let Some(node) = self.create_channel_node(
-                        child, 
-                        2, 
-                        &prefix, 
-                        width, 
-                        style, 
-                        base_indent_1, 
-                        base_indent_2
+                        child,
+                        2,
+                        &prefix,
+                        width,
+                        style,
+                        base_indent_1,
+                        base_indent_2,
                     ) {
                         nodes.push(node);
                     }
@@ -1018,12 +1246,12 @@ impl GuildsTreeData {
         spans.push(Span::styled(channel_icon.to_string(), channel_style));
         spans.push(Span::styled(clean_name.clone(), channel_style));
 
-        if channel.has_unread() {
+        if channel.mention_count() > 0 || channel.has_unread() {
             let used_width = u16::try_from(unicode_width::UnicodeWidthStr::width(base_indent_1))
                 .unwrap_or(0)
                 .saturating_add(
                     u16::try_from(unicode_width::UnicodeWidthStr::width(base_indent_2))
-                        .unwrap_or(0)
+                        .unwrap_or(0),
                 )
                 .saturating_add(prefix_width)
                 .saturating_add(channel_icon_width)
@@ -1041,7 +1269,12 @@ impl GuildsTreeData {
             } else {
                 spans.push(Span::raw(" "));
             }
-            spans.push(Span::styled("⦁", style.channel_unread_style));
+
+            if channel.mention_count() > 0 {
+                spans.push(Span::styled("⦁", style.mention_style));
+            } else {
+                spans.push(Span::styled("⦁", style.channel_unread_style));
+            }
         }
 
         Some(FlattenedNode {
@@ -1051,6 +1284,7 @@ impl GuildsTreeData {
         })
     }
 }
+
 
 impl Default for GuildsTreeData {
     fn default() -> Self {
@@ -1139,9 +1373,10 @@ impl StatefulWidget for GuildsTree<'_> {
                         let content = span.content.as_ref();
                         let is_guide =
                             content.contains('├') || content.contains('└') || content.contains('│');
+                        let is_dot = content.contains('⦁');
 
                         if !is_guide {
-                            if let Some(fg) = selected_style.fg {
+                            if !is_dot && let Some(fg) = selected_style.fg {
                                 span.style = span.style.fg(fg);
                             }
                             if !selected_style.add_modifier.is_empty() {

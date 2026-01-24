@@ -244,7 +244,12 @@ pub struct ReadyUser {
 pub struct ReadyGuild {
     pub id: String,
     #[serde(default)]
+    #[allow(dead_code)]
+    pub name: Option<String>,
+    #[serde(default)]
     pub unavailable: bool,
+    #[serde(default)]
+    pub channels: Vec<ChannelPayload>,
 }
 
 #[derive(Debug, Deserialize)]

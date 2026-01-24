@@ -13,10 +13,11 @@ use zeroize::Zeroize;
 
 use crate::application::dto::{LoginRequest, TokenSource};
 use crate::application::services::markdown_service::MarkdownService;
+use crate::application::services::notification_service::NotificationService;
 use crate::application::use_cases::{LoginUseCase, ResolveTokenUseCase};
 use crate::domain::ConnectionStatus;
 use crate::domain::entities::{
-    AuthToken, ChannelId, GuildFolder, GuildId, MessageId, UserCache,
+    AuthToken, Channel, ChannelId, GuildFolder, GuildId, MessageId, UserCache,
 };
 use crate::domain::errors::AuthError;
 use crate::domain::ports::{
@@ -54,6 +55,14 @@ enum CurrentScreen {
     Chat(Box<ChatScreenState>),
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct AppConfig {
+    pub disable_user_colors: bool,
+    pub group_guilds: bool,
+    pub enable_desktop_notifications: bool,
+    pub theme: Theme,
+}
+
 #[allow(clippy::struct_excessive_bools)]
 pub struct App {
     state: AppState,
@@ -77,6 +86,7 @@ pub struct App {
     pending_chat_state: Option<Box<ChatScreenState>>,
     pending_read_states: Option<Vec<crate::domain::entities::ReadState>>,
     pending_guild_folders: Option<Vec<GuildFolder>>,
+    pending_channels: std::collections::HashMap<GuildId, Vec<Channel>>,
     gateway_ready: bool,
     connection_status: ConnectionStatus,
     should_render: bool,
@@ -94,6 +104,8 @@ pub struct App {
     state_save_tx: mpsc::UnboundedSender<(Option<GuildId>, Option<ChannelId>)>,
     clipboard_service: ClipboardService,
     notification: Option<(String, std::time::Instant)>,
+    notification_service: NotificationService,
+    last_desktop_notification: Option<Instant>,
 }
 
 impl App {
@@ -105,9 +117,7 @@ impl App {
         auth_port: Arc<dyn AuthPort>,
         discord_data: Arc<dyn DiscordDataPort>,
         storage_port: Arc<dyn TokenStoragePort>,
-        disable_user_colors: bool,
-        group_guilds: bool,
-        theme: Theme,
+        config: AppConfig,
         identity: Arc<ClientIdentity>,
     ) -> Self {
         let login_use_case = LoginUseCase::new(auth_port, storage_port.clone());
@@ -115,6 +125,7 @@ impl App {
         let (action_tx, action_rx) = mpsc::unbounded_channel();
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let markdown_service = Arc::new(MarkdownService::new());
+        let notification_service = NotificationService::new(config.enable_desktop_notifications);
 
         let backend = Backend::new(discord_data, command_rx, action_tx.clone());
         tokio::spawn(backend.run());
@@ -152,7 +163,7 @@ impl App {
 
         Self {
             state: AppState::Login,
-            screen: CurrentScreen::Login(LoginScreen::new().with_theme(theme)),
+            screen: CurrentScreen::Login(LoginScreen::new().with_theme(config.theme)),
             login_use_case,
             resolve_token_use_case,
             command_tx,
@@ -172,20 +183,23 @@ impl App {
             pending_chat_state: None,
             pending_read_states: None,
             pending_guild_folders: None,
+            pending_channels: std::collections::HashMap::new(),
             gateway_ready: false,
             connection_status: ConnectionStatus::Disconnected,
             should_render: true,
             image_loader: None,
             image_load_rx: None,
             last_image_check: Instant::now(),
-            disable_user_colors,
-            group_guilds,
-            theme,
+            disable_user_colors: config.disable_user_colors,
+            group_guilds: config.group_guilds,
+            theme: config.theme,
             identity,
             state_store,
             state_save_tx,
             clipboard_service: ClipboardService::new(),
             notification: None,
+            notification_service,
+            last_desktop_notification: None,
         }
     }
 
@@ -568,11 +582,11 @@ impl App {
                             u32::try_from(image.width).unwrap_or_default(),
                             u32::try_from(image.height).unwrap_or_default(),
                             image.bytes.into_owned(),
-                        )
-                            && img.save(&path).is_ok() {
-                                let _ = tx.send(Action::PasteImageLoaded(path));
-                                return;
-                            }
+                        ) && img.save(&path).is_ok()
+                        {
+                            let _ = tx.send(Action::PasteImageLoaded(path));
+                            return;
+                        }
                     }
 
                     if let Some(text) = clipboard.get_text() {
@@ -842,6 +856,10 @@ impl App {
                     info!(guild_id = %guild_id, name = %name, channel_count = channels.len(), "Guild available");
                     if let CurrentScreen::Chat(ref mut state) = self.screen {
                         state.set_channels(guild_id, channels);
+                    } else if let Some(ref mut state) = self.pending_chat_state {
+                        state.set_channels(guild_id, channels);
+                    } else {
+                        self.pending_channels.insert(guild_id, channels);
                     }
                 }
             }
@@ -867,11 +885,12 @@ impl App {
             DispatchEvent::Ready {
                 user_id,
                 guilds,
+                mut initial_guild_channels,
                 read_states,
                 guild_folders,
                 ..
             } => {
-                info!(user_id = %user_id, guild_count = guilds.len(), "Gateway ready");
+                info!(user_id = %user_id, guild_count = guilds.len(), read_states_count = read_states.len(), "Gateway ready");
                 self.gateway_ready = true;
 
                 let read_states_map: std::collections::HashMap<_, _> = read_states
@@ -882,10 +901,20 @@ impl App {
                 if let CurrentScreen::Chat(ref mut state) = self.screen {
                     state.set_read_states(read_states_map);
                     state.set_guild_folders(guild_folders);
+                    for (guild_id, channels) in initial_guild_channels.drain() {
+                        state.set_channels(guild_id, channels);
+                    }
                 } else {
                     if let Some(ref mut state) = self.pending_chat_state {
                         state.set_read_states(read_states_map);
                         state.set_guild_folders(guild_folders.clone());
+                        for (guild_id, channels) in initial_guild_channels.drain() {
+                            state.set_channels(guild_id, channels);
+                        }
+                    } else {
+                        for (guild_id, channels) in initial_guild_channels.drain() {
+                            self.pending_channels.insert(guild_id, channels);
+                        }
                     }
 
                     self.pending_read_states = Some(read_states);
@@ -917,7 +946,75 @@ impl App {
 
         self.cache_users_from_message(&message);
 
+        let mut is_mentioned = false;
+        if let Some(current_user_id) = &self.current_user_id
+            && message
+                .mentions()
+                .iter()
+                .any(|u| u.id().to_string() == *current_user_id)
+        {
+            is_mentioned = true;
+        }
+
+        let mut is_dm = false;
+        if let CurrentScreen::Chat(ref state) = self.screen
+            && state
+                .guilds_tree_data()
+                .dm_users()
+                .iter()
+                .any(|dm| dm.channel_id == channel_id.to_string())
+        {
+            is_dm = true;
+        }
+
+        if is_dm && Some(&user_id) != self.current_user_id.as_ref() {
+            is_mentioned = true;
+        }
+
+        if is_mentioned {
+            if let CurrentScreen::Chat(ref mut state) = self.screen {
+                state.increment_mention_count(channel_id);
+            } else if let Some(ref mut state) = self.pending_chat_state {
+                state.increment_mention_count(channel_id);
+            }
+        }
+
+        let is_focused = if let CurrentScreen::Chat(ref state) = self.screen {
+            state.message_pane_data().channel_id() == Some(channel_id)
+        } else {
+            false
+        };
+
+        if is_mentioned && !is_focused {
+            let now = Instant::now();
+            let should_notify = match self.last_desktop_notification {
+                Some(last) => now.duration_since(last) > Duration::from_secs(2),
+                None => true,
+            };
+
+            if should_notify {
+                let title = format!("Oxicord - @{}", message.author().username());
+                let content = message.content();
+                let body = if content.is_empty() {
+                    if !message.attachments().is_empty() {
+                        "[Attachment]".to_string()
+                    } else if !message.embeds().is_empty() {
+                        "[Embed]".to_string()
+                    } else {
+                        "Sent a message".to_string()
+                    }
+                } else {
+                    content.chars().take(120).collect()
+                };
+                self.notification_service.send(title, body);
+                self.last_desktop_notification = Some(now);
+            }
+        }
+
         if let CurrentScreen::Chat(ref mut state) = self.screen {
+            state.on_message_received(&message);
+            state.add_message(message);
+        } else if let Some(ref mut state) = self.pending_chat_state {
             state.on_message_received(&message);
             state.add_message(message);
         }
@@ -1133,13 +1230,22 @@ impl App {
                 }
                 chat_state.set_group_guilds(self.group_guilds);
 
+                for (guild_id, channels) in self.pending_channels.drain() {
+                    chat_state.set_channels(guild_id, channels);
+                }
+
                 let mut final_read_states = read_states;
+
                 if let Some(pending) = self.pending_read_states.take() {
-                    info!(count = pending.len(), "Applying pending read states");
+                    info!(
+                        count = pending.len(),
+                        "Applying pending read states from Gateway"
+                    );
                     for state in pending {
                         final_read_states.insert(state.channel_id, state);
                     }
                 }
+
                 chat_state.set_read_states(final_read_states);
 
                 let restore_result = chat_state.restore_state(
@@ -1184,6 +1290,8 @@ impl App {
             Action::GuildChannelsLoaded { guild_id, channels } => {
                 debug!(guild_id = %guild_id, count = channels.len(), "Loaded channels for guild");
                 if let CurrentScreen::Chat(state) = &mut self.screen {
+                    state.set_channels(guild_id, channels);
+                } else if let Some(ref mut state) = self.pending_chat_state {
                     state.set_channels(guild_id, channels);
                 }
             }
@@ -1742,7 +1850,13 @@ mod tests {
         let storage = Arc::new(MockTokenStorage::new());
         let theme = Theme::new("Orange");
         let identity = Arc::new(ClientIdentity::new());
-        let app = App::new(auth, data, storage, false, false, theme, identity);
+        let config = AppConfig {
+            disable_user_colors: false,
+            group_guilds: false,
+            enable_desktop_notifications: false,
+            theme,
+        };
+        let app = App::new(auth, data, storage, config, identity);
 
         assert_eq!(app.state, AppState::Login);
     }

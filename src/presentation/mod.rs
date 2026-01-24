@@ -12,4 +12,4 @@ pub mod ui;
 pub mod widgets;
 
 pub use theme::Theme;
-pub use ui::App;
+pub use ui::{App, AppConfig};

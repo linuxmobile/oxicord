@@ -1,7 +1,7 @@
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
-use super::{ChannelId, User};
+use super::{ChannelId, GuildId, User};
 
 /// Unique identifier for a Discord message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -366,6 +366,7 @@ pub struct Message {
     #[allow(clippy::struct_field_names)]
     message_reference: Option<MessageReference>,
     referenced_message: Option<Box<Message>>,
+    guild_id: Option<GuildId>,
 }
 
 impl Message {
@@ -469,7 +470,7 @@ impl Message {
 pub struct MessageReference {
     pub message_id: Option<MessageId>,
     pub channel_id: Option<ChannelId>,
-    pub guild_id: Option<u64>,
+    pub guild_id: Option<GuildId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -490,7 +491,7 @@ impl MessageReference {
     pub const fn new(
         message_id: Option<MessageId>,
         channel_id: Option<ChannelId>,
-        guild_id: Option<u64>,
+        guild_id: Option<GuildId>,
     ) -> Self {
         Self {
             message_id,
@@ -528,7 +529,19 @@ impl Message {
             flags: MessageFlags::empty(),
             message_reference: None,
             referenced_message: None,
+            guild_id: None,
         }
+    }
+
+    #[must_use]
+    pub const fn guild_id(&self) -> Option<GuildId> {
+        self.guild_id
+    }
+
+    #[must_use]
+    pub fn with_guild_id(mut self, guild_id: Option<GuildId>) -> Self {
+        self.guild_id = guild_id;
+        self
     }
 
     #[must_use]

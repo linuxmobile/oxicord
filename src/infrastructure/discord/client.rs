@@ -291,6 +291,7 @@ impl DiscordClient {
             member: _,
             reactions,
             flags,
+            guild_id,
             ..
         } = response;
 
@@ -314,7 +315,8 @@ impl DiscordClient {
             timestamp.into(),
             kind.into(),
         )
-        .with_pinned(pinned);
+        .with_pinned(pinned)
+        .with_guild_id(guild_id.and_then(|g| g.parse::<u64>().ok()).map(GuildId));
 
         if let Some(r) = message_reference {
             let mr = crate::domain::entities::MessageReference {
@@ -324,7 +326,7 @@ impl DiscordClient {
                 channel_id: r
                     .channel_id
                     .and_then(|id| id.parse::<u64>().ok().map(Into::into)),
-                guild_id: r.guild_id.and_then(|id| id.parse::<u64>().ok()),
+                guild_id: r.guild_id.and_then(|id| id.parse::<u64>().ok()).map(GuildId),
             };
             message = message.with_reference(mr);
         }
@@ -540,11 +542,12 @@ impl DiscordDataPort for DiscordClient {
             AuthError::network(e.to_string())
         })?;
 
-        let channel_responses: Vec<ChannelResponse> = serde_json::from_str(&body_text).map_err(|e| {
-            warn!(error = %e, "Failed to parse channels response");
-            debug!(body = %body_text, "Raw response body causing decode failure");
-            AuthError::unexpected(format!("failed to parse channels: {e}"))
-        })?;
+        let channel_responses: Vec<ChannelResponse> =
+            serde_json::from_str(&body_text).map_err(|e| {
+                warn!(error = %e, "Failed to parse channels response");
+                debug!(body = %body_text, "Raw response body causing decode failure");
+                AuthError::unexpected(format!("failed to parse channels: {e}"))
+            })?;
 
         debug!(
             count = channel_responses.len(),
@@ -604,6 +607,8 @@ impl DiscordDataPort for DiscordClient {
                     last_message_id: dm
                         .last_message_id
                         .and_then(|id| id.parse::<u64>().ok().map(Into::into)),
+                    has_unread: false,
+                    mention_count: 0,
                 })
             })
             .collect();
