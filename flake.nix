@@ -43,6 +43,7 @@
           buildInputs =
             [
               pkgs.dbus
+              pkgs.chafa
             ]
             ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
               pkgs.darwin.apple_sdk.frameworks.Security
