@@ -50,16 +50,19 @@ impl ResolveTokenUseCase {
         &self,
         external_token: Option<(String, TokenSource)>,
     ) -> Result<Option<ResolvedToken>, AuthError> {
-        if let Some((token_str, source)) = external_token {
-            if !token_str.trim().is_empty() {
-                debug!("Checking token from source: {}", source);
-                if let Some(token) = AuthToken::new(&token_str) {
-                    info!("Using token from {}", source);
-                    return Ok(Some(ResolvedToken::new(token, source)));
-                }
-                debug!("Token from {} has invalid format, skipping keyring check", source);
-                return Ok(None);
+        if let Some((token_str, source)) =
+            external_token.filter(|(t, _)| !t.trim().is_empty())
+        {
+            debug!("Checking token from source: {}", source);
+            if let Some(token) = AuthToken::new(&token_str) {
+                info!("Using token from {}", source);
+                return Ok(Some(ResolvedToken::new(token, source)));
             }
+            debug!(
+                "Token from {} has invalid format, skipping keyring check",
+                source
+            );
+            return Ok(None);
         }
 
         debug!("Checking keyring for stored token");

@@ -11,8 +11,9 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, StatefulWidget, Widget},
 };
 
+use crate::application::services::identity_service::IdentityService;
 use crate::domain::entities::{
-    Channel, ChannelId, ChannelKind, Guild, GuildFolder, GuildId, ReadState,
+    Channel, ChannelId, ChannelKind, Guild, GuildFolder, GuildId, ReadState, User,
 };
 use crate::domain::keybinding::Action;
 use crate::domain::ports::DirectMessageChannel;
@@ -134,8 +135,9 @@ impl GuildsTreeState {
         data: &GuildsTreeData,
         registry: &CommandRegistry,
         style: &GuildsTreeStyle,
+        use_display_name: bool,
     ) -> Option<GuildsTreeAction> {
-        let flattened = data.flatten(self, u16::MAX, style);
+        let flattened = data.flatten(self, u16::MAX, style, use_display_name);
 
         let current_index = self
             .selected
@@ -523,74 +525,6 @@ impl GuildsTreeData {
         None
     }
 
-    pub fn update_unread_status(
-        &mut self,
-        read_states: &std::collections::HashMap<ChannelId, ReadState>,
-    ) {
-        for channels in self.channels_by_guild.values_mut() {
-            for channel in channels {
-                if let Some(read_state) = read_states.get(&channel.id()) {
-                    if let Some(last_msg_id) = channel.last_message_id() {
-                        let is_unread = if let Some(last_read_id) = read_state.last_read_message_id
-                        {
-                            last_msg_id.as_u64() > last_read_id.as_u64()
-                        } else {
-                            true
-                        };
-                        channel.set_unread(is_unread);
-                    } else {
-                        channel.set_unread(false);
-                    }
-                    channel.set_mention_count(read_state.mention_count);
-                } else {
-                    channel.set_unread(false);
-                    channel.set_mention_count(0);
-                }
-            }
-        }
-
-        for guild in &mut self.guilds {
-
-            if let Some(channels) = self.channels_by_guild.get(&guild.id()) {
-                let mut guild_mentions = 0;
-                let mut guild_unread = false;
-
-                for channel in channels {
-                    guild_mentions += channel.mention_count();
-                    if channel.has_unread() {
-                        guild_unread = true;
-                    }
-                }
-
-                guild.set_mention_count(guild_mentions);
-                guild.set_unread(guild_unread || guild_mentions > 0);
-            }
-        }
-
-        for dm in &mut self.dm_users {
-            if let Ok(channel_id) = dm.channel_id.parse::<u64>() {
-                let channel_id = ChannelId(channel_id);
-                if let Some(read_state) = read_states.get(&channel_id) {
-                    if let Some(last_msg_id) = dm.last_message_id {
-                        let is_unread = if let Some(last_read_id) = read_state.last_read_message_id
-                        {
-                            last_msg_id.as_u64() > last_read_id.as_u64()
-                        } else {
-                            true
-                        };
-                        dm.has_unread = is_unread;
-                    } else {
-                        dm.has_unread = false;
-                    }
-                    dm.mention_count = read_state.mention_count;
-                } else {
-                    dm.has_unread = false;
-                    dm.mention_count = 0;
-                }
-            }
-        }
-    }
-
     #[allow(clippy::items_after_statements)]
     #[must_use]
     pub fn flatten<'a>(
@@ -598,6 +532,7 @@ impl GuildsTreeData {
         state: &GuildsTreeState,
         width: u16,
         style: &GuildsTreeStyle,
+        use_display_name: bool,
     ) -> Vec<FlattenedNode<'a>> {
         let mut nodes = Vec::new();
 
@@ -644,7 +579,14 @@ impl GuildsTreeData {
 
             match item {
                 RootItem::Dm => {
-                    self.render_dm_node(&mut nodes, state, width, style, children_base_indent);
+                    self.render_dm_node(
+                        &mut nodes,
+                        state,
+                        width,
+                        style,
+                        children_base_indent,
+                        use_display_name,
+                    );
                 }
                 RootItem::Folder(folder) => {
                     self.render_folder_node(
@@ -673,6 +615,73 @@ impl GuildsTreeData {
         nodes
     }
 
+    pub fn update_unread_status(
+        &mut self,
+        read_states: &std::collections::HashMap<ChannelId, ReadState>,
+    ) {
+        for channels in self.channels_by_guild.values_mut() {
+            for channel in channels {
+                if let Some(read_state) = read_states.get(&channel.id()) {
+                    if let Some(last_msg_id) = channel.last_message_id() {
+                        let is_unread = if let Some(last_read_id) = read_state.last_read_message_id
+                        {
+                            last_msg_id.as_u64() > last_read_id.as_u64()
+                        } else {
+                            true
+                        };
+                        channel.set_unread(is_unread);
+                    } else {
+                        channel.set_unread(false);
+                    }
+                    channel.set_mention_count(read_state.mention_count);
+                } else {
+                    channel.set_unread(false);
+                    channel.set_mention_count(0);
+                }
+            }
+        }
+
+        for guild in &mut self.guilds {
+            if let Some(channels) = self.channels_by_guild.get(&guild.id()) {
+                let mut guild_mentions = 0;
+                let mut guild_unread = false;
+
+                for channel in channels {
+                    guild_mentions += channel.mention_count();
+                    if channel.has_unread() {
+                        guild_unread = true;
+                    }
+                }
+
+                guild.set_mention_count(guild_mentions);
+                guild.set_unread(guild_unread || guild_mentions > 0);
+            }
+        }
+
+        for dm in &mut self.dm_users {
+            if let Ok(channel_id) = dm.channel_id.parse::<u64>() {
+                let channel_id = ChannelId(channel_id);
+                if let Some(read_state) = read_states.get(&channel_id) {
+                    if let Some(last_msg_id) = dm.last_message_id {
+                        let is_unread = if let Some(last_read_id) = read_state.last_read_message_id
+                        {
+                            last_msg_id.as_u64() > last_read_id.as_u64()
+                        } else {
+                            true
+                        };
+                        dm.has_unread = is_unread;
+                    } else {
+                        dm.has_unread = false;
+                    }
+                    dm.mention_count = read_state.mention_count;
+                } else {
+                    dm.has_unread = false;
+                    dm.mention_count = 0;
+                }
+            }
+        }
+    }
+
     fn render_dm_node<'a>(
         &'a self,
         nodes: &mut Vec<FlattenedNode<'a>>,
@@ -680,6 +689,7 @@ impl GuildsTreeData {
         width: u16,
         style: &GuildsTreeStyle,
         children_base_indent: &'a str,
+        use_display_name: bool,
     ) {
         let expanded = state.expanded.contains(&TreeNodeId::DirectMessages);
         let arrow = if expanded { "▾ " } else { "▸ " };
@@ -729,7 +739,23 @@ impl GuildsTreeData {
                     style.dm_style
                 };
 
-                let clean_name = clean_text(&dm.recipient_name);
+                let mut clean_name = clean_text(&dm.recipient_username);
+
+                if let Ok(_channel_id) = dm.channel_id.parse::<u64>() {
+                    let user = User::new(
+                        dm.recipient_id.clone(),
+                        dm.recipient_username.clone(),
+                        &dm.recipient_discriminator,
+                        None,
+                        false,
+                        None,
+                    )
+                    .with_global_name(dm.recipient_global_name.clone().unwrap_or_default());
+
+                    let preferred_name =
+                        IdentityService::get_preferred_name(&user, use_display_name);
+                    clean_name = clean_text(&preferred_name);
+                }
 
                 let mut spans = vec![
                     Span::styled(children_base_indent, style.tree_guide_style),
@@ -1112,23 +1138,24 @@ impl GuildsTreeData {
             ];
 
             if cat_mentions > 0 {
-                let used_width = u16::try_from(unicode_width::UnicodeWidthStr::width(base_indent_1))
-                    .unwrap_or(0)
-                    .saturating_add(
-                        u16::try_from(unicode_width::UnicodeWidthStr::width(base_indent_2))
+                let used_width =
+                    u16::try_from(unicode_width::UnicodeWidthStr::width(base_indent_1))
+                        .unwrap_or(0)
+                        .saturating_add(
+                            u16::try_from(unicode_width::UnicodeWidthStr::width(base_indent_2))
+                                .unwrap_or(0),
+                        )
+                        .saturating_add(
+                            u16::try_from(unicode_width::UnicodeWidthStr::width(cat_prefix))
+                                .unwrap_or(0),
+                        )
+                        .saturating_add(2)
+                        .saturating_add(
+                            u16::try_from(unicode_width::UnicodeWidthStr::width(
+                                clean_name.to_uppercase().as_str(),
+                            ))
                             .unwrap_or(0),
-                    )
-                    .saturating_add(
-                        u16::try_from(unicode_width::UnicodeWidthStr::width(cat_prefix))
-                            .unwrap_or(0),
-                    )
-                    .saturating_add(2)
-                    .saturating_add(
-                        u16::try_from(unicode_width::UnicodeWidthStr::width(
-                            clean_name.to_uppercase().as_str(),
-                        ))
-                        .unwrap_or(0),
-                    );
+                        );
 
                 let total_available = width.saturating_sub(2);
                 let padding_needed = total_available.saturating_sub(used_width);
@@ -1285,7 +1312,6 @@ impl GuildsTreeData {
     }
 }
 
-
 impl Default for GuildsTreeData {
     fn default() -> Self {
         Self::new()
@@ -1297,6 +1323,7 @@ pub struct GuildsTree<'a> {
     data: &'a GuildsTreeData,
     style: GuildsTreeStyle,
     title: &'a str,
+    use_display_name: bool,
 }
 
 impl<'a> GuildsTree<'a> {
@@ -1306,6 +1333,7 @@ impl<'a> GuildsTree<'a> {
             data,
             style: GuildsTreeStyle::default(),
             title: "Guilds",
+            use_display_name: true,
         }
     }
 
@@ -1318,6 +1346,12 @@ impl<'a> GuildsTree<'a> {
     #[must_use]
     pub const fn title(mut self, title: &'a str) -> Self {
         self.title = title;
+        self
+    }
+
+    #[must_use]
+    pub const fn use_display_name(mut self, use_display_name: bool) -> Self {
+        self.use_display_name = use_display_name;
         self
     }
 }
@@ -1344,7 +1378,9 @@ impl StatefulWidget for GuildsTree<'_> {
 
         let inner_area = block.inner(area);
 
-        let flattened_nodes = self.data.flatten(state, inner_area.width, &self.style);
+        let flattened_nodes =
+            self.data
+                .flatten(state, inner_area.width, &self.style, self.use_display_name);
 
         if let Some(selected_id) = &state.selected {
             if let Some(index) = flattened_nodes.iter().position(|n| &n.id == selected_id) {
@@ -1444,13 +1480,18 @@ mod tests {
             &data,
             &registry,
             &style,
+            true,
         );
-        let flattened = data.flatten(&state, 100, &style);
+        let flattened = data.flatten(&state, 100, &style, true);
         state.select(flattened[0].id.clone());
 
         let key_j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
 
-        assert!(state.handle_key(key_j, &data, &registry, &style).is_none());
+        assert!(
+            state
+                .handle_key(key_j, &data, &registry, &style, true)
+                .is_none()
+        );
     }
 
     #[test]
@@ -1470,7 +1511,7 @@ mod tests {
         data.set_guilds(guilds.clone());
         let state = GuildsTreeState::new();
         let style = GuildsTreeStyle::default();
-        let nodes = data.flatten(&state, 100, &style);
+        let nodes = data.flatten(&state, 100, &style, true);
 
         assert_eq!(nodes.len(), guilds.len() + 1);
 
@@ -1489,10 +1530,14 @@ mod tests {
             .collect();
 
         data.set_guilds(guilds);
+
         let state = GuildsTreeState::new();
         let style = GuildsTreeStyle::default();
-        let nodes = data.flatten(&state, 100, &style);
+        let start = std::time::Instant::now();
+        let nodes = data.flatten(&state, 100, &style, true);
+        let duration = start.elapsed();
 
-        assert_eq!(nodes.len(), 101, "Should have DM node + 100 guilds");
+        println!("Flattened {} nodes in {:?}", nodes.len(), duration);
+        assert!(duration < std::time::Duration::from_millis(5));
     }
 }

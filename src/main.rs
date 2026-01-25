@@ -44,7 +44,7 @@ fn init_logging(config: &AppConfig) -> Result<()> {
 
 fn create_app() -> Result<(App, Option<(String, TokenSource)>)> {
     let config = AppConfig::parse();
-    
+
     let external_token = if let Ok(env_token) = std::env::var("OXICORD_TOKEN") {
         if let Some(ref token) = config.token {
             if token == &env_token {
@@ -53,8 +53,6 @@ fn create_app() -> Result<(App, Option<(String, TokenSource)>)> {
                 Some((token.clone(), TokenSource::CommandLine))
             }
         } else {
-            // This fallback handles cases where clap might not have picked it up
-            // (though it should have given the config struct definition)
             Some((env_token, TokenSource::Environment))
         }
     } else {
@@ -74,6 +72,7 @@ fn create_app() -> Result<(App, Option<(String, TokenSource)>)> {
         disable_user_colors: config.disable_user_colors,
         group_guilds: config.ui.group_guilds,
         enable_desktop_notifications: config.enable_desktop_notifications,
+        use_display_name: config.ui.use_display_name,
         theme,
     };
 

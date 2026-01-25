@@ -14,8 +14,12 @@ pub struct DirectMessageChannel {
     pub channel_id: String,
     /// The recipient user's ID.
     pub recipient_id: String,
-    /// The recipient's display name.
-    pub recipient_name: String,
+    /// The recipient's username.
+    pub recipient_username: String,
+    /// The recipient's discriminator.
+    pub recipient_discriminator: String,
+    /// The recipient's global name (display name).
+    pub recipient_global_name: Option<String>,
     /// The ID of the last message sent in this channel.
     pub last_message_id: Option<MessageId>,
     /// Whether the channel has unread messages.

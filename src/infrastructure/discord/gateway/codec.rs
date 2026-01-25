@@ -191,36 +191,37 @@ impl EventParser {
                 && !g.channels.is_empty()
             {
                 let mut channels = Vec::new();
-                    for channel_payload in &g.channels {
-                        if let Ok(id) = channel_payload.id.parse::<u64>() {
-                            let kind = crate::domain::entities::ChannelKind::from(channel_payload.kind);
-                            let name = channel_payload.name.clone().unwrap_or_default();
+                for channel_payload in &g.channels {
+                    if let Ok(id) = channel_payload.id.parse::<u64>() {
+                        let kind = crate::domain::entities::ChannelKind::from(channel_payload.kind);
+                        let name = channel_payload.name.clone().unwrap_or_default();
 
-                            let mut channel = crate::domain::entities::Channel::new(ChannelId(id), name, kind)
+                        let mut channel =
+                            crate::domain::entities::Channel::new(ChannelId(id), name, kind)
                                 .with_guild(guild_id)
                                 .with_position(channel_payload.position);
 
-                            if let Some(parent_id) = &channel_payload.parent_id
-                                && let Ok(pid) = parent_id.parse::<u64>()
-                            {
-                                channel = channel.with_parent(pid);
-                            }
-
-                            if let Some(topic) = &channel_payload.topic {
-                                channel = channel.with_topic(topic.clone());
-                            }
-
-                            if let Some(last_message_id) = &channel_payload.last_message_id
-                                && let Ok(lmid) = last_message_id.parse::<u64>()
-                            {
-                                channel = channel.with_last_message_id(Some(lmid.into()));
-                            }
-
-                            channels.push(channel);
+                        if let Some(parent_id) = &channel_payload.parent_id
+                            && let Ok(pid) = parent_id.parse::<u64>()
+                        {
+                            channel = channel.with_parent(pid);
                         }
+
+                        if let Some(topic) = &channel_payload.topic {
+                            channel = channel.with_topic(topic.clone());
+                        }
+
+                        if let Some(last_message_id) = &channel_payload.last_message_id
+                            && let Ok(lmid) = last_message_id.parse::<u64>()
+                        {
+                            channel = channel.with_last_message_id(Some(lmid.into()));
+                        }
+
+                        channels.push(channel);
                     }
-                    initial_guild_channels.insert(GuildId(guild_id), channels);
                 }
+                initial_guild_channels.insert(GuildId(guild_id), channels);
+            }
         }
 
         let guilds = ready

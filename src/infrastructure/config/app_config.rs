@@ -107,6 +107,11 @@ pub struct UiConfig {
     #[arg(long, default_value_t = false)]
     #[serde(default)]
     pub group_guilds: bool,
+
+    /// Use display name (Global Name) instead of username where available.
+    #[arg(long, default_value_t = true)]
+    #[serde(default = "default_true")]
+    pub use_display_name: bool,
 }
 
 /// Theme configuration.

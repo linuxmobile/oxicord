@@ -134,6 +134,8 @@ pub struct DmRecipient {
     pub id: String,
     pub username: String,
     #[serde(default)]
+    pub discriminator: String,
+    #[serde(default)]
     pub global_name: Option<String>,
 }
 

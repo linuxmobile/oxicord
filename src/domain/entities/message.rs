@@ -501,7 +501,6 @@ impl MessageReference {
     }
 }
 
-// Internal Builder for internal usage if needed, or mostly populated from DTO
 #[allow(missing_docs)]
 impl Message {
     #[must_use]

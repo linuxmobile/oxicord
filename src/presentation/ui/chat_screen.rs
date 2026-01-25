@@ -9,6 +9,7 @@ use std::time::Duration;
 use tachyonfx::{Effect, Interpolation, fx};
 
 use crate::application::services::autocomplete_service::AutocompleteService;
+use crate::application::services::identity_service::IdentityService;
 use crate::application::services::markdown_service::MarkdownService;
 use crate::domain::ConnectionStatus;
 use crate::domain::entities::{
@@ -138,6 +139,7 @@ pub struct ChatScreenState {
     /// Image manager for rendering image attachments.
     image_manager: ImageManager,
     disable_user_colors: bool,
+    use_display_name: bool,
     theme: Theme,
     forum_states: std::collections::HashMap<ChannelId, crate::presentation::widgets::ForumState>,
     pending_deletion_id: Option<MessageId>,
@@ -150,6 +152,7 @@ impl ChatScreenState {
         markdown_service: Arc<MarkdownService>,
         user_cache: UserCache,
         disable_user_colors: bool,
+        use_display_name: bool,
         theme: Theme,
     ) -> Self {
         let mut guilds_tree_state = GuildsTreeState::new();
@@ -162,7 +165,7 @@ impl ChatScreenState {
             guilds_tree_state,
             guilds_tree_data: GuildsTreeData::new(),
             message_pane_state: MessagePaneState::new(),
-            message_pane_data: MessagePaneData::new(),
+            message_pane_data: MessagePaneData::new(use_display_name),
             message_input_state: MessageInputState::new(),
             autocomplete_service: AutocompleteService::new(),
             user_cache,
@@ -181,6 +184,7 @@ impl ChatScreenState {
             has_entered: false,
             image_manager: ImageManager::new(),
             disable_user_colors,
+            use_display_name,
             theme,
             forum_states: std::collections::HashMap::new(),
             pending_deletion_id: None,
@@ -288,7 +292,18 @@ impl ChatScreenState {
         self.dm_channels.clear();
         for dm in &users {
             if let Ok(channel_id) = dm.channel_id.parse::<u64>() {
-                let info = DmChannelInfo::new(ChannelId(channel_id), dm.recipient_name.clone());
+                let user = User::new(
+                    dm.recipient_id.clone(),
+                    dm.recipient_username.clone(),
+                    &dm.recipient_discriminator,
+                    None,
+                    false,
+                    None,
+                )
+                .with_global_name(dm.recipient_global_name.clone().unwrap_or_default());
+
+                let name = IdentityService::get_preferred_name(&user, self.use_display_name);
+                let info = DmChannelInfo::new(ChannelId(channel_id), name);
                 self.dm_channels.insert(dm.channel_id.clone(), info);
             }
         }
@@ -526,10 +541,13 @@ impl ChatScreenState {
 
         let style = GuildsTreeStyle::from_theme(&self.theme);
 
-        if let Some(action) =
-            self.guilds_tree_state
-                .handle_key(key, &self.guilds_tree_data, &self.registry, &style)
-        {
+        if let Some(action) = self.guilds_tree_state.handle_key(
+            key,
+            &self.guilds_tree_data,
+            &self.registry,
+            &style,
+            self.use_display_name,
+        ) {
             match action {
                 GuildsTreeAction::SelectChannel(channel_id) => {
                     if let Some(result) = self.on_channel_selected(channel_id) {
@@ -1817,8 +1835,11 @@ fn render_guilds_tree(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer)
     use crate::presentation::widgets::GuildsTreeStyle;
 
     let style = GuildsTreeStyle::from_theme(&state.theme);
+    let use_display_name = state.use_display_name;
     let (data, tree_state) = state.guilds_tree_parts_mut();
-    let tree = GuildsTree::new(data).style(style);
+    let tree = GuildsTree::new(data)
+        .style(style)
+        .use_display_name(use_display_name);
     StatefulWidget::render(tree, area, buf, tree_state);
 }
 
@@ -1888,6 +1909,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            true,
             Theme::new("Orange"),
         );
 
@@ -1903,6 +1925,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            true,
             Theme::new("Orange"),
         );
 
@@ -1925,6 +1948,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            true,
             Theme::new("Orange"),
         );
 
@@ -1942,6 +1966,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            true,
             Theme::new("Orange"),
         );
         state.toggle_guilds_tree();
@@ -1961,6 +1986,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            true,
             Theme::new("Orange"),
         );
         let guilds = vec![
@@ -1979,6 +2005,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            true,
             Theme::new("Orange"),
         );
 
@@ -2027,6 +2054,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            true,
             Theme::new("Orange"),
         );
 
@@ -2067,6 +2095,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            true,
             Theme::new("Orange"),
         );
 
@@ -2117,6 +2146,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            true,
             Theme::new("Orange"),
         );
 
@@ -2161,6 +2191,7 @@ mod tests {
             Arc::new(MarkdownService::new()),
             UserCache::new(),
             false,
+            true,
             Theme::new("Orange"),
         );
 

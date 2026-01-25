@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::LazyLock;
 
+use crate::application::services::identity_service::IdentityService;
 use crate::application::services::markdown_service::{MarkdownService, MentionResolver};
 use crate::domain::entities::{ChannelId, Embed, ForumThread, ImageId, Message, MessageId};
 use crate::domain::keybinding::Action;
@@ -273,11 +274,12 @@ pub struct MessagePaneData {
     authors: HashMap<String, String>,
     last_layout_width: Option<u16>,
     is_dirty: bool,
+    use_display_name: bool,
 }
 
 impl MessagePaneData {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(use_display_name: bool) -> Self {
         Self {
             channel_id: None,
             channel_name: None,
@@ -292,6 +294,7 @@ impl MessagePaneData {
             authors: HashMap::new(),
             last_layout_width: None,
             is_dirty: true,
+            use_display_name,
         }
     }
 
@@ -319,11 +322,15 @@ impl MessagePaneData {
 
     pub fn set_messages(&mut self, messages: Vec<Message>) {
         for msg in &messages {
-            self.authors
-                .insert(msg.author().id().to_string(), msg.author().display_name());
+            self.authors.insert(
+                msg.author().id().to_string(),
+                IdentityService::get_preferred_name(msg.author(), self.use_display_name),
+            );
             for mention in msg.mentions() {
-                self.authors
-                    .insert(mention.id().to_string(), mention.display_name());
+                self.authors.insert(
+                    mention.id().to_string(),
+                    IdentityService::get_preferred_name(mention, self.use_display_name),
+                );
             }
         }
         self.messages = messages.into_iter().map(UiMessage::new).collect();
@@ -338,11 +345,13 @@ impl MessagePaneData {
         {
             self.authors.insert(
                 message.author().id().to_string(),
-                message.author().display_name(),
+                IdentityService::get_preferred_name(message.author(), self.use_display_name),
             );
             for mention in message.mentions() {
-                self.authors
-                    .insert(mention.id().to_string(), mention.display_name());
+                self.authors.insert(
+                    mention.id().to_string(),
+                    IdentityService::get_preferred_name(mention, self.use_display_name),
+                );
             }
             self.messages.push_back(UiMessage::new(message));
             self.is_dirty = true;
@@ -354,11 +363,15 @@ impl MessagePaneData {
         let mut added = 0;
         for msg in new_messages.into_iter().rev() {
             if !existing_ids.contains(&msg.id()) {
-                self.authors
-                    .insert(msg.author().id().to_string(), msg.author().display_name());
+                self.authors.insert(
+                    msg.author().id().to_string(),
+                    IdentityService::get_preferred_name(msg.author(), self.use_display_name),
+                );
                 for mention in msg.mentions() {
-                    self.authors
-                        .insert(mention.id().to_string(), mention.display_name());
+                    self.authors.insert(
+                        mention.id().to_string(),
+                        IdentityService::get_preferred_name(mention, self.use_display_name),
+                    );
                 }
                 self.messages.push_front(UiMessage::new(msg));
                 added += 1;
@@ -551,7 +564,13 @@ impl MessagePaneData {
                     let spans = vec![
                         Span::raw(" ".repeat(CONTENT_INDENT)),
                         Span::styled("┌─ Replying to ", reply_style),
-                        Span::styled(referenced.author().display_name(), username_style),
+                        Span::styled(
+                            IdentityService::get_preferred_name(
+                                referenced.author(),
+                                self.use_display_name,
+                            ),
+                            username_style,
+                        ),
                         Span::styled(format!(": {snippet}"), reply_style),
                     ];
                     ui_msg.reply_preview = Some(Line::from(spans));
@@ -631,7 +650,7 @@ impl MentionResolver for MessagePaneData {
 
 impl Default for MessagePaneData {
     fn default() -> Self {
-        Self::new()
+        Self::new(true)
     }
 }
 
@@ -1294,6 +1313,7 @@ impl<'a> MessagePane<'a> {
                     buf,
                     state,
                     *disable_user_colors,
+                    data.use_display_name,
                 );
             }
             current_y += i32::try_from(h).unwrap_or(0);
@@ -1464,7 +1484,7 @@ impl<'a> MessagePane<'a> {
         let author_name = thread
             .starter_message
             .as_ref()
-            .map(|m| m.author().display_name())
+            .map(|m| IdentityService::get_preferred_name(m.author(), self.data.use_display_name))
             .or_else(|| {
                 self.data
                     .get_author_name(&thread.author_id)
@@ -1655,6 +1675,7 @@ fn render_ui_message(
     buf: &mut Buffer,
     state: &mut MessagePaneState,
     disable_user_colors: bool,
+    use_display_name: bool,
 ) {
     let message = &ui_msg.message;
     let is_selected = state.selected_index == Some(index);
@@ -1738,7 +1759,7 @@ fn render_ui_message(
                 timestamp_style,
             ),
             Span::styled(
-                message.author().display_name(),
+                IdentityService::get_preferred_name(message.author(), use_display_name),
                 style.author_style.fg(author_color),
             ),
         ];
@@ -2109,7 +2130,7 @@ mod tests {
 
     #[test]
     fn test_message_pane_data_creation() {
-        let data = MessagePaneData::new();
+        let data = MessagePaneData::new(true);
         assert!(data.is_empty());
         assert!(data.channel_id().is_none());
         assert_eq!(data.loading_state(), LoadingState::Idle);
@@ -2117,7 +2138,7 @@ mod tests {
 
     #[test]
     fn test_message_pane_data_set_messages() {
-        let mut data = MessagePaneData::new();
+        let mut data = MessagePaneData::new(true);
         data.set_channel(ChannelId(100), "general".to_string());
 
         let messages = vec![
@@ -2163,14 +2184,14 @@ mod tests {
 
     #[test]
     fn test_formatted_channel_title() {
-        let mut data = MessagePaneData::new();
+        let mut data = MessagePaneData::new(true);
         data.set_channel(ChannelId(100), "general".to_string());
         assert_eq!(
             data.formatted_channel_title(),
             Some("[ GENERAL ]".to_string())
         );
 
-        let mut dm_data = MessagePaneData::new();
+        let mut dm_data = MessagePaneData::new(true);
         dm_data.set_channel(ChannelId(200), "@username".to_string());
         assert_eq!(
             dm_data.formatted_channel_title(),
@@ -2180,7 +2201,7 @@ mod tests {
 
     #[test]
     fn test_typing_indicator() {
-        let mut data = MessagePaneData::new();
+        let mut data = MessagePaneData::new(true);
         data.set_channel(ChannelId(100), "general".to_string());
 
         assert!(data.typing_indicator().is_none());
@@ -2199,7 +2220,7 @@ mod tests {
     fn test_scrollbar_position_at_bottom() {
         use crate::application::services::markdown_service::MarkdownService;
 
-        let mut data = MessagePaneData::new();
+        let mut data = MessagePaneData::new(true);
         data.set_channel(ChannelId(100), "general".to_string());
 
         let messages: Vec<Message> = (0..50).map(|i| create_test_message(i, "msg")).collect();

@@ -71,11 +71,7 @@ impl LoginScreen {
     #[must_use]
     pub fn token(&self) -> Option<&str> {
         let value = self.token_input.value();
-        if value.is_empty() {
-            None
-        } else {
-            Some(value)
-        }
+        if value.is_empty() { None } else { Some(value) }
     }
 
     /// Returns persistence preference.

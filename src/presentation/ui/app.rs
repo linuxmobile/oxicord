@@ -55,11 +55,13 @@ enum CurrentScreen {
     Chat(Box<ChatScreenState>),
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy)]
 pub struct AppConfig {
     pub disable_user_colors: bool,
     pub group_guilds: bool,
     pub enable_desktop_notifications: bool,
+    pub use_display_name: bool,
     pub theme: Theme,
 }
 
@@ -98,6 +100,7 @@ pub struct App {
     last_image_check: Instant,
     disable_user_colors: bool,
     group_guilds: bool,
+    use_display_name: bool,
     theme: Theme,
     identity: Arc<ClientIdentity>,
     state_store: StateStore,
@@ -192,6 +195,7 @@ impl App {
             last_image_check: Instant::now(),
             disable_user_colors: config.disable_user_colors,
             group_guilds: config.group_guilds,
+            use_display_name: config.use_display_name,
             theme: config.theme,
             identity,
             state_store,
@@ -343,22 +347,22 @@ impl App {
     fn handle_terminal_event(&mut self, event: &Event) -> EventResult {
         match event {
             Event::Key(key) => self.handle_key(*key),
-            Event::Paste(text) => self.handle_paste(text.clone()),
+            Event::Paste(text) => self.handle_paste(text),
             _ => EventResult::Continue,
         }
     }
 
-    fn handle_paste(&mut self, text: String) -> EventResult {
+    fn handle_paste(&mut self, text: &str) -> EventResult {
         match &mut self.screen {
             CurrentScreen::Login(screen) => {
-                screen.paste_token(&text);
+                screen.paste_token(text);
                 EventResult::Continue
             }
             CurrentScreen::Chat(state) => {
-                state.insert_text(&text);
+                state.insert_text(text);
                 EventResult::Continue
             }
-            _ => EventResult::Continue,
+            CurrentScreen::Splash(_) => EventResult::Continue,
         }
     }
 
@@ -423,7 +427,7 @@ impl App {
             use ratatui::widgets::{Block, Borders, Paragraph};
 
             let area = frame.area();
-            let max_width = area.width.saturating_sub(2); // Keep some margin
+            let max_width = area.width.saturating_sub(2);
             let width = u16::try_from(message.len())
                 .unwrap_or(u16::MAX)
                 .saturating_add(4)
@@ -497,7 +501,7 @@ impl App {
                 self.transition_to_login();
             }
             ChatKeyResult::SecureLogout => {
-                self.handle_delete_token(); // This deletes from keyring
+                self.handle_delete_token();
                 self.transition_to_login();
             }
             ChatKeyResult::CopyToClipboard(text) => {
@@ -1247,6 +1251,7 @@ impl App {
                     self.markdown_service.clone(),
                     self.user_cache.clone(),
                     self.disable_user_colors,
+                    self.use_display_name,
                     self.theme,
                 );
 
@@ -1254,7 +1259,7 @@ impl App {
 
                 for dm in &dms {
                     self.user_cache
-                        .insert_basic(&dm.recipient_id, &dm.recipient_name);
+                        .insert_basic(&dm.recipient_id, &dm.recipient_username);
                 }
 
                 chat_state.set_dm_users(dms);
@@ -1891,6 +1896,7 @@ mod tests {
             disable_user_colors: false,
             group_guilds: false,
             enable_desktop_notifications: false,
+            use_display_name: true,
             theme,
         };
         let app = App::new(auth, data, storage, config, identity);

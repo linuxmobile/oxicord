@@ -326,7 +326,10 @@ impl DiscordClient {
                 channel_id: r
                     .channel_id
                     .and_then(|id| id.parse::<u64>().ok().map(Into::into)),
-                guild_id: r.guild_id.and_then(|id| id.parse::<u64>().ok()).map(GuildId),
+                guild_id: r
+                    .guild_id
+                    .and_then(|id| id.parse::<u64>().ok())
+                    .map(GuildId),
             };
             message = message.with_reference(mr);
         }
@@ -596,14 +599,12 @@ impl DiscordDataPort for DiscordClient {
             .into_iter()
             .filter_map(|dm| {
                 let recipient = dm.recipients.first()?;
-                let display_name = recipient
-                    .global_name
-                    .clone()
-                    .unwrap_or_else(|| recipient.username.clone());
                 Some(DirectMessageChannel {
                     channel_id: dm.id,
                     recipient_id: recipient.id.clone(),
-                    recipient_name: display_name,
+                    recipient_username: recipient.username.clone(),
+                    recipient_discriminator: recipient.discriminator.clone(),
+                    recipient_global_name: recipient.global_name.clone(),
                     last_message_id: dm
                         .last_message_id
                         .and_then(|id| id.parse::<u64>().ok().map(Into::into)),
