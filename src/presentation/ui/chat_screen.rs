@@ -2012,11 +2012,9 @@ mod tests {
         assert_eq!(state.guilds_tree_data().guilds().len(), 2);
     }
 
-
     #[test]
     #[cfg(not(windows))]
     fn test_channel_reset_on_guild_change() {
-
         let mut state = ChatScreenState::new(
             create_test_user(),
             Arc::new(MarkdownService::new()),
@@ -2104,11 +2102,9 @@ mod tests {
         );
     }
 
-
     #[test]
     #[cfg(not(windows))]
     fn test_cross_guild_channel_selection() {
-
         let mut state = ChatScreenState::new(
             create_test_user(),
             Arc::new(MarkdownService::new()),
@@ -2158,11 +2154,9 @@ mod tests {
         );
     }
 
-
     #[test]
     #[cfg(not(windows))]
     fn test_chat_screen_state_creation_initial_focus() {
-
         let mut state = ChatScreenState::new(
             create_test_user(),
             Arc::new(MarkdownService::new()),

@@ -3,9 +3,9 @@
 use std::sync::Arc;
 
 use ratatui::layout::Rect;
+use ratatui_image::Resize;
 use ratatui_image::picker::{Picker, ProtocolType};
 use ratatui_image::protocol::StatefulProtocol;
-use ratatui_image::Resize;
 
 use crate::domain::entities::{ImageId, ImageStatus};
 

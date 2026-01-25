@@ -152,7 +152,7 @@ oxicord
 - [x] ~~Streamlined authentication (Token/Libsecret only)~~
 - [x] ~~Connection status indicator fixes~~
 - [x] ~~Performance optimizations (reduce CPU spikes)~~
-- [ ] Forum channel support
+- [x] ~~Forum channel support~~
 
 ### Visuals & UI
 
@@ -161,17 +161,31 @@ oxicord
 - [x] ~~Animated loading screen (TachyonFX)~~
 - [x] ~~Unread indicators for guilds and channels~~
 - [x] ~~Compact file picker UI~~
-- [ ] Mention indicators for servers/channels and DMs
+- [x] ~~Image previews (Ratatui-image: Sixel/Kitty/iTerm2)~~
+- [x] ~~Guild Folders support~~
+- [x] ~~Forum Channel support~~
+- [ ] ~~Mention indicators for servers/channels and DMs~~
 - [ ] UI Animations (Guild tree, Typing indicators via TachyonFX)
 - [ ] Image modal viewer ('o' binding)
-- [ ] Image previews (Ratatui-image integration) _(Monitoring for performance impact)_
 
 ### System & Documentation
 
 - [x] ~~Native file explorer for attachments~~
 - [x] ~~User mention support (@)~~
 - [x] ~~Comprehensive documentation update~~
+- [x] ~~Desktop Notifications~~
 - [ ] XDG-compliant configuration support (`~/.config/oxicord/config.toml`)
+
+## What's Next
+
+- **Navigation:** `Ctrl+K` fuzzy finder for channels and DM users.
+- **Configuration:** Full `config.toml` support for custom keybinds and behavior.
+- **Privacy:** Option to hide messages from blocked users.
+- **Media Interaction:**
+  - 'Y' keybinding to copy images to clipboard.
+  - 'o' keybinding to open images in a High-Res modal.
+- **Bot Support:** Native support for slash commands and bot interactions.
+- **Performance:** Targeting a further +20% improvement in API response parsing.
 
 ## Credits
 
