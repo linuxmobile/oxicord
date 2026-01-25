@@ -462,9 +462,19 @@ impl EventParser {
             .and_then(|id| id.parse::<u64>().ok())
             .map(GuildId);
 
-        let username = payload
-            .member
-            .and_then(|m| m.nick.or_else(|| m.user.map(|u| u.username)));
+        let username = payload.member.and_then(|m| {
+            m.nick.or_else(|| {
+                m.user.map(|u| {
+                    if let Some(global) = u.global_name {
+                        global
+                    } else if u.discriminator == "0" {
+                        u.username
+                    } else {
+                        format!("{}#{}", u.username, u.discriminator)
+                    }
+                })
+            })
+        });
 
         let timestamp = DateTime::from_timestamp(payload.timestamp, 0).unwrap_or_else(Utc::now);
 
@@ -757,7 +767,7 @@ impl EventParser {
             discriminator: payload.author.discriminator,
             avatar: payload.author.avatar,
             bot: payload.author.bot,
-            global_name: None, // Payload doesn't seem to have global_name yet? DTO check needed.
+            global_name: payload.author.global_name,
         };
 
         let mut message = Message::new(

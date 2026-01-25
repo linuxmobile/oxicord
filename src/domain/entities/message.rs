@@ -303,7 +303,7 @@ pub struct MessageAuthor {
 
 impl MessageAuthor {
     #[must_use]
-    pub fn display_name(&self) -> String {
+    pub fn raw_display_name(&self) -> String {
         if let Some(ref global) = self.global_name {
             global.clone()
         } else if self.discriminator == "0" {

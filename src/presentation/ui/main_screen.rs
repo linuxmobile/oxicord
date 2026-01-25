@@ -15,6 +15,7 @@ use crate::presentation::widgets::{StatusBar, StatusLevel};
 pub struct MainScreen {
     user: User,
     status: StatusBar,
+    use_display_name: bool,
 }
 
 impl MainScreen {
@@ -26,7 +27,18 @@ impl MainScreen {
             .right("Press 'q' to quit")
             .level(StatusLevel::Success);
 
-        Self { user, status }
+        Self {
+            user,
+            status,
+            use_display_name: false,
+        }
+    }
+
+    pub fn set_use_display_name(&mut self, enabled: bool) {
+        use crate::application::services::identity_service::IdentityService;
+        self.use_display_name = enabled;
+        let name = IdentityService::get_preferred_name(&self.user, enabled);
+        self.status = self.status.clone().left(format!("Logged in as: {name}"));
     }
 
     /// Returns current user.
@@ -79,7 +91,10 @@ impl Widget for &MainScreen {
             Line::from(vec![
                 Span::raw("Logged in as: "),
                 Span::styled(
-                    self.user.display_name(),
+                    crate::application::services::identity_service::IdentityService::get_preferred_name(
+                        &self.user,
+                        self.use_display_name,
+                    ),
                     Style::default()
                         .fg(Color::Green)
                         .add_modifier(Modifier::BOLD),

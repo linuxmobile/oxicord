@@ -191,6 +191,11 @@ impl ChatScreenState {
         }
     }
 
+    pub fn set_use_display_name(&mut self, use_display_name: bool) {
+        self.use_display_name = use_display_name;
+        self.message_pane_data.set_use_display_name(use_display_name);
+    }
+
     pub fn restore_state(
         &mut self,
         guild_id: Option<GuildId>,
@@ -532,6 +537,7 @@ impl ChatScreenState {
                 self.toggle_help();
                 Some(ChatKeyResult::ToggleHelp)
             }
+            Some(Action::ToggleDisplayName) => Some(ChatKeyResult::ToggleDisplayName),
             _ => None,
         }
     }
@@ -740,6 +746,7 @@ impl ChatScreenState {
                     reply_to,
                     attachments,
                 } => {
+                    self.message_pane_state.clear_selection();
                     return ChatKeyResult::SendMessage {
                         content,
                         reply_to,
@@ -1152,7 +1159,7 @@ impl ChatScreenState {
             .messages()
             .iter()
             .find(|m| m.message.id() == message_id)
-            .map(|m| m.message.author().display_name().clone())
+            .map(|m| IdentityService::get_preferred_name(m.message.author(), self.use_display_name))
     }
 
     pub fn message_input_parts_mut(&mut self) -> &mut MessageInputState<'static> {
@@ -1530,6 +1537,7 @@ pub enum ChatKeyResult {
     },
     Paste,
     ToggleHelp,
+    ToggleDisplayName,
 }
 
 pub struct ChatScreen;
@@ -1640,6 +1648,7 @@ fn render_help_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) 
                 (Action::YankId, "Copy Message ID"),
                 (Action::OpenAttachments, "Open Attachment"),
                 (Action::JumpToReply, "Jump to Reply"),
+                (Action::ToggleDisplayName, "Toggle Display Name"),
             ],
         ),
         (
@@ -1893,7 +1902,7 @@ fn render_messages_area(state: &mut ChatScreenState, area: Rect, buf: &mut Buffe
             popup_height,
         );
         let mut autocomplete_state = state.autocomplete_service.state().clone();
-        MentionPopup::new().render(popup_area, buf, &mut autocomplete_state);
+        MentionPopup::new(state.use_display_name).render(popup_area, buf, &mut autocomplete_state);
     }
 }
 

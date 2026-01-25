@@ -433,8 +433,8 @@ impl App {
                 .saturating_add(4)
                 .min(max_width);
             let height = 3;
-            let x = area.width.saturating_sub(width).saturating_sub(1);
-            let y = 1;
+            let x = area.width.saturating_sub(width).saturating_sub(2);
+            let y = 2;
 
             let rect = Rect::new(x, y, width, height);
             let block = Block::default()
@@ -623,6 +623,23 @@ impl App {
                 });
             }
             ChatKeyResult::ToggleHelp | ChatKeyResult::Consumed | ChatKeyResult::Ignored => {}
+            ChatKeyResult::ToggleDisplayName => {
+                self.use_display_name = !self.use_display_name;
+                info!(enabled = self.use_display_name, "Toggled display name preference");
+                if let CurrentScreen::Chat(ref mut state) = self.screen {
+                    state.set_use_display_name(self.use_display_name);
+
+                    if let Some(channel_id) = state.message_pane_data().channel_id() {
+                        let indicator = self.typing_manager.format_typing_indicator(channel_id);
+                        state.set_typing_indicator(indicator);
+                    }
+                } else if let Some(ref mut state) = self.pending_chat_state {
+                    state.set_use_display_name(self.use_display_name);
+                }
+
+                let status = if self.use_display_name { "enabled" } else { "disabled" };
+                self.show_notification(format!("Display names {status}"));
+            }
         }
 
         EventResult::Continue

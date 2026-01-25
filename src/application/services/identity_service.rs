@@ -1,12 +1,26 @@
 //! Identity service for resolving user names based on configuration.
 
-use crate::domain::entities::{MessageAuthor, User};
+use crate::domain::entities::{CachedUser, MessageAuthor, User};
 
 /// Trait for entities that have identity information.
 pub trait Identifiable {
     fn username(&self) -> &str;
     fn discriminator(&self) -> &str;
     fn global_name(&self) -> Option<&str>;
+}
+
+impl Identifiable for CachedUser {
+    fn username(&self) -> &str {
+        self.username()
+    }
+
+    fn discriminator(&self) -> &str {
+        self.discriminator()
+    }
+
+    fn global_name(&self) -> Option<&str> {
+        None
+    }
 }
 
 impl Identifiable for User {

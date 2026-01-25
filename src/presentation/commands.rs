@@ -300,6 +300,12 @@ impl Default for CommandRegistry {
             false,
         );
 
+        register(
+            Action::ToggleDisplayName,
+            KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL),
+            true,
+        );
+
         Self {
             display_bindings,
             input_bindings,

@@ -49,6 +49,7 @@ pub enum Action {
     Cancel,
     Paste,
     SecureLogout,
+    ToggleDisplayName,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

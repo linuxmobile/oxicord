@@ -300,6 +300,8 @@ pub struct AuthorPayload {
     pub avatar: Option<String>,
     #[serde(default)]
     pub bot: bool,
+    #[serde(default)]
+    pub global_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -350,6 +352,10 @@ pub struct TypingMemberPayload {
 #[derive(Debug, Deserialize)]
 pub struct TypingUserPayload {
     pub username: String,
+    #[serde(default)]
+    pub discriminator: String,
+    #[serde(default)]
+    pub global_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

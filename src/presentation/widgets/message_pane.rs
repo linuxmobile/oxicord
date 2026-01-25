@@ -309,6 +309,7 @@ impl MessagePaneData {
         self.is_dm = channel_name.starts_with('@');
         self.channel_id = Some(channel_id);
         self.channel_name = Some(channel_name);
+        self.channel_topic = None;
         self.messages.clear();
         self.loading_state = LoadingState::Loading;
         self.error_message = None;
@@ -425,6 +426,28 @@ impl MessagePaneData {
         self.is_dm = false;
         self.typing_indicator = None;
         self.authors.clear();
+        self.is_dirty = true;
+    }
+
+    pub fn set_use_display_name(&mut self, use_display_name: bool) {
+        self.use_display_name = use_display_name;
+        self.refresh_authors();
+    }
+
+    pub fn refresh_authors(&mut self) {
+        self.authors.clear();
+        for ui_msg in &self.messages {
+            self.authors.insert(
+                ui_msg.message.author().id().to_string(),
+                IdentityService::get_preferred_name(ui_msg.message.author(), self.use_display_name),
+            );
+            for mention in ui_msg.message.mentions() {
+                self.authors.insert(
+                    mention.id().to_string(),
+                    IdentityService::get_preferred_name(mention, self.use_display_name),
+                );
+            }
+        }
         self.is_dirty = true;
     }
 
@@ -725,6 +748,10 @@ impl MessagePaneState {
     #[must_use]
     pub const fn last_width(&self) -> u16 {
         self.last_width
+    }
+
+    pub fn toggle_spoiler(&mut self) {
+        self.show_spoilers = !self.show_spoilers;
     }
 
     pub fn adjust_for_prepend(&mut self, added_count: usize, added_height: usize) {
@@ -1259,25 +1286,21 @@ impl<'a> MessagePane<'a> {
             return;
         }
 
-        if let Some(error_msg) = &data.error_message {
-            // Render error as a red message at the bottom if not loading/empty
-            // If loading state is Error, it's handled above. This handles transient errors
-            // while messages are still visible.
-            if matches!(data.loading_state(), LoadingState::Loaded) {
-                let error_para = Paragraph::new(format!("Error: {error_msg}"))
-                    .style(style.error_style)
-                    .alignment(Alignment::Center);
+        if let Some(error_msg) = &data.error_message
+            && matches!(data.loading_state(), LoadingState::Loaded)
+        {
+            let error_para = Paragraph::new(format!("Error: {error_msg}"))
+                .style(style.error_style)
+                .alignment(Alignment::Center);
 
-                let error_area = Rect::new(
-                    inner_area.x,
-                    inner_area.bottom().saturating_sub(1),
-                    inner_area.width,
-                    1,
-                );
-                // Clear the area first to ensure legibility
-                Clear.render(error_area, buf);
-                error_para.render(error_area, buf);
-            }
+            let error_area = Rect::new(
+                inner_area.x,
+                inner_area.bottom().saturating_sub(1),
+                inner_area.width,
+                1,
+            );
+            Clear.render(error_area, buf);
+            error_para.render(error_area, buf);
         }
 
         let content_height: usize = data
