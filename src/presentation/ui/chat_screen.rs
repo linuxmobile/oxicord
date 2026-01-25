@@ -193,7 +193,8 @@ impl ChatScreenState {
 
     pub fn set_use_display_name(&mut self, use_display_name: bool) {
         self.use_display_name = use_display_name;
-        self.message_pane_data.set_use_display_name(use_display_name);
+        self.message_pane_data
+            .set_use_display_name(use_display_name);
     }
 
     pub fn restore_state(

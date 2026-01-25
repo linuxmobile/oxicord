@@ -35,6 +35,7 @@ const TIMESTAMP_WIDTH: usize = 6;
 const CONTENT_INDENT: usize = 6;
 const EMBED_INDENT: usize = 6;
 const THREAD_CARD_HEIGHT: u16 = 6;
+const GROUPING_WINDOW_SECONDS: i64 = 7 * 60;
 
 /// Pre-calculated layout data for an embed.
 pub struct RenderedEmbed {
@@ -45,6 +46,13 @@ pub struct RenderedEmbed {
     pub height: u16,
     pub color: Color,
     pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MessageGroup {
+    #[default]
+    Start,
+    Compact,
 }
 
 /// UI wrapper for a message with rendering state.
@@ -59,6 +67,7 @@ pub struct UiMessage {
     pub rendered_embeds: Vec<RenderedEmbed>,
     /// Cached reply preview line
     pub reply_preview: Option<Line<'static>>,
+    pub group: MessageGroup,
 }
 
 impl UiMessage {
@@ -87,6 +96,7 @@ impl UiMessage {
             image_attachments,
             rendered_embeds: Vec::new(),
             reply_preview: None,
+            group: MessageGroup::Start,
         }
     }
 
@@ -342,6 +352,7 @@ impl MessagePaneData {
             }
         }
         self.messages = messages.into_iter().map(UiMessage::new).collect();
+        self.update_grouping();
         self.loading_state = LoadingState::Loaded;
         self.error_message = None;
         self.is_dirty = true;
@@ -362,6 +373,7 @@ impl MessagePaneData {
                 );
             }
             self.messages.push_back(UiMessage::new(message));
+            self.update_grouping();
             self.is_dirty = true;
         }
     }
@@ -386,6 +398,7 @@ impl MessagePaneData {
             }
         }
         if added > 0 {
+            self.update_grouping();
             self.is_dirty = true;
         }
         added
@@ -399,13 +412,46 @@ impl MessagePaneData {
         {
             let new_msg = UiMessage::new(updated);
             self.messages[pos] = new_msg;
+            self.update_grouping();
             self.is_dirty = true;
         }
     }
 
     pub fn remove_message(&mut self, message_id: MessageId) {
         self.messages.retain(|m| m.message.id() != message_id);
+        self.update_grouping();
         self.is_dirty = true;
+    }
+
+    fn update_grouping(&mut self) {
+        if self.messages.is_empty() {
+            return;
+        }
+
+        let mut previous_author_id: Option<String> = None;
+        let mut previous_timestamp: Option<i64> = None;
+
+        for ui_msg in &mut self.messages {
+            let msg = &ui_msg.message;
+            let current_author_id = msg.author().id().to_string();
+            let current_timestamp = msg.timestamp().timestamp();
+
+            ui_msg.group = MessageGroup::Start;
+
+            if !msg.is_reply() {
+                if let (Some(prev_id), Some(prev_ts)) = (&previous_author_id, previous_timestamp)
+                    && prev_id == &current_author_id
+                {
+                    let diff = current_timestamp.saturating_sub(prev_ts);
+                    if diff < GROUPING_WINDOW_SECONDS {
+                        ui_msg.group = MessageGroup::Compact;
+                    }
+                }
+            }
+
+            previous_author_id = Some(current_author_id);
+            previous_timestamp = Some(current_timestamp);
+        }
     }
 
     pub fn set_error(&mut self, error: String) {
@@ -551,7 +597,11 @@ impl MessagePaneData {
 
             ui_msg.rendered_content = Some(text);
 
-            let mut height = 1 + content_lines;
+            let mut height = content_lines;
+
+            if ui_msg.group == MessageGroup::Start {
+                height += 1;
+            }
 
             if message.is_reply() {
                 height += 1;
@@ -1779,62 +1829,64 @@ fn render_ui_message(
         current_msg_y += 1;
     }
 
-    if current_msg_y >= 0 && current_msg_y < i32::from(area.height) {
-        let (timestamp_style, edited_style) = if is_selected {
-            (
-                Style::default().fg(Color::White),
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::ITALIC),
-            )
-        } else {
-            (style.timestamp_style, style.edited_style)
-        };
+    if ui_msg.group == MessageGroup::Start {
+        if current_msg_y >= 0 && current_msg_y < i32::from(area.height) {
+            let (timestamp_style, edited_style) = if is_selected {
+                (
+                    Style::default().fg(Color::White),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::ITALIC),
+                )
+            } else {
+                (style.timestamp_style, style.edited_style)
+            };
 
-        let author_color = if disable_user_colors {
-            style.author_style.fg.unwrap_or(Color::Yellow)
-        } else {
-            get_author_color(message.author())
-        };
+            let author_color = if disable_user_colors {
+                style.author_style.fg.unwrap_or(Color::Yellow)
+            } else {
+                get_author_color(message.author())
+            };
 
-        let mut header_spans = vec![
-            Span::styled(
-                format!(
-                    "{:<width$}",
-                    message.formatted_timestamp(),
-                    width = TIMESTAMP_WIDTH
+            let mut header_spans = vec![
+                Span::styled(
+                    format!(
+                        "{:<width$}",
+                        message.formatted_timestamp(),
+                        width = TIMESTAMP_WIDTH
+                    ),
+                    timestamp_style,
                 ),
-                timestamp_style,
-            ),
-            Span::styled(
-                IdentityService::get_preferred_name(message.author(), use_display_name),
-                style.author_style.fg(author_color),
-            ),
-        ];
+                Span::styled(
+                    IdentityService::get_preferred_name(message.author(), use_display_name),
+                    style.author_style.fg(author_color),
+                ),
+            ];
 
-        if message.author().is_bot() {
-            header_spans.push(Span::raw(" "));
-            header_spans.push(Span::styled("[BOT]", style.bot_badge_style));
+            if message.author().is_bot() {
+                header_spans.push(Span::raw(" "));
+                header_spans.push(Span::styled("[BOT]", style.bot_badge_style));
+            }
+
+            if message.is_edited() {
+                header_spans.push(Span::raw(" "));
+                header_spans.push(Span::styled("(edited)", edited_style));
+            }
+
+            let header_line = Line::from(header_spans);
+            let header_para = Paragraph::new(header_line).style(base_style);
+
+            let header_area = Rect::new(
+                area.x,
+                area.y
+                    .saturating_add(u16::try_from(current_msg_y).unwrap_or(0)),
+                area.width,
+                1,
+            );
+            header_para.render(header_area, buf);
         }
-
-        if message.is_edited() {
-            header_spans.push(Span::raw(" "));
-            header_spans.push(Span::styled("(edited)", edited_style));
-        }
-
-        let header_line = Line::from(header_spans);
-        let header_para = Paragraph::new(header_line).style(base_style);
-
-        let header_area = Rect::new(
-            area.x,
-            area.y
-                .saturating_add(u16::try_from(current_msg_y).unwrap_or(0)),
-            area.width,
-            1,
-        );
-        header_para.render(header_area, buf);
+        current_msg_y += 1;
     }
-    current_msg_y += 1;
 
     let content_style = if message.kind().is_system() {
         style.system_message_style
@@ -1863,7 +1915,12 @@ fn render_ui_message(
 
     let content_start_y = current_msg_y;
 
-    let mut content_height = i32::from(ui_msg.estimated_height) - 1;
+    let mut content_height = i32::from(ui_msg.estimated_height);
+
+    if ui_msg.group == MessageGroup::Start {
+        content_height -= 1;
+    }
+
     if message.is_reply() && message.referenced().is_some() {
         content_height -= 1;
     }
@@ -2290,5 +2347,84 @@ mod tests {
         state.update_dimensions(content_height, 50);
 
         assert_eq!(state.vertical_scroll, 50);
+    }
+
+    #[test]
+    fn test_message_grouping_logic() {
+        use chrono::Duration;
+
+        let now = Local::now();
+        let author1 = MessageAuthor {
+            id: "1".to_string(),
+            username: "user1".to_string(),
+            discriminator: "0".to_string(),
+            avatar: None,
+            bot: false,
+            global_name: None,
+        };
+        let author2 = MessageAuthor {
+            id: "2".to_string(),
+            username: "user2".to_string(),
+            discriminator: "0".to_string(),
+            avatar: None,
+            bot: false,
+            global_name: None,
+        };
+
+        let m1 = Message::new(
+            1u64.into(),
+            ChannelId(100),
+            author1.clone(),
+            "Base message".to_string(),
+            now,
+            crate::domain::entities::MessageKind::Default,
+        );
+
+        let m2 = Message::new(
+            2u64.into(),
+            ChannelId(100),
+            author1.clone(),
+            "Short delay".to_string(),
+            now + Duration::minutes(1),
+            crate::domain::entities::MessageKind::Default,
+        );
+
+        let m3 = Message::new(
+            3u64.into(),
+            ChannelId(100),
+            author1.clone(),
+            "Long delay".to_string(),
+            now + Duration::minutes(9),
+            crate::domain::entities::MessageKind::Default,
+        );
+
+        let m4 = Message::new(
+            4u64.into(),
+            ChannelId(100),
+            author2.clone(),
+            "Different user".to_string(),
+            now + Duration::minutes(10),
+            crate::domain::entities::MessageKind::Default,
+        );
+
+        let m5 = Message::new(
+            5u64.into(),
+            ChannelId(100),
+            author2.clone(),
+            "Reply".to_string(),
+            now + Duration::minutes(11),
+            crate::domain::entities::MessageKind::Reply,
+        );
+
+        let mut data = MessagePaneData::new(true);
+        data.set_messages(vec![m1, m2, m3, m4, m5]);
+
+        let messages: Vec<_> = data.messages.iter().collect();
+
+        assert_eq!(messages[0].group, MessageGroup::Start);
+        assert_eq!(messages[1].group, MessageGroup::Compact);
+        assert_eq!(messages[2].group, MessageGroup::Start);
+        assert_eq!(messages[3].group, MessageGroup::Start);
+        assert_eq!(messages[4].group, MessageGroup::Start);
     }
 }

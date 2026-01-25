@@ -625,7 +625,10 @@ impl App {
             ChatKeyResult::ToggleHelp | ChatKeyResult::Consumed | ChatKeyResult::Ignored => {}
             ChatKeyResult::ToggleDisplayName => {
                 self.use_display_name = !self.use_display_name;
-                info!(enabled = self.use_display_name, "Toggled display name preference");
+                info!(
+                    enabled = self.use_display_name,
+                    "Toggled display name preference"
+                );
                 if let CurrentScreen::Chat(ref mut state) = self.screen {
                     state.set_use_display_name(self.use_display_name);
 
@@ -637,7 +640,11 @@ impl App {
                     state.set_use_display_name(self.use_display_name);
                 }
 
-                let status = if self.use_display_name { "enabled" } else { "disabled" };
+                let status = if self.use_display_name {
+                    "enabled"
+                } else {
+                    "disabled"
+                };
                 self.show_notification(format!("Display names {status}"));
             }
         }
