@@ -4,6 +4,11 @@ Oxicord is a high-performance, memory-safe Discord TUI client written in Rust. I
 
 Designed for power users on Linux who demand speed, minimal resource usage, and terminal aesthetics, Oxicord aims to be the definitive CLI experience for Discord.
 
+<p align="center" style="background-color: #2b0000; padding: 20px; border-left: 5px solid #ff0000; border-radius: 5px; color: #ffcccc;">
+  <strong>⚠️ WARNING ⚠️</strong><br><br>
+  Using unofficial clients is against Discord's Terms of Service. Use this client at your own risk. <strong>Never share your token with anyone.</strong>
+</p>
+
 ## Why Oxicord?
 
 Oxicord distinguishes itself through a commitment to modern engineering principles and user experience:
@@ -106,9 +111,6 @@ Oxicord is currently configured via command-line arguments. Full support for a p
 ## Authentication
 
 Oxicord requires a Discord user token to function.
-
-> **Warning**
-> Automated user accounts are against Discord's Terms of Service. Use this client at your own risk. **Never share your token with anyone.**
 
 ### Obtaining the Token
 
