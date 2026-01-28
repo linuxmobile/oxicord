@@ -58,6 +58,12 @@ We stand on the shoulders of giants. Here is how Oxicord compares to existing te
 
 ## Installation & Configuration
 
+### Arch
+
+```bash
+yay -S oxicord-bin
+```
+
 ### Nix
 
 ```bash
