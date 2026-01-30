@@ -474,6 +474,7 @@ impl MessagePaneData {
         self.channels.insert(id, name);
     }
 
+    #[must_use]
     pub fn is_channel_known(&self, id: &str) -> bool {
         self.channels.contains_key(id)
     }
@@ -877,6 +878,7 @@ impl MessagePaneState {
         self.view_mode = ViewMode::Messages;
     }
 
+
     #[allow(clippy::missing_const_for_fn)]
     pub fn scroll_down(&mut self) {
         self.flags.is_following = false;
@@ -1071,13 +1073,13 @@ impl MessagePaneState {
                     return Some(MessagePaneAction::JumpToReply(message_id));
                 }
 
-                if let Some(msg) = self.get_selected_message(data) {
-                    if let Some(ui_msg) = data
+                if let Some(msg) = self.get_selected_message(data)
+                    && let Some(ui_msg) = data
                         .ui_messages()
                         .iter()
                         .find(|m| m.message.id() == msg.id())
-                    {
-                        for block in &ui_msg.parsed_content {
+                {
+                    for block in &ui_msg.parsed_content {
                             if let MdBlock::Paragraph(inlines) = block {
                                 for inline in inlines {
                                     if let MdInline::Channel(channel_id) = inline {
@@ -1089,7 +1091,6 @@ impl MessagePaneState {
                             }
                         }
                     }
-                }
                 None
             }
             Some(Action::Select) => {

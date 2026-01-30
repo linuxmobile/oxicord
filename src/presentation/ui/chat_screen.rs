@@ -607,9 +607,15 @@ impl ChatScreenState {
                         .iter()
                         .find(|m| m.message.id() == message_id)
                     {
-                        self.message_input_state
-                            .start_edit(message_id, message.message.content());
-                        self.focus_message_input();
+                        if message.message.can_be_edited_by(&self.user) {
+                            self.message_input_state
+                                .start_edit(message_id, message.message.content());
+                            self.focus_message_input();
+                        } else {
+                            return ChatKeyResult::ShowNotification(
+                                "You can only edit your own messages".to_string(),
+                            );
+                        }
                     }
                 }
                 MessagePaneAction::EditExternal(message_id) => {
@@ -619,10 +625,15 @@ impl ChatScreenState {
                         .iter()
                         .find(|m| m.message.id() == message_id)
                     {
-                        return ChatKeyResult::OpenEditor {
-                            initial_content: message.message.content().to_string(),
-                            message_id: Some(message_id),
-                        };
+                        if message.message.can_be_edited_by(&self.user) {
+                            return ChatKeyResult::OpenEditor {
+                                initial_content: message.message.content().to_string(),
+                                message_id: Some(message_id),
+                            };
+                        }
+                        return ChatKeyResult::ShowNotification(
+                            "You can only edit your own messages".to_string(),
+                        );
                     }
                 }
                 MessagePaneAction::Delete(message_id) => {
@@ -631,11 +642,16 @@ impl ChatScreenState {
                         .messages()
                         .iter()
                         .find(|m| m.message.id() == message_id)
-                        && message.message.author().id() == self.user.id_str()
                     {
-                        self.pending_deletion_id = Some(message_id);
-                        self.set_focus(ChatFocus::ConfirmationModal);
-                        return ChatKeyResult::Consumed;
+                        if message.message.can_be_edited_by(&self.user) {
+                            self.pending_deletion_id = Some(message_id);
+                            self.set_focus(ChatFocus::ConfirmationModal);
+                            return ChatKeyResult::Consumed;
+                        }
+
+                        return ChatKeyResult::ShowNotification(
+                            "You can only delete your own messages".to_string(),
+                        );
                     }
                 }
                 MessagePaneAction::YankContent(content) | MessagePaneAction::YankUrl(content) => {
@@ -1071,10 +1087,10 @@ impl ChatScreenState {
     pub fn set_messages(&mut self, messages: Vec<Message>) -> Option<ChatKeyResult> {
         let unknown = self.register_channel_mentions(&messages);
         self.message_pane_data.set_messages(messages);
-        if !unknown.is_empty() {
-            Some(ChatKeyResult::RequestChannelFetch(unknown))
-        } else {
+        if unknown.is_empty() {
             None
+        } else {
+            Some(ChatKeyResult::RequestChannelFetch(unknown))
         }
     }
 
@@ -1139,10 +1155,10 @@ impl ChatScreenState {
         let unknown = self.register_channel_mentions(std::slice::from_ref(&message));
         self.message_pane_data.add_message(message);
         self.message_pane_state.on_new_message();
-        if !unknown.is_empty() {
-            Some(ChatKeyResult::RequestChannelFetch(unknown))
-        } else {
+        if unknown.is_empty() {
             None
+        } else {
+            Some(ChatKeyResult::RequestChannelFetch(unknown))
         }
     }
 
@@ -1167,20 +1183,20 @@ impl ChatScreenState {
             self.message_pane_state
                 .adjust_for_prepend(added_count, added_height.into());
         }
-        if !unknown.is_empty() {
-            Some(ChatKeyResult::RequestChannelFetch(unknown))
-        } else {
+        if unknown.is_empty() {
             None
+        } else {
+            Some(ChatKeyResult::RequestChannelFetch(unknown))
         }
     }
 
     pub fn update_message(&mut self, message: Message) -> Option<ChatKeyResult> {
         let unknown = self.register_channel_mentions(std::slice::from_ref(&message));
         self.message_pane_data.update_message(message);
-        if !unknown.is_empty() {
-            Some(ChatKeyResult::RequestChannelFetch(unknown))
-        } else {
+        if unknown.is_empty() {
             None
+        } else {
+            Some(ChatKeyResult::RequestChannelFetch(unknown))
         }
     }
 
@@ -1515,7 +1531,15 @@ impl HasCommands for ChatScreenState {
                         commands.push(Keybind::new(key, Action::Reply, "Reply"));
                     }
                     if let Some(key) = registry.get_first(Action::EditMessage) {
-                        commands.push(Keybind::new(key, Action::EditMessage, "Edit"));
+                        let can_edit = self
+                            .message_pane_state
+                            .selected_index()
+                            .and_then(|idx| self.message_pane_data.get_message(idx))
+                            .is_some_and(|m| m.can_be_edited_by(&self.user));
+
+                        if can_edit {
+                            commands.push(Keybind::new(key, Action::EditMessage, "Edit"));
+                        }
                     }
                     if let Some(key) = registry.get_first(Action::DeleteMessage) {
                         commands.push(Keybind::new(key, Action::DeleteMessage, "Del"));
@@ -1614,6 +1638,7 @@ pub enum ChatKeyResult {
     ToggleDisplayName,
     JumpToChannel(ChannelId),
     RequestChannelFetch(Vec<ChannelId>),
+    ShowNotification(String),
 }
 
 pub struct ChatScreen;
@@ -2301,5 +2326,136 @@ mod tests {
             ChatFocus::GuildsTree,
             "Should return focus to Guilds Tree on Cancel from empty selection"
         );
+    }
+
+    #[test]
+    fn test_edit_restriction() {
+        use crate::domain::entities::{Message, MessageAuthor, MessageKind, MessageId, ChannelId};
+        use chrono::Local;
+
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            Theme::new("Orange"),
+        );
+
+        let channel_id = ChannelId(1);
+        let timestamp = Local::now();
+
+        let own_message = Message::new(
+            MessageId(1),
+            channel_id,
+            MessageAuthor {
+                id: "123".to_string(),
+                username: "testuser".to_string(),
+                discriminator: "0".to_string(),
+                avatar: None,
+                bot: false,
+                global_name: None,
+            },
+            "My message".to_string(),
+            timestamp,
+            MessageKind::Default,
+        );
+
+        let other_message = Message::new(
+            MessageId(2),
+            channel_id,
+            MessageAuthor {
+                id: "456".to_string(),
+                username: "other".to_string(),
+                discriminator: "0".to_string(),
+                avatar: None,
+                bot: false,
+                global_name: None,
+            },
+            "Other message".to_string(),
+            timestamp,
+            MessageKind::Default,
+        );
+
+        state.message_pane_data.set_messages(vec![own_message, other_message]);
+        state.focus_messages_list();
+
+        state.message_pane_state.jump_to_index(1);
+        
+        let edit_key = KeyEvent::from(KeyCode::Char('e'));
+        
+        let result = state.handle_key(edit_key);
+
+        match result {
+            ChatKeyResult::ShowNotification(msg) => {
+                assert_eq!(msg, "You can only edit your own messages");
+            }
+            _ => panic!("Expected ShowNotification, got {:?}", result),
+        }
+
+        state.message_pane_state.jump_to_index(0);
+        
+        let _ = state.handle_key(edit_key);
+
+
+        assert_eq!(state.focus(), ChatFocus::MessageInput);
+        
+        state.focus_messages_list();
+        state.message_pane_state.jump_to_index(1); // Other message
+        let commands = state.get_commands(&state.registry);
+        assert!(!commands.iter().any(|k| k.action == Action::EditMessage));
+
+        state.message_pane_state.jump_to_index(0); // Own message
+        let commands = state.get_commands(&state.registry);
+        assert!(commands.iter().any(|k| k.action == Action::EditMessage));
+    }
+
+    #[test]
+    fn test_external_edit_restriction() {
+        use crate::domain::entities::{Message, MessageAuthor, MessageKind, MessageId, ChannelId};
+        use chrono::Local;
+
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            Theme::new("Orange"),
+        );
+
+        let channel_id = ChannelId(1);
+        let timestamp = Local::now();
+
+        let other_message = Message::new(
+            MessageId(2),
+            channel_id,
+            MessageAuthor {
+                id: "456".to_string(),
+                username: "other".to_string(),
+                discriminator: "0".to_string(),
+                avatar: None,
+                bot: false,
+                global_name: None,
+            },
+            "Other message".to_string(),
+            timestamp,
+            MessageKind::Default,
+        );
+
+        state.message_pane_data.set_messages(vec![other_message]);
+        state.focus_messages_list();
+        state.message_pane_state.jump_to_index(0);
+
+        let edit_key = KeyEvent::new(KeyCode::Char('e'), crossterm::event::KeyModifiers::CONTROL);
+        
+        let result = state.handle_key(edit_key);
+
+        match result {
+            ChatKeyResult::ShowNotification(msg) => {
+                assert_eq!(msg, "You can only edit your own messages");
+            }
+            _ => panic!("Expected ShowNotification, got {:?}", result),
+        }
     }
 }

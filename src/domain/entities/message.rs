@@ -596,4 +596,12 @@ impl Message {
         self.flags = flags;
         self
     }
+
+    /// Checks if the message can be edited by the given user.
+    ///
+    /// Currently, a user can only edit their own messages.
+    #[must_use]
+    pub fn can_be_edited_by(&self, user: &User) -> bool {
+        self.author.id == user.id_str()
+    }
 }

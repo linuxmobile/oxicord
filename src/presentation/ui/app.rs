@@ -696,8 +696,7 @@ impl App {
                 if let CurrentScreen::Chat(state) = &mut self.screen {
                     let name = state
                         .get_channel(channel_id)
-                        .map(|c| c.display_name())
-                        .unwrap_or_else(|| format!("{channel_id}"));
+                        .map_or_else(|| format!("{channel_id}"), crate::domain::entities::Channel::display_name);
                     
                     state.message_pane_data_mut().set_channel(channel_id, name);
                     state.message_pane_parts_mut().1.on_channel_change();
@@ -715,6 +714,9 @@ impl App {
                         });
                     }
                 }
+            }
+            ChatKeyResult::ShowNotification(message) => {
+                self.show_notification(message);
             }
         }
 
@@ -1177,10 +1179,10 @@ impl App {
 
     fn handle_message_update(&mut self, message: crate::domain::entities::Message) {
         debug!(message_id = %message.id(), "Message updated");
-        if let CurrentScreen::Chat(ref mut state) = self.screen {
-            if let Some(result) = state.update_message(message) {
-                let _ = self.process_chat_key_result(result);
-            }
+        if let CurrentScreen::Chat(ref mut state) = self.screen
+            && let Some(result) = state.update_message(message)
+        {
+            let _ = self.process_chat_key_result(result);
         }
     }
 
