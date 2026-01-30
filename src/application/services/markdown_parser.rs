@@ -1,11 +1,8 @@
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span, Text};
 use std::iter::Peekable;
 use std::str::CharIndices;
-use std::sync::Arc;
 
-use super::syntax_highlighting::{SyntaxHighlighter, SyntectHighlighter};
-
+/// Mention resolver trait for parsing logic if needed (though usually resolution happens at render time)
+/// Keeping it here just in case, but likely not needed for AST generation unless we want to validate IDs.
 pub trait MentionResolver: Send + Sync {
     fn resolve(&self, user_id: &str) -> Option<String>;
 }
@@ -40,65 +37,9 @@ pub enum MdInline {
     Mention(String),
 }
 
-pub struct MarkdownService {
-    highlighter: Arc<dyn SyntaxHighlighter>,
-}
-
-impl MarkdownService {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            highlighter: Arc::new(SyntectHighlighter::new()),
-        }
-    }
-
-    #[must_use]
-    pub fn with_highlighter(highlighter: Arc<dyn SyntaxHighlighter>) -> Self {
-        Self { highlighter }
-    }
-
-    #[must_use]
-    pub fn parse(&self, content: &str) -> Vec<MdBlock> {
-        Parser::parse(content)
-    }
-
-    #[must_use]
-    pub fn render(&self, content: &str, resolver: Option<&dyn MentionResolver>) -> Text<'static> {
-        self.render_with_spoilers(content, resolver, false)
-    }
-
-    #[must_use]
-    pub fn render_with_spoilers(
-        &self,
-        content: &str,
-        resolver: Option<&dyn MentionResolver>,
-        show_spoilers: bool,
-    ) -> Text<'static> {
-        let blocks = self.parse(content);
-        self.render_ast(&blocks, resolver, show_spoilers)
-    }
-
-    #[must_use]
-    pub fn render_ast(
-        &self,
-        blocks: &[MdBlock],
-        resolver: Option<&dyn MentionResolver>,
-        show_spoilers: bool,
-    ) -> Text<'static> {
-        let mut renderer = Renderer::new(resolver, &self.highlighter, show_spoilers);
-        renderer.render(blocks.to_vec())
-    }
-}
-
 #[must_use]
 pub fn parse_markdown(content: &str) -> Vec<MdBlock> {
     Parser::parse(content)
-}
-
-impl Default for MarkdownService {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 struct Parser<'a> {
@@ -422,178 +363,88 @@ fn handle_container<F>(
     }
 }
 
-struct Renderer<'a> {
-    resolver: Option<&'a dyn MentionResolver>,
-    highlighter: &'a Arc<dyn SyntaxHighlighter>,
-    show_spoilers: bool,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl<'a> Renderer<'a> {
-    fn new(
-        resolver: Option<&'a dyn MentionResolver>,
-        highlighter: &'a Arc<dyn SyntaxHighlighter>,
-        show_spoilers: bool,
-    ) -> Self {
-        Self {
-            resolver,
-            highlighter,
-            show_spoilers,
-        }
-    }
+    #[test]
+    fn test_parse_simple_bold() {
+        let content = "Hello **world**";
+        let blocks = parse_markdown(content);
 
-    fn render(&mut self, blocks: Vec<MdBlock>) -> Text<'static> {
-        let mut lines = Vec::new();
-        for block in blocks {
-            self.render_block(block, &mut lines, Style::default());
-        }
-        Text::from(lines)
-    }
-
-    fn render_block(&self, block: MdBlock, lines: &mut Vec<Line<'static>>, parent_style: Style) {
-        match block {
-            MdBlock::Empty => lines.push(Line::raw("")),
+        match &blocks[0] {
             MdBlock::Paragraph(inlines) => {
-                let spans = self.render_inlines(inlines, parent_style);
-                lines.push(Line::from(spans));
+                assert_eq!(inlines.len(), 2);
+                if let MdInline::Text(t) = &inlines[0] {
+                    assert_eq!(t, "Hello ");
+                } else {
+                    panic!("Expected text");
+                }
+                if let MdInline::Bold(children) = &inlines[1] {
+                    if let MdInline::Text(t) = &children[0] {
+                        assert_eq!(t, "world");
+                    } else {
+                        panic!("Expected text inside bold");
+                    }
+                } else {
+                    panic!("Expected bold");
+                }
             }
-            MdBlock::Header(level, inlines) => {
-                let style = parent_style.add_modifier(Modifier::BOLD);
-                let style = match level {
-                    1 => style.fg(Color::Magenta),
-                    2 => style.fg(Color::Cyan),
-                    _ => style,
-                };
+            _ => panic!("Expected paragraph"),
+        }
+    }
 
-                let mut spans = Vec::new();
-                let prefix = "#".repeat(level as usize);
-                spans.push(Span::styled(format!("{prefix} "), style));
-                spans.extend(self.render_inlines(inlines, style));
-                lines.push(Line::from(spans));
-                lines.push(Line::raw(""));
+    #[test]
+    fn test_parse_headers() {
+        let content = "### Header 3\nText";
+        let blocks = parse_markdown(content);
+        assert_eq!(blocks.len(), 2);
+
+        if let MdBlock::Header(level, inlines) = &blocks[0] {
+            assert_eq!(*level, 3);
+            if let MdInline::Text(t) = &inlines[0] {
+                assert_eq!(t, "Header 3");
             }
-            MdBlock::Subtext(inlines) => {
-                let style = parent_style.fg(Color::DarkGray).add_modifier(Modifier::DIM);
-                let mut spans = Vec::new();
-                spans.push(Span::styled("-# ", style));
-                spans.extend(self.render_inlines(inlines, style));
-                lines.push(Line::from(spans));
+        } else {
+            panic!("Expected header");
+        }
+    }
+
+    #[test]
+    fn test_parse_spoiler() {
+        let content = "Hidden ||spoiler|| content";
+        let blocks = parse_markdown(content);
+
+        if let MdBlock::Paragraph(inlines) = &blocks[0] {
+            assert_eq!(inlines.len(), 3);
+            match &inlines[1] {
+                MdInline::Spoiler(children) => {
+                    if let MdInline::Text(t) = &children[0] {
+                        assert_eq!(t, "spoiler");
+                    }
+                }
+                _ => panic!("Expected spoiler"),
             }
-            MdBlock::List {
-                indent,
-                content,
-                bullet,
-            } => {
-                let mut spans = Vec::new();
-                let indent_str = "  ".repeat(indent as usize);
-                spans.push(Span::raw(indent_str));
-                spans.push(Span::styled(
-                    format!("{bullet} "),
-                    parent_style.fg(Color::Cyan),
-                ));
-                spans.extend(self.render_inlines(content, parent_style));
-                lines.push(Line::from(spans));
-            }
-            MdBlock::CodeBlock { lang, code } => {
-                let highlighted = self.highlighter.highlight(&code, lang.as_deref());
+        }
+    }
 
-                let mut current_line_spans = Vec::new();
+    #[test]
+    fn test_parse_nested_styles() {
+        let content = "***Bold Italic***";
+        let blocks = parse_markdown(content);
 
-                for span in highlighted {
-                    let content = span.content;
-                    let style = span.style;
-
-                    let parts: Vec<&str> = content.split_inclusive('\n').collect();
-                    for part in parts {
-                        if let Some(text) = part.strip_suffix('\n') {
-                            if !text.is_empty() {
-                                current_line_spans.push(Span::styled(text.to_string(), style));
-                            }
-                            lines.push(Line::from(std::mem::take(&mut current_line_spans)));
-                        } else if !part.is_empty() {
-                            current_line_spans.push(Span::styled(part.to_string(), style));
+        if let MdBlock::Paragraph(inlines) = &blocks[0] {
+            match &inlines[0] {
+                MdInline::Italic(children) => match &children[0] {
+                    MdInline::Bold(inner) => {
+                        if let MdInline::Text(t) = &inner[0] {
+                            assert_eq!(t, "Bold Italic");
                         }
                     }
-                }
-
-                if !current_line_spans.is_empty() {
-                    lines.push(Line::from(current_line_spans));
-                }
-            }
-            MdBlock::BlockQuote(inner_blocks) => {
-                let mut inner_lines = Vec::new();
-                for inner in inner_blocks {
-                    self.render_block(
-                        inner,
-                        &mut inner_lines,
-                        parent_style.add_modifier(Modifier::ITALIC),
-                    );
-                }
-
-                while let Some(last) = inner_lines.last() {
-                    if last.spans.iter().all(|s| s.content.trim().is_empty()) {
-                        inner_lines.pop();
-                    } else {
-                        break;
-                    }
-                }
-
-                for line in inner_lines {
-                    let mut spans = vec![Span::styled("┃ ", Style::default().fg(Color::DarkGray))];
-                    spans.extend(line.spans);
-                    lines.push(Line::from(spans));
-                }
+                    _ => panic!("Expected Bold inside Italic"),
+                },
+                _ => panic!("Expected Italic"),
             }
         }
-    }
-
-    fn render_inlines(&self, inlines: Vec<MdInline>, style: Style) -> Vec<Span<'static>> {
-        let mut spans = Vec::new();
-
-        for inline in inlines {
-            match inline {
-                MdInline::Text(t) => spans.push(Span::styled(t, style)),
-                MdInline::Bold(children) => {
-                    spans.extend(self.render_inlines(children, style.add_modifier(Modifier::BOLD)));
-                }
-                MdInline::Italic(children) => {
-                    spans.extend(
-                        self.render_inlines(children, style.add_modifier(Modifier::ITALIC)),
-                    );
-                }
-                MdInline::Underline(children) => {
-                    spans.extend(
-                        self.render_inlines(children, style.add_modifier(Modifier::UNDERLINED)),
-                    );
-                }
-                MdInline::Strike(children) => {
-                    spans.extend(
-                        self.render_inlines(children, style.add_modifier(Modifier::CROSSED_OUT)),
-                    );
-                }
-                MdInline::Spoiler(children) => {
-                    if self.show_spoilers {
-                        let revealed_style = style.bg(Color::Rgb(50, 50, 50));
-                        spans.extend(self.render_inlines(children, revealed_style));
-                    } else {
-                        let hidden_style = Style::default().bg(Color::DarkGray).fg(Color::DarkGray);
-                        spans.extend(self.render_inlines(children, hidden_style));
-                    }
-                }
-                MdInline::Code(code) => {
-                    spans.push(Span::styled(code, style.fg(Color::Red)));
-                }
-                MdInline::Mention(id) => {
-                    let name = self
-                        .resolver
-                        .and_then(|r| r.resolve(&id))
-                        .map_or_else(|| format!("<@{id}>"), |n| format!("@{n}"));
-                    spans.push(Span::styled(
-                        name,
-                        style.fg(Color::Blue).add_modifier(Modifier::BOLD),
-                    ));
-                }
-            }
-        }
-        spans
     }
 }

@@ -7,6 +7,8 @@ pub mod config;
 pub mod discord;
 /// Image handling (caching, loading, CDN optimization).
 pub mod image;
+/// System notifications.
+pub mod notifications;
 /// Application state persistence.
 pub mod state_store;
 /// Token storage adapters.

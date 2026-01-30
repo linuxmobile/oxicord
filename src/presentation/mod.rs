@@ -4,6 +4,8 @@
 pub mod commands;
 /// Event handling.
 pub mod events;
+/// Presentation services (rendering, highlighting).
+pub mod services;
 /// Theme logic.
 pub mod theme;
 /// UI screens.

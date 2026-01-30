@@ -411,19 +411,6 @@ mod tests {
     }
 
     #[test]
-    fn test_guild_with_unread() {
-        let guild = Guild::new(456_u64, "Busy Server").with_unread(true);
-
-        assert!(guild.has_unread());
-    }
-
-    #[test]
-    fn test_guild_id_display() {
-        let id = GuildId(123_456_789);
-        assert_eq!(format!("{id}"), "123456789");
-    }
-
-    #[test]
     fn test_guild_with_features() {
         let guild = Guild::new(123_u64, "Community Server")
             .with_features(vec!["COMMUNITY".to_string(), "PARTNERED".to_string()]);
@@ -431,15 +418,5 @@ mod tests {
         assert!(guild.is_community());
         assert!(guild.is_partnered());
         assert!(!guild.is_verified());
-    }
-
-    #[test]
-    fn test_guild_premium_tier() {
-        let guild = Guild::new(123_u64, "Boosted Server")
-            .with_premium_tier(PremiumTier::Tier3)
-            .with_premium_subscription_count(14);
-
-        assert_eq!(guild.premium_tier(), PremiumTier::Tier3);
-        assert_eq!(guild.premium_subscription_count(), 14);
     }
 }

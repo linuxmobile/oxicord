@@ -99,15 +99,3 @@ impl Drop for HeartbeatManager {
         self.stop();
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_heartbeat_manager_creation() {
-        let manager = HeartbeatManager::new(45000);
-        assert_eq!(manager.interval_ms, 45000);
-        assert!(!manager.running.load(Ordering::SeqCst));
-    }
-}

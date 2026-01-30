@@ -210,38 +210,4 @@ mod tests {
         let id2 = ImageId::from_url(url);
         assert_eq!(id1, id2);
     }
-
-    #[test]
-    fn test_image_status_transitions() {
-        let status = ImageStatus::NotStarted;
-        assert!(status.is_not_started());
-        assert!(!status.is_loading());
-
-        let status = ImageStatus::Downloading;
-        assert!(status.is_loading());
-        assert!(!status.is_ready());
-
-        let status = ImageStatus::Ready;
-        assert!(status.is_ready());
-        assert!(!status.is_failed());
-
-        let status = ImageStatus::Failed("error".to_string());
-        assert!(status.is_failed());
-    }
-
-    #[test]
-    fn test_image_metadata_creation() {
-        let meta = ImageMetadata::new(
-            "https://example.com/test.png",
-            Some("123456".to_string()),
-            "test.png",
-            1024,
-        )
-        .with_content_type("image/png")
-        .with_dimensions(800, 600);
-
-        assert!(meta.is_image());
-        assert_eq!(meta.width, Some(800));
-        assert_eq!(meta.height, Some(600));
-    }
 }

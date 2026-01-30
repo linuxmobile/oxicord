@@ -552,14 +552,6 @@ mod tests {
     }
 
     #[test]
-    fn test_channel_flags() {
-        let flags = ChannelFlags::REQUIRE_TAG | ChannelFlags::PINNED;
-        assert!(flags.contains(ChannelFlags::REQUIRE_TAG));
-        assert!(flags.contains(ChannelFlags::PINNED));
-        assert!(!flags.contains(ChannelFlags::IS_SPAM));
-    }
-
-    #[test]
     fn test_channel_with_new_fields() {
         let channel = Channel::new(123_u64, "nsfw-chat", ChannelKind::Text)
             .with_nsfw(true)

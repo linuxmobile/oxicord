@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use super::User;
-use crate::application::services::markdown_service::MentionResolver;
+use crate::domain::ports::MentionResolver;
 
 #[derive(Debug, Clone)]
 pub struct CachedUser {

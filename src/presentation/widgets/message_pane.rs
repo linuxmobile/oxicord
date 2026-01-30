@@ -2,13 +2,12 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::LazyLock;
 
 use crate::application::services::identity_service::IdentityService;
-use crate::application::services::markdown_service::{
-    MarkdownService, MdBlock, MentionResolver, parse_markdown,
-};
+use crate::application::services::markdown_parser::{MdBlock, MentionResolver, parse_markdown};
 use crate::domain::entities::{ChannelId, Embed, ForumThread, ImageId, Message, MessageId};
 use crate::domain::keybinding::Action;
 
 use crate::presentation::commands::CommandRegistry;
+use crate::presentation::services::markdown_renderer::MarkdownRenderer;
 
 use crossterm::event::KeyEvent;
 use ratatui::{
@@ -187,7 +186,7 @@ impl MentionResolver for HashMapResolver<'_> {
 fn calculate_embed_layout(
     embed: &Embed,
     width: u16,
-    markdown_service: &MarkdownService,
+    markdown_service: &MarkdownRenderer,
     default_color: Color,
 ) -> RenderedEmbed {
     let mut height = 0;
@@ -212,7 +211,7 @@ fn calculate_embed_layout(
     }
 
     if let Some(description) = &embed.description {
-        let text = markdown_service.render(description, None);
+        let text = markdown_service.render_markdown(description, None, false);
 
         let mut lines_count = 0;
         for line in &text.lines {
@@ -562,7 +561,7 @@ impl MessagePaneData {
     pub fn update_layout(
         &mut self,
         width: u16,
-        markdown_service: &MarkdownService,
+        markdown_service: &MarkdownRenderer,
         default_color: Color,
         show_spoilers: bool,
     ) {
@@ -584,8 +583,11 @@ impl MessagePaneData {
         for ui_msg in &mut self.messages {
             let message = &ui_msg.message;
 
-            let text =
-                markdown_service.render_ast(&ui_msg.parsed_content, Some(&resolver), show_spoilers);
+            let text = markdown_service.render(
+                ui_msg.parsed_content.clone(),
+                Some(&resolver),
+                show_spoilers,
+            );
 
             let mut content_lines = 0;
             for line in &text.lines {
@@ -1192,7 +1194,7 @@ pub struct MessagePane<'a> {
 
 impl<'a> MessagePane<'a> {
     #[must_use]
-    pub fn new(data: &'a mut MessagePaneData, _markdown_service: &'a MarkdownService) -> Self {
+    pub fn new(data: &'a mut MessagePaneData, _markdown_service: &'a MarkdownRenderer) -> Self {
         Self {
             data,
             style: MessagePaneStyle::default(),
@@ -1217,7 +1219,7 @@ impl<'a> MessagePane<'a> {
         &self,
         message: &Message,
         width: u16,
-        markdown_service: &MarkdownService,
+        markdown_service: &MarkdownRenderer,
         default_color: Color,
     ) -> u16 {
         let indent_width = u16::try_from(CONTENT_INDENT).unwrap_or(0);
@@ -1227,7 +1229,7 @@ impl<'a> MessagePane<'a> {
 
         let authors = &self.data.authors;
         let resolver = HashMapResolver(authors);
-        let text = markdown_service.render(message.content(), Some(&resolver));
+        let text = markdown_service.render_markdown(message.content(), Some(&resolver), false);
 
         let mut content_lines = 0;
         for line in &text.lines {
@@ -2322,7 +2324,7 @@ mod tests {
 
     #[test]
     fn test_scrollbar_position_at_bottom() {
-        use crate::application::services::markdown_service::MarkdownService;
+        use crate::presentation::services::markdown_renderer::MarkdownRenderer;
 
         let mut data = MessagePaneData::new(true);
         data.set_channel(ChannelId(100), "general".to_string());
@@ -2330,7 +2332,7 @@ mod tests {
         let messages: Vec<Message> = (0..50).map(|i| create_test_message(i, "msg")).collect();
         data.set_messages(messages);
 
-        let markdown = MarkdownService::new();
+        let markdown = MarkdownRenderer::new();
         data.update_layout(100, &markdown, Color::Yellow, false);
 
         let mut state = MessagePaneState::new();

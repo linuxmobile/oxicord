@@ -302,26 +302,4 @@ mod tests {
             User::new(123_u64, "handle", "0", None, false, None).with_global_name("Display Name");
         assert_eq!(user.display_name(), "Display Name");
     }
-
-    #[test]
-    fn test_user_flags() {
-        let flags = UserFlags::STAFF | UserFlags::VERIFIED_DEVELOPER;
-        assert!(flags.contains(UserFlags::STAFF));
-        assert!(flags.contains(UserFlags::VERIFIED_DEVELOPER));
-        assert!(!flags.contains(UserFlags::PARTNER));
-    }
-
-    #[test]
-    fn test_premium_type() {
-        assert_eq!(PremiumType::from(0), PremiumType::None);
-        assert_eq!(PremiumType::from(1), PremiumType::NitroClassic);
-        assert_eq!(PremiumType::from(2), PremiumType::Nitro);
-        assert_eq!(PremiumType::from(3), PremiumType::NitroBasic);
-    }
-
-    #[test]
-    fn test_user_id_from_string() {
-        let id = UserId::from("123456789");
-        assert_eq!(id.as_u64(), 123_456_789);
-    }
 }

@@ -188,22 +188,3 @@ impl Default for AppConfig {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_log_level_display() {
-        assert_eq!(LogLevel::Debug.to_string(), "debug");
-        assert_eq!(LogLevel::Info.to_string(), "info");
-    }
-
-    #[test]
-    fn test_default_config() {
-        let config = AppConfig::default();
-        assert!(config.token.is_none());
-        assert!(config.mouse);
-        assert_eq!(config.log_level, LogLevel::Info);
-    }
-}

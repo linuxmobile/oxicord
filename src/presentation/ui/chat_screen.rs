@@ -10,7 +10,6 @@ use tachyonfx::{Effect, Interpolation, fx};
 
 use crate::application::services::autocomplete_service::AutocompleteService;
 use crate::application::services::identity_service::IdentityService;
-use crate::application::services::markdown_service::MarkdownService;
 use crate::domain::ConnectionStatus;
 use crate::domain::entities::{
     CachedUser, Channel, ChannelId, ChannelKind, Guild, GuildFolder, GuildId, Message, MessageId,
@@ -19,6 +18,7 @@ use crate::domain::entities::{
 use crate::domain::keybinding::{Action, Keybind};
 use crate::domain::ports::DirectMessageChannel;
 use crate::presentation::commands::{CommandRegistry, HasCommands};
+use crate::presentation::services::markdown_renderer::MarkdownRenderer;
 use crate::presentation::theme::Theme;
 use crate::presentation::widgets::{
     ConfirmationModal, FileExplorerAction, FileExplorerComponent, FocusContext, FooterBar,
@@ -128,7 +128,7 @@ pub struct ChatScreenState {
     dm_channels: std::collections::HashMap<String, DmChannelInfo>,
     read_states: std::collections::HashMap<ChannelId, crate::domain::entities::ReadState>,
     connection_status: ConnectionStatus,
-    markdown_service: Arc<MarkdownService>,
+    markdown_service: Arc<MarkdownRenderer>,
     file_explorer: Option<FileExplorerComponent>,
     show_file_explorer: bool,
     show_help: bool,
@@ -149,7 +149,7 @@ impl ChatScreenState {
     #[must_use]
     pub fn new(
         user: User,
-        markdown_service: Arc<MarkdownService>,
+        markdown_service: Arc<MarkdownRenderer>,
         user_cache: UserCache,
         disable_user_colors: bool,
         use_display_name: bool,
@@ -1920,7 +1920,7 @@ mod tests {
     fn test_chat_screen_state_creation() {
         let state = ChatScreenState::new(
             create_test_user(),
-            Arc::new(MarkdownService::new()),
+            Arc::new(MarkdownRenderer::new()),
             UserCache::new(),
             false,
             true,
@@ -1936,7 +1936,7 @@ mod tests {
     fn test_focus_cycling() {
         let mut state = ChatScreenState::new(
             create_test_user(),
-            Arc::new(MarkdownService::new()),
+            Arc::new(MarkdownRenderer::new()),
             UserCache::new(),
             false,
             true,
@@ -1959,7 +1959,7 @@ mod tests {
     fn test_toggle_guilds_tree() {
         let mut state = ChatScreenState::new(
             create_test_user(),
-            Arc::new(MarkdownService::new()),
+            Arc::new(MarkdownRenderer::new()),
             UserCache::new(),
             false,
             true,
@@ -1977,7 +1977,7 @@ mod tests {
     fn test_focus_skip_when_guilds_hidden() {
         let mut state = ChatScreenState::new(
             create_test_user(),
-            Arc::new(MarkdownService::new()),
+            Arc::new(MarkdownRenderer::new()),
             UserCache::new(),
             false,
             true,
@@ -1997,7 +1997,7 @@ mod tests {
     fn test_message_selection_focuses_list() {
         let mut state = ChatScreenState::new(
             create_test_user(),
-            Arc::new(MarkdownService::new()),
+            Arc::new(MarkdownRenderer::new()),
             UserCache::new(),
             false,
             true,
@@ -2017,7 +2017,7 @@ mod tests {
     fn test_channel_reset_on_guild_change() {
         let mut state = ChatScreenState::new(
             create_test_user(),
-            Arc::new(MarkdownService::new()),
+            Arc::new(MarkdownRenderer::new()),
             UserCache::new(),
             false,
             true,
@@ -2066,7 +2066,7 @@ mod tests {
     fn test_reselecting_same_guild_preserves_channel() {
         let mut state = ChatScreenState::new(
             create_test_user(),
-            Arc::new(MarkdownService::new()),
+            Arc::new(MarkdownRenderer::new()),
             UserCache::new(),
             false,
             true,
@@ -2107,7 +2107,7 @@ mod tests {
     fn test_cross_guild_channel_selection() {
         let mut state = ChatScreenState::new(
             create_test_user(),
-            Arc::new(MarkdownService::new()),
+            Arc::new(MarkdownRenderer::new()),
             UserCache::new(),
             false,
             true,
@@ -2159,7 +2159,7 @@ mod tests {
     fn test_chat_screen_state_creation_initial_focus() {
         let mut state = ChatScreenState::new(
             create_test_user(),
-            Arc::new(MarkdownService::new()),
+            Arc::new(MarkdownRenderer::new()),
             UserCache::new(),
             false,
             true,
@@ -2204,7 +2204,7 @@ mod tests {
 
         let mut state = ChatScreenState::new(
             create_test_user(),
-            Arc::new(MarkdownService::new()),
+            Arc::new(MarkdownRenderer::new()),
             UserCache::new(),
             false,
             true,

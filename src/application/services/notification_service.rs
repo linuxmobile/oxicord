@@ -1,30 +1,19 @@
-use notify_rust::Notification;
+use std::sync::Arc;
 
-#[derive(Debug, Clone)]
+use crate::domain::ports::NotificationPort;
+
+#[derive(Clone)]
 pub struct NotificationService {
-    enabled: bool,
+    port: Arc<dyn NotificationPort>,
 }
 
 impl NotificationService {
     #[must_use]
-    pub fn new(enabled: bool) -> Self {
-        Self { enabled }
+    pub fn new(port: Arc<dyn NotificationPort>) -> Self {
+        Self { port }
     }
 
-    pub fn send(&self, title: String, body: String) {
-        if !self.enabled {
-            return;
-        }
-
-        tokio::task::spawn_blocking(move || {
-            if let Err(e) = Notification::new()
-                .summary(&title)
-                .body(&body)
-                .appname("Oxicord")
-                .show()
-            {
-                tracing::warn!("Failed to show notification: {}", e);
-            }
-        });
+    pub fn send(&self, title: &str, body: &str) {
+        self.port.send(title, body);
     }
 }

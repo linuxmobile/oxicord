@@ -12,7 +12,6 @@ use tracing::{debug, error, info, warn};
 use zeroize::Zeroize;
 
 use crate::application::dto::{LoginRequest, TokenSource};
-use crate::application::services::markdown_service::MarkdownService;
 use crate::application::services::notification_service::NotificationService;
 use crate::application::use_cases::{LoginUseCase, ResolveTokenUseCase};
 use crate::domain::ConnectionStatus;
@@ -28,8 +27,10 @@ use crate::infrastructure::discord::{
     GatewayIntents, TypingIndicatorManager, identity::ClientIdentity,
 };
 use crate::infrastructure::image::{ImageLoadedEvent, ImageLoader};
+use crate::infrastructure::notifications::DesktopNotificationService;
 use crate::infrastructure::{ClipboardService, StateStore};
 use crate::presentation::events::EventResult;
+use crate::presentation::services::markdown_renderer::MarkdownRenderer;
 use crate::presentation::theme::Theme;
 use crate::presentation::ui::{
     ChatKeyResult, ChatScreen, ChatScreenState, LoginAction, LoginScreen, SplashScreen,
@@ -82,7 +83,7 @@ pub struct App {
     typing_manager: TypingIndicatorManager,
     last_typing_cleanup: Instant,
     last_typing_sent: Option<(ChannelId, Instant)>,
-    markdown_service: Arc<MarkdownService>,
+    markdown_service: Arc<MarkdownRenderer>,
     user_cache: UserCache,
     current_user_id: Option<String>,
     pending_chat_state: Option<Box<ChatScreenState>>,
@@ -127,8 +128,11 @@ impl App {
         let resolve_token_use_case = ResolveTokenUseCase::new(storage_port);
         let (action_tx, action_rx) = mpsc::unbounded_channel();
         let (command_tx, command_rx) = mpsc::unbounded_channel();
-        let markdown_service = Arc::new(MarkdownService::new());
-        let notification_service = NotificationService::new(config.enable_desktop_notifications);
+        let markdown_service = Arc::new(MarkdownRenderer::new());
+        let notification_port = Arc::new(DesktopNotificationService::new(
+            config.enable_desktop_notifications,
+        ));
+        let notification_service = NotificationService::new(notification_port);
 
         let backend = Backend::new(discord_data, command_rx, action_tx.clone());
         tokio::spawn(backend.run());
@@ -1069,7 +1073,7 @@ impl App {
                 } else {
                     content.chars().take(120).collect()
                 };
-                self.notification_service.send(title, body);
+                self.notification_service.send(&title, &body);
                 self.last_desktop_notification = Some(now);
             }
         }
