@@ -312,20 +312,28 @@ impl App {
                 }
 
                 Some(Ok(event)) = terminal_event => {
-                    let result = self.handle_terminal_event(&event);
-                    match result {
-                        EventResult::Exit => {
-                            self.state = AppState::Exiting;
-                        }
-                        EventResult::OpenEditor {
-                            initial_content,
-                            message_id,
-                        } => {
-                            self.handle_open_editor(terminal, &initial_content, message_id)?;
-                            self.should_render = true;
-                        }
-                        _ => {
-                            self.should_render = true;
+                    let is_release_event = matches!(
+                        event, 
+                        crossterm::event::Event::Key(key) 
+                        if key.kind == crossterm::event::KeyEventKind::Release
+                    );
+
+                    if !is_release_event {
+                        let result = self.handle_terminal_event(&event);
+                        match result {
+                            EventResult::Exit => {
+                                self.state = AppState::Exiting;
+                            }
+                            EventResult::OpenEditor {
+                                initial_content,
+                                message_id,
+                            } => {
+                                self.handle_open_editor(terminal, &initial_content, message_id)?;
+                                self.should_render = true;
+                            }
+                            _ => {
+                                self.should_render = true;
+                            }
                         }
                     }
                 }
