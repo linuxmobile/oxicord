@@ -144,6 +144,8 @@ pub struct ChatScreenState {
     image_manager: ImageManager,
     disable_user_colors: bool,
     use_display_name: bool,
+    image_preview: bool,
+    timestamp_format: String,
     theme: Theme,
     forum_states: std::collections::HashMap<ChannelId, crate::presentation::widgets::ForumState>,
     pending_deletion_id: Option<MessageId>,
@@ -151,12 +153,15 @@ pub struct ChatScreenState {
 
 impl ChatScreenState {
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         user: User,
         markdown_service: Arc<MarkdownRenderer>,
         user_cache: UserCache,
         disable_user_colors: bool,
         use_display_name: bool,
+        image_preview: bool,
+        timestamp_format: String,
         theme: Theme,
     ) -> Self {
         let mut guilds_tree_state = GuildsTreeState::new();
@@ -189,6 +194,8 @@ impl ChatScreenState {
             image_manager: ImageManager::new(),
             disable_user_colors,
             use_display_name,
+            image_preview,
+            timestamp_format,
             theme,
             forum_states: std::collections::HashMap::new(),
             pending_deletion_id: None,
@@ -1190,7 +1197,9 @@ impl ChatScreenState {
         let unknown = self.register_channel_mentions(&new_messages);
 
         let width = self.message_pane_state.last_width();
-        let pane = MessagePane::new(&mut self.message_pane_data, &self.markdown_service);
+        let pane = MessagePane::new(&mut self.message_pane_data, &self.markdown_service)
+            .with_image_preview(self.image_preview)
+            .with_timestamp_format(&self.timestamp_format);
         let added_height: u16 = new_messages
             .iter()
             .map(|m| {
@@ -1997,6 +2006,8 @@ fn render_message_pane(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer
 
     let service = state.markdown_service.clone();
     let disable_user_colors = state.disable_user_colors;
+    let image_preview = state.image_preview;
+    let timestamp_format = state.timestamp_format.clone();
 
     let inner_width = area.width.saturating_sub(2);
     state.message_pane_data.update_layout(
@@ -2011,7 +2022,9 @@ fn render_message_pane(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer
 
     let pane = MessagePane::new(data, &service)
         .style(style)
-        .with_disable_user_colors(disable_user_colors);
+        .with_disable_user_colors(disable_user_colors)
+        .with_image_preview(image_preview)
+        .with_timestamp_format(&timestamp_format);
     StatefulWidget::render(pane, area, buf, pane_state);
 }
 
@@ -2063,6 +2076,8 @@ mod tests {
             UserCache::new(),
             false,
             true,
+            true,
+            "%H:%M".to_string(),
             Theme::new("Orange"),
         );
 
@@ -2079,6 +2094,8 @@ mod tests {
             UserCache::new(),
             false,
             true,
+            true,
+            "%H:%M".to_string(),
             Theme::new("Orange"),
         );
 
@@ -2102,6 +2119,8 @@ mod tests {
             UserCache::new(),
             false,
             true,
+            true,
+            "%H:%M".to_string(),
             Theme::new("Orange"),
         );
 
@@ -2120,6 +2139,8 @@ mod tests {
             UserCache::new(),
             false,
             true,
+            true,
+            "%H:%M".to_string(),
             Theme::new("Orange"),
         );
         state.toggle_guilds_tree();
@@ -2140,6 +2161,8 @@ mod tests {
             UserCache::new(),
             false,
             true,
+            true,
+            "%H:%M".to_string(),
             Theme::new("Orange"),
         );
         let guilds = vec![
@@ -2160,6 +2183,8 @@ mod tests {
             UserCache::new(),
             false,
             true,
+            true,
+            "%H:%M".to_string(),
             Theme::new("Orange"),
         );
 
@@ -2209,6 +2234,8 @@ mod tests {
             UserCache::new(),
             false,
             true,
+            true,
+            "%H:%M".to_string(),
             Theme::new("Orange"),
         );
 
@@ -2250,6 +2277,8 @@ mod tests {
             UserCache::new(),
             false,
             true,
+            true,
+            "%H:%M".to_string(),
             Theme::new("Orange"),
         );
 
@@ -2302,6 +2331,8 @@ mod tests {
             UserCache::new(),
             false,
             true,
+            true,
+            "%H:%M".to_string(),
             Theme::new("Orange"),
         );
 
@@ -2347,6 +2378,8 @@ mod tests {
             UserCache::new(),
             false,
             true,
+            true,
+            "%H:%M".to_string(),
             Theme::new("Orange"),
         );
 
@@ -2378,6 +2411,8 @@ mod tests {
             UserCache::new(),
             false,
             true,
+            true,
+            "%H:%M".to_string(),
             Theme::new("Orange"),
         );
 
@@ -2461,6 +2496,8 @@ mod tests {
             UserCache::new(),
             false,
             true,
+            true,
+            "%H:%M".to_string(),
             Theme::new("Orange"),
         );
 
@@ -2507,6 +2544,8 @@ mod tests {
             UserCache::new(),
             false,
             true,
+            true,
+            "%H:%M".to_string(),
             Theme::new("Orange"),
         );
 
@@ -2541,6 +2580,8 @@ mod tests {
             UserCache::new(),
             false,
             true,
+            true,
+            "%H:%M".to_string(),
             Theme::new("Orange"),
         );
 
@@ -2574,4 +2615,5 @@ mod tests {
             .unwrap_or(0);
         assert_eq!(count, 0, "Mention count should be 0 for active DM");
     }
+
 }

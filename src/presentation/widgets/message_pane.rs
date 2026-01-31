@@ -24,7 +24,7 @@ use regex::Regex;
 use tui_scrollbar::{GlyphSet, ScrollBar, ScrollLengths};
 use unicode_width::UnicodeWidthStr;
 
-use super::image_state::ImageAttachment;
+use super::image_state::{ImageAttachment, MAX_IMAGE_HEIGHT};
 use crate::presentation::theme::Theme;
 use crate::presentation::ui::utils::{clean_text, get_author_color};
 
@@ -1229,6 +1229,8 @@ pub struct MessagePane<'a> {
     data: &'a mut MessagePaneData,
     style: MessagePaneStyle,
     disable_user_colors: bool,
+    image_preview: bool,
+    timestamp_format: &'a str,
 }
 
 impl<'a> MessagePane<'a> {
@@ -1238,6 +1240,8 @@ impl<'a> MessagePane<'a> {
             data,
             style: MessagePaneStyle::default(),
             disable_user_colors: false,
+            image_preview: true,
+            timestamp_format: "%H:%M",
         }
     }
 
@@ -1250,6 +1254,18 @@ impl<'a> MessagePane<'a> {
     #[must_use]
     pub const fn with_disable_user_colors(mut self, disable: bool) -> Self {
         self.disable_user_colors = disable;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_image_preview(mut self, preview: bool) -> Self {
+        self.image_preview = preview;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_timestamp_format(mut self, format: &'a str) -> Self {
+        self.timestamp_format = format;
         self
     }
 
@@ -1285,7 +1301,23 @@ impl<'a> MessagePane<'a> {
         }
 
         if message.has_attachments() {
-            height += u16::try_from(message.attachments().len()).unwrap_or(u16::MAX);
+            if self.image_preview {
+                for attachment in message.attachments().iter().filter(|a| a.is_image()) {
+                    if let (Some(w), Some(h)) = (attachment.width, attachment.height) {
+                        let aspect = f64::from(h) / f64::from(w);
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                        let estimated = (f64::from(content_width) * 0.5 * aspect).ceil() as u16;
+                        height += estimated.clamp(1, MAX_IMAGE_HEIGHT);
+                    } else {
+                        height += 3;
+                    }
+                }
+
+                let non_image_count = message.attachments().iter().filter(|a| !a.is_image()).count();
+                height += u16::try_from(non_image_count).unwrap_or(0);
+            } else {
+                height += u16::try_from(message.attachments().len()).unwrap_or(u16::MAX);
+            }
         }
 
         for embed in message.embeds() {
@@ -1348,6 +1380,8 @@ impl<'a> MessagePane<'a> {
             data,
             style,
             disable_user_colors,
+            image_preview,
+            timestamp_format,
         } = self;
 
         match data.loading_state() {
@@ -1464,7 +1498,11 @@ impl<'a> MessagePane<'a> {
                 .count();
             height += u16::try_from(non_image_attachments).unwrap_or(0);
 
-            height += current_image_height;
+            if *image_preview {
+                height += current_image_height;
+            } else {
+                height += u16::try_from(ui_msg.image_attachments.len()).unwrap_or(0);
+            }
 
             for embed in &ui_msg.rendered_embeds {
                 height += embed.height;
@@ -1489,6 +1527,8 @@ impl<'a> MessagePane<'a> {
                     state,
                     *disable_user_colors,
                     data.use_display_name,
+                    *image_preview,
+                    timestamp_format,
                 );
             }
             current_y += i32::try_from(h).unwrap_or(0);
@@ -1851,6 +1891,8 @@ fn render_ui_message(
     state: &mut MessagePaneState,
     disable_user_colors: bool,
     use_display_name: bool,
+    image_preview: bool,
+    timestamp_format: &str,
 ) {
     let message = &ui_msg.message;
     let is_selected = state.selected_index == Some(index);
@@ -1929,7 +1971,7 @@ fn render_ui_message(
                 Span::styled(
                     format!(
                         "{:<width$}",
-                        message.formatted_timestamp(),
+                        message.timestamp().format(timestamp_format).to_string(),
                         width = TIMESTAMP_WIDTH
                     ),
                     timestamp_style,
@@ -2045,6 +2087,28 @@ fn render_ui_message(
     }
 
     for img_attachment in &mut ui_msg.image_attachments {
+        if !image_preview {
+            if current_msg_y >= 0 && current_msg_y < i32::from(area.height) {
+                let indent_span = Span::raw(" ".repeat(CONTENT_INDENT));
+                let attachment_text = format!("\u{1F5BC} {}", img_attachment.url);
+                let attachment_line = Line::from(vec![
+                    indent_span,
+                    Span::styled(attachment_text, style.attachment_style),
+                ]);
+                let attachment_para = Paragraph::new(attachment_line).style(base_style);
+                let att_area = Rect::new(
+                    area.x,
+                    area.y
+                        .saturating_add(u16::try_from(current_msg_y).unwrap_or(0)),
+                    area.width,
+                    1,
+                );
+                attachment_para.render(att_area, buf);
+            }
+            current_msg_y += 1;
+            continue;
+        }
+
         if !img_attachment.is_ready() {
             if img_attachment.is_loading()
                 && current_msg_y >= 0
@@ -2585,5 +2649,28 @@ mod tests {
         assert_eq!(messages[2].group, MessageGroup::Start);
         assert_eq!(messages[3].group, MessageGroup::Start);
         assert_eq!(messages[4].group, MessageGroup::Start);
+    }
+
+    #[test]
+    fn test_invalid_timestamp_format() {
+        use crate::presentation::services::markdown_renderer::MarkdownRenderer;
+        use ratatui::widgets::StatefulWidget;
+
+        let mut data = MessagePaneData::new(true);
+        data.set_channel(ChannelId(100), "general".to_string());
+
+        let message = create_test_message(1, "Hello");
+        data.set_messages(vec![message]);
+
+        let markdown = MarkdownRenderer::new();
+        let format = "%Z %Invalid";
+
+        let pane = MessagePane::new(&mut data, &markdown).with_timestamp_format(format);
+
+        let mut state = MessagePaneState::new();
+        let area = Rect::new(0, 0, 100, 20);
+        let mut buf = Buffer::empty(area);
+
+        pane.render(area, &mut buf, &mut state);
     }
 }

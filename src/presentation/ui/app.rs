@@ -57,12 +57,15 @@ enum CurrentScreen {
 }
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct AppConfig {
     pub disable_user_colors: bool,
     pub group_guilds: bool,
     pub enable_desktop_notifications: bool,
     pub use_display_name: bool,
+    pub image_preview: bool,
+    pub timestamp_format: String,
+    pub show_typing: bool,
     pub theme: Theme,
 }
 
@@ -102,6 +105,9 @@ pub struct App {
     disable_user_colors: bool,
     group_guilds: bool,
     use_display_name: bool,
+    image_preview: bool,
+    timestamp_format: String,
+    show_typing: bool,
     theme: Theme,
     identity: Arc<ClientIdentity>,
     state_store: StateStore,
@@ -200,6 +206,9 @@ impl App {
             disable_user_colors: config.disable_user_colors,
             group_guilds: config.group_guilds,
             use_display_name: config.use_display_name,
+            image_preview: config.image_preview,
+            timestamp_format: config.timestamp_format,
+            show_typing: config.show_typing,
             theme: config.theme,
             identity,
             state_store,
@@ -1247,7 +1256,7 @@ impl App {
         user_id: String,
         username: Option<String>,
     ) {
-        if self.current_user_id.as_deref() == Some(user_id.as_str()) {
+        if !self.show_typing || self.current_user_id.as_deref() == Some(user_id.as_str()) {
             return;
         }
 
@@ -1277,6 +1286,10 @@ impl App {
     }
 
     fn update_typing_indicator(&mut self, channel_id: ChannelId) {
+        if !self.show_typing {
+            return;
+        }
+
         if let CurrentScreen::Chat(ref mut state) = self.screen {
             let current_channel = state.message_pane_data().channel_id();
             debug!(
@@ -1427,6 +1440,8 @@ impl App {
                     self.user_cache.clone(),
                     self.disable_user_colors,
                     self.use_display_name,
+                    self.image_preview,
+                    self.timestamp_format.clone(),
                     self.theme,
                 );
 
@@ -2000,6 +2015,9 @@ mod tests {
             group_guilds: false,
             enable_desktop_notifications: false,
             use_display_name: true,
+            image_preview: true,
+            timestamp_format: "%H:%M".to_string(),
+            show_typing: true,
             theme,
         };
         let app = App::new(auth, data, storage, config, identity);

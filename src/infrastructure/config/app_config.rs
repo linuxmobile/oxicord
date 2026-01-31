@@ -86,13 +86,18 @@ pub struct AppConfig {
     #[serde(default)]
     pub ui: UiConfig,
 
+    /// Notification configuration.
+    #[serde(default)]
+    pub notifications: NotificationsConfig,
+
     /// Theme configuration.
     #[serde(default)]
     pub theme: ThemeConfig,
 }
 
 /// UI configuration.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UiConfig {
     /// Group guilds into folders.
     #[serde(default)]
@@ -101,6 +106,44 @@ pub struct UiConfig {
     /// Use display name (Global Name) instead of username where available.
     #[serde(default = "default_true")]
     pub use_display_name: bool,
+
+    /// Show image previews in chat.
+    #[serde(default = "default_true")]
+    pub image_preview: bool,
+
+    /// Timestamp format string (chrono format).
+    #[serde(default = "default_timestamp_format")]
+    pub timestamp_format: String,
+
+    /// Show typing indicators.
+    #[serde(default = "default_true")]
+    pub show_typing: bool,
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        Self {
+            group_guilds: false,
+            use_display_name: true,
+            image_preview: true,
+            timestamp_format: default_timestamp_format(),
+            show_typing: true,
+        }
+    }
+}
+
+/// Notification configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationsConfig {
+    /// Enable notifications globally.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+impl Default for NotificationsConfig {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
 }
 
 /// Theme configuration.
@@ -113,6 +156,10 @@ pub struct ThemeConfig {
 
 fn default_accent_color() -> String {
     "Yellow".to_string()
+}
+
+fn default_timestamp_format() -> String {
+    "%H:%M".to_string()
 }
 
 fn default_true() -> bool {
@@ -208,6 +255,7 @@ impl Default for AppConfig {
             enable_desktop_notifications: true,
             disable_user_colors: false,
             ui: UiConfig::default(),
+            notifications: NotificationsConfig::default(),
             theme: ThemeConfig::default(),
         }
     }

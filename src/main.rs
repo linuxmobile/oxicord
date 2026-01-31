@@ -80,8 +80,11 @@ fn create_app() -> Result<(App, Option<(String, TokenSource)>)> {
     let app_config = oxicord::presentation::AppConfig {
         disable_user_colors: config.disable_user_colors,
         group_guilds: config.ui.group_guilds,
-        enable_desktop_notifications: config.enable_desktop_notifications,
+        enable_desktop_notifications: config.enable_desktop_notifications && config.notifications.enabled,
         use_display_name: config.ui.use_display_name,
+        image_preview: config.ui.image_preview,
+        timestamp_format: config.ui.timestamp_format.clone(),
+        show_typing: config.ui.show_typing,
         theme,
     };
 
