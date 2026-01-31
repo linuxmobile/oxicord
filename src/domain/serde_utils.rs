@@ -6,7 +6,7 @@ use std::fmt;
 
 /// Module to handle deserialization of Snowflake IDs that might be strings or numbers.
 pub mod string_to_u64 {
-    use super::{de, fmt, Deserializer, Serializer, Visitor};
+    use super::{Deserializer, Serializer, Visitor, de, fmt};
 
     /// Serializes a u64 as a string.
     ///
@@ -74,7 +74,7 @@ pub mod string_to_u64 {
 
     /// Module to handle deserialization of optional Snowflake IDs.
     pub mod option {
-        use super::{de, fmt, Deserializer, Serializer, Visitor};
+        use super::{Deserializer, Serializer, Visitor, de, fmt};
 
         /// Serializes an optional u64 as a string.
         ///
@@ -130,7 +130,7 @@ pub mod string_to_u64 {
 
 /// Module to handle deserialization of a vector of Snowflake IDs.
 pub mod vec_string_to_u64 {
-    use super::{fmt, Deserialize, Deserializer, Serializer, Visitor};
+    use super::{Deserialize, Deserializer, Serializer, Visitor, fmt};
     use serde::de::SeqAccess;
 
     /// Serializes a Vec<u64> as a list of strings.

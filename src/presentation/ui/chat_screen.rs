@@ -4,10 +4,10 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     widgets::{StatefulWidget, Widget},
 };
+use regex::Regex;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use tachyonfx::{Effect, Interpolation, fx};
-use regex::Regex;
 
 use crate::application::services::autocomplete_service::AutocompleteService;
 use crate::application::services::identity_service::IdentityService;
@@ -896,7 +896,8 @@ impl ChatScreenState {
     fn register_channel_mentions(&mut self, messages: &[Message]) -> Vec<ChannelId> {
         static MENTION_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<#(\d+)>").unwrap());
         static URL_RE: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(r"https?://(?:ptb\.|canary\.)?discord(?:app)?\.com/channels/\d+/(\d+)").unwrap()
+            Regex::new(r"https?://(?:ptb\.|canary\.)?discord(?:app)?\.com/channels/\d+/(\d+)")
+                .unwrap()
         });
 
         let mut unknown_ids = Vec::new();
@@ -920,7 +921,8 @@ impl ChatScreenState {
                             "#"
                         };
                         let name = format!("{}{}", icon, channel.name());
-                        self.message_pane_data.register_channel(id.to_string(), name);
+                        self.message_pane_data
+                            .register_channel(id.to_string(), name);
                     } else if !self.message_pane_data.is_channel_known(&id.to_string()) {
                         unknown_ids.push(channel_id);
                     }
@@ -929,7 +931,6 @@ impl ChatScreenState {
         }
         unknown_ids
     }
-
 
     fn on_channel_selected(&mut self, channel_id: ChannelId) -> Option<ChatKeyResult> {
         let mut guild_id = self.selected_guild;
@@ -1430,6 +1431,12 @@ impl ChatScreenState {
     }
 
     pub fn increment_mention_count(&mut self, channel_id: ChannelId) {
+        if let Some(active_channel) = &self.selected_channel
+            && active_channel.id() == channel_id
+        {
+            return;
+        }
+
         if let Some(read_state) = self.read_states.get_mut(&channel_id) {
             read_state.mention_count += 1;
         } else {
@@ -2330,7 +2337,7 @@ mod tests {
 
     #[test]
     fn test_edit_restriction() {
-        use crate::domain::entities::{Message, MessageAuthor, MessageKind, MessageId, ChannelId};
+        use crate::domain::entities::{ChannelId, Message, MessageAuthor, MessageId, MessageKind};
         use chrono::Local;
 
         let mut state = ChatScreenState::new(
@@ -2377,13 +2384,15 @@ mod tests {
             MessageKind::Default,
         );
 
-        state.message_pane_data.set_messages(vec![own_message, other_message]);
+        state
+            .message_pane_data
+            .set_messages(vec![own_message, other_message]);
         state.focus_messages_list();
 
         state.message_pane_state.jump_to_index(1);
-        
+
         let edit_key = KeyEvent::from(KeyCode::Char('e'));
-        
+
         let result = state.handle_key(edit_key);
 
         match result {
@@ -2394,12 +2403,11 @@ mod tests {
         }
 
         state.message_pane_state.jump_to_index(0);
-        
+
         let _ = state.handle_key(edit_key);
 
-
         assert_eq!(state.focus(), ChatFocus::MessageInput);
-        
+
         state.focus_messages_list();
         state.message_pane_state.jump_to_index(1); // Other message
         let commands = state.get_commands(&state.registry);
@@ -2412,7 +2420,7 @@ mod tests {
 
     #[test]
     fn test_external_edit_restriction() {
-        use crate::domain::entities::{Message, MessageAuthor, MessageKind, MessageId, ChannelId};
+        use crate::domain::entities::{ChannelId, Message, MessageAuthor, MessageId, MessageKind};
         use chrono::Local;
 
         let mut state = ChatScreenState::new(
@@ -2448,7 +2456,7 @@ mod tests {
         state.message_pane_state.jump_to_index(0);
 
         let edit_key = KeyEvent::new(KeyCode::Char('e'), crossterm::event::KeyModifiers::CONTROL);
-        
+
         let result = state.handle_key(edit_key);
 
         match result {
@@ -2457,5 +2465,81 @@ mod tests {
             }
             _ => panic!("Expected ShowNotification, got {:?}", result),
         }
+    }
+
+    #[test]
+    fn test_increment_mention_count_on_active_channel_should_not_increment() {
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            Theme::new("Orange"),
+        );
+
+        let guild = crate::domain::entities::Guild::new(1_u64, "Guild A");
+        let channel = crate::domain::entities::Channel::new(
+            crate::domain::entities::ChannelId(10),
+            "Channel A",
+            crate::domain::entities::ChannelKind::Text,
+        );
+
+        state.set_guilds(vec![guild.clone()]);
+        state.set_channels(guild.id(), vec![channel.clone()]);
+
+        state.on_channel_selected(channel.id());
+        assert_eq!(state.selected_channel().map(|c| c.id()), Some(channel.id()));
+
+        state.increment_mention_count(channel.id());
+
+        let count = state
+            .read_states
+            .get(&channel.id())
+            .map(|rs| rs.mention_count)
+            .unwrap_or(0);
+        assert_eq!(count, 0, "Mention count should be 0 for active channel");
+    }
+
+    #[test]
+    fn test_increment_mention_count_on_active_dm_should_not_increment() {
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            Theme::new("Orange"),
+        );
+
+        let dm_channel_id = "999";
+        let recipient_name = "Alice";
+
+        let dm_info = crate::domain::ports::DirectMessageChannel {
+            channel_id: dm_channel_id.to_string(),
+            recipient_id: "alice_id".to_string(),
+            recipient_username: recipient_name.to_string(),
+            recipient_discriminator: "0000".to_string(),
+            recipient_global_name: None,
+            last_message_id: None,
+            has_unread: false,
+            mention_count: 0,
+        };
+
+        state.set_dm_users(vec![dm_info]);
+
+        let _ = state.on_dm_selected(dm_channel_id);
+
+        let channel_id = crate::domain::entities::ChannelId(999);
+        assert_eq!(state.selected_channel().map(|c| c.id()), Some(channel_id));
+
+        state.increment_mention_count(channel_id);
+
+        let count = state
+            .read_states
+            .get(&channel_id)
+            .map(|rs| rs.mention_count)
+            .unwrap_or(0);
+        assert_eq!(count, 0, "Mention count should be 0 for active DM");
     }
 }

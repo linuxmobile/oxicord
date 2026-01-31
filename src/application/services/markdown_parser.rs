@@ -294,10 +294,7 @@ fn handle_discord_url(
             .unwrap_or(remaining.len());
         let url_str = &remaining[..url_end_offset];
 
-        let parts: Vec<&str> = url_str
-            .trim_start_matches("https://")
-            .split('/')
-            .collect();
+        let parts: Vec<&str> = url_str.trim_start_matches("https://").split('/').collect();
 
         if parts.len() >= 4 && parts[1] == "channels" {
             let channel_id_str = parts[3].split('?').next().unwrap_or(parts[3]);
@@ -378,7 +375,6 @@ fn handle_mention(
         }
     }
 }
-
 
 fn handle_escape(
     input: &str,
@@ -565,7 +561,7 @@ mod tests {
         let blocks = parse_markdown(content);
         if let MdBlock::Paragraph(inlines) = &blocks[0] {
             assert_eq!(inlines.len(), 2);
-             if let MdInline::Channel(id) = &inlines[1] {
+            if let MdInline::Channel(id) = &inlines[1] {
                 assert_eq!(id, "456");
             } else {
                 panic!("Expected Channel inline");

@@ -604,7 +604,10 @@ impl App {
                                         });
                                     }
                                     Err(e) => {
-                                        tracing::error!("Failed to export image for viewing: {}", e);
+                                        tracing::error!(
+                                            "Failed to export image for viewing: {}",
+                                            e
+                                        );
                                     }
                                 }
                             });
@@ -694,10 +697,11 @@ impl App {
                 self.load_channel_messages(channel_id);
 
                 if let CurrentScreen::Chat(state) = &mut self.screen {
-                    let name = state
-                        .get_channel(channel_id)
-                        .map_or_else(|| format!("{channel_id}"), crate::domain::entities::Channel::display_name);
-                    
+                    let name = state.get_channel(channel_id).map_or_else(
+                        || format!("{channel_id}"),
+                        crate::domain::entities::Channel::display_name,
+                    );
+
                     state.message_pane_data_mut().set_channel(channel_id, name);
                     state.message_pane_parts_mut().1.on_channel_change();
                     state.message_input_parts_mut().set_has_channel(true);
@@ -1153,7 +1157,7 @@ impl App {
         } else if let Some(ref mut state) = self.pending_chat_state {
             state.on_message_received(&message);
             if let Some(result) = state.add_message(message) {
-                let _ = result; 
+                let _ = result;
             }
         }
 
