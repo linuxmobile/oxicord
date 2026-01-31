@@ -1743,6 +1743,7 @@ fn render_help_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) 
                 (Action::NavigateUp, "Up"),
                 (Action::NavigateRight, "Right"),
                 (Action::NextTab, "Next Pane"),
+                (Action::FocusPrevious, "Previous Pane"),
             ],
         ),
         (

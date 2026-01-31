@@ -82,6 +82,21 @@ impl Default for CommandRegistry {
             true,
         );
         register(
+            Action::FocusPrevious,
+            KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT),
+            true,
+        );
+        register(
+            Action::FocusPrevious,
+            KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE),
+            false,
+        );
+        register(
+            Action::FocusPrevious,
+            KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT),
+            false,
+        );
+        register(
             Action::ToggleGuildsTree,
             KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
             true,
