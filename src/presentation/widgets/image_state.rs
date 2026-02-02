@@ -20,11 +20,13 @@ pub struct ImageAttachment {
     pub protocol: Option<StatefulProtocol>,
     pub protocol_receiver: Option<oneshot::Receiver<StatefulProtocol>>,
     pub status: ImageStatus,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
 }
 
 impl ImageAttachment {
     #[must_use]
-    pub fn new(id: ImageId, url: String) -> Self {
+    pub fn new(id: ImageId, url: String, width: Option<u32>, height: Option<u32>) -> Self {
         Self {
             id,
             url,
@@ -32,6 +34,8 @@ impl ImageAttachment {
             protocol: None,
             protocol_receiver: None,
             status: ImageStatus::NotStarted,
+            width,
+            height,
         }
     }
 
@@ -42,7 +46,12 @@ impl ImageAttachment {
         }
 
         let id = ImageId::from_url(&attachment.url);
-        Some(Self::new(id, attachment.url.clone()))
+        Some(Self::new(
+            id,
+            attachment.url.clone(),
+            attachment.width,
+            attachment.height,
+        ))
     }
 
     pub fn set_loaded(&mut self, image: Arc<image::DynamicImage>) {
@@ -75,9 +84,9 @@ impl ImageAttachment {
         self.status.is_not_started()
     }
 
-    pub fn update_protocol_if_needed(&mut self, picker: &Picker) {
+    pub fn update_protocol_if_needed(&mut self, picker: &Picker) -> bool {
         if self.protocol.is_some() {
-            return;
+            return false;
         }
 
         if let Some(rx) = &mut self.protocol_receiver {
@@ -85,13 +94,14 @@ impl ImageAttachment {
                 Ok(protocol) => {
                     self.protocol = Some(protocol);
                     self.protocol_receiver = None;
+                    return true;
                 }
                 Err(oneshot::error::TryRecvError::Empty) => {}
                 Err(_) => {
                     self.protocol_receiver = None;
                 }
             }
-            return;
+            return false;
         }
 
         if let Some(ref image) = self.image {
@@ -106,6 +116,7 @@ impl ImageAttachment {
                 let _ = tx.send(protocol);
             });
         }
+        false
     }
 
     pub fn clear_protocol(&mut self) {
@@ -115,7 +126,12 @@ impl ImageAttachment {
 
     #[must_use]
     pub fn height(&self, width: u16) -> u16 {
-        if let Some(protocol) = &self.protocol {
+        if let (Some(w), Some(h)) = (self.width, self.height) {
+            let aspect = f64::from(h) / f64::from(w);
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let estimated = (f64::from(width) * 0.5 * aspect).ceil() as u16;
+            return estimated.clamp(1, MAX_IMAGE_HEIGHT);
+        } else if let Some(protocol) = &self.protocol {
             let area = Rect::new(0, 0, width, MAX_IMAGE_HEIGHT);
             return protocol.size_for(Resize::Fit(None), area).height;
         } else if self.image.is_some() || self.status.is_loading() {
@@ -278,18 +294,25 @@ mod tests {
     #[test]
     fn test_image_attachment_creation() {
         let id = ImageId::new("test");
-        let attachment =
-            ImageAttachment::new(id.clone(), "https://example.com/img.png".to_string());
+        let attachment = ImageAttachment::new(
+            id.clone(),
+            "https://example.com/img.png".to_string(),
+            Some(100),
+            Some(50),
+        );
 
         assert_eq!(attachment.id, id);
         assert!(!attachment.is_ready());
         assert!(attachment.needs_load());
+        assert_eq!(attachment.width, Some(100));
+        assert_eq!(attachment.height, Some(50));
     }
 
     #[test]
     fn test_image_attachment_loading_flow() {
         let id = ImageId::new("test");
-        let mut attachment = ImageAttachment::new(id, "https://example.com/img.png".to_string());
+        let mut attachment =
+            ImageAttachment::new(id, "https://example.com/img.png".to_string(), None, None);
 
         assert!(attachment.needs_load());
 
@@ -306,7 +329,8 @@ mod tests {
     #[test]
     fn test_image_attachment_failure() {
         let id = ImageId::new("test");
-        let mut attachment = ImageAttachment::new(id, "https://example.com/img.png".to_string());
+        let mut attachment =
+            ImageAttachment::new(id, "https://example.com/img.png".to_string(), None, None);
 
         attachment.set_failed("Network error".to_string());
         assert!(attachment.status.is_failed());
@@ -323,11 +347,11 @@ mod tests {
     #[test]
     fn test_collect_needed_loads() {
         let attachments = vec![
-            ImageAttachment::new(ImageId::new("0"), "url0".to_string()),
-            ImageAttachment::new(ImageId::new("1"), "url1".to_string()),
-            ImageAttachment::new(ImageId::new("2"), "url2".to_string()),
-            ImageAttachment::new(ImageId::new("3"), "url3".to_string()),
-            ImageAttachment::new(ImageId::new("4"), "url4".to_string()),
+            ImageAttachment::new(ImageId::new("0"), "url0".to_string(), None, None),
+            ImageAttachment::new(ImageId::new("1"), "url1".to_string(), None, None),
+            ImageAttachment::new(ImageId::new("2"), "url2".to_string(), None, None),
+            ImageAttachment::new(ImageId::new("3"), "url3".to_string(), None, None),
+            ImageAttachment::new(ImageId::new("4"), "url4".to_string(), None, None),
         ];
 
         let needed = ImageManager::collect_needed_loads(&attachments, 1, 2);
@@ -337,7 +361,7 @@ mod tests {
     #[tokio::test]
     async fn test_image_protocol_async_loading() {
         let id = ImageId::new("test");
-        let mut attachment = ImageAttachment::new(id, "url".to_string());
+        let mut attachment = ImageAttachment::new(id, "url".to_string(), None, None);
         let img = Arc::new(image::DynamicImage::new_rgb8(10, 10));
         attachment.set_loaded(img);
 

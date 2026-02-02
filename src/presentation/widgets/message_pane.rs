@@ -86,7 +86,7 @@ impl UiMessage {
         for url in inline_images {
             if !image_attachments.iter().any(|img| img.url == url) {
                 let id = crate::domain::entities::ImageId::from_url(&url);
-                image_attachments.push(ImageAttachment::new(id, url));
+                image_attachments.push(ImageAttachment::new(id, url, None, None));
             }
         }
 
@@ -259,6 +259,7 @@ pub struct MessagePaneData {
     channels: HashMap<String, String>,
     last_layout_width: Option<u16>,
     last_show_spoilers: Option<bool>,
+    last_image_preview: Option<bool>,
     is_dirty: bool,
     use_display_name: bool,
 }
@@ -281,6 +282,7 @@ impl MessagePaneData {
             channels: HashMap::new(),
             last_layout_width: None,
             last_show_spoilers: None,
+            last_image_preview: None,
             is_dirty: true,
             use_display_name,
         }
@@ -553,10 +555,12 @@ impl MessagePaneData {
         markdown_service: &MarkdownRenderer,
         default_color: Color,
         show_spoilers: bool,
+        image_preview: bool,
     ) {
         if !self.is_dirty
             && self.last_layout_width == Some(width)
             && self.last_show_spoilers == Some(show_spoilers)
+            && self.last_image_preview == Some(image_preview)
             && !self.messages.iter().any(|m| m.rendered_content.is_none())
         {
             return;
@@ -582,6 +586,7 @@ impl MessagePaneData {
                 markdown_service,
                 default_color,
                 show_spoilers,
+                image_preview,
                 &resolver,
                 authors,
                 self.use_display_name,
@@ -590,6 +595,7 @@ impl MessagePaneData {
 
         self.last_layout_width = Some(width);
         self.last_show_spoilers = Some(show_spoilers);
+        self.last_image_preview = Some(image_preview);
         self.is_dirty = false;
     }
 
@@ -600,6 +606,7 @@ impl MessagePaneData {
         markdown_service: &MarkdownRenderer,
         default_color: Color,
         show_spoilers: bool,
+        image_preview: bool,
         resolver: &HashMapResolver<'_>,
         authors: &HashMap<String, String>,
         use_display_name: bool,
@@ -631,7 +638,11 @@ impl MessagePaneData {
             .count();
         height += u16::try_from(non_image_attachments).unwrap_or(0);
 
-        height += ui_msg.total_image_height(content_width);
+        if image_preview {
+            height += ui_msg.total_image_height(content_width);
+        } else {
+            height += u16::try_from(ui_msg.image_attachments.len()).unwrap_or(0);
+        }
 
         let mut rendered_embeds = Vec::new();
         for embed in message.embeds() {
@@ -1242,11 +1253,12 @@ pub struct MessagePane<'a> {
     image_preview: bool,
     timestamp_format: &'a str,
     current_user_id: Option<String>,
+    markdown_service: &'a MarkdownRenderer,
 }
 
 impl<'a> MessagePane<'a> {
     #[must_use]
-    pub fn new(data: &'a mut MessagePaneData, _markdown_service: &'a MarkdownRenderer) -> Self {
+    pub fn new(data: &'a mut MessagePaneData, markdown_service: &'a MarkdownRenderer) -> Self {
         Self {
             data,
             style: MessagePaneStyle::default(),
@@ -1254,6 +1266,7 @@ impl<'a> MessagePane<'a> {
             image_preview: true,
             timestamp_format: "%H:%M",
             current_user_id: None,
+            markdown_service,
         }
     }
 
@@ -1405,6 +1418,7 @@ impl<'a> MessagePane<'a> {
             image_preview,
             timestamp_format,
             current_user_id,
+            markdown_service,
         } = self;
 
         match data.loading_state() {
@@ -1433,6 +1447,14 @@ impl<'a> MessagePane<'a> {
             empty.render(inner_area, buf);
             return;
         }
+
+        data.update_layout(
+            inner_area.width,
+            markdown_service,
+            style.content_style.fg.unwrap_or(Color::White),
+            state.show_spoilers,
+            *image_preview,
+        );
 
         if let Some(error_msg) = &data.error_message
             && matches!(data.loading_state(), LoadingState::Loaded)
@@ -1493,46 +1515,6 @@ impl<'a> MessagePane<'a> {
 
         let authors = &data.authors;
         for (idx, ui_msg) in data.messages.iter_mut().enumerate() {
-            let indent_width = u16::try_from(CONTENT_INDENT).unwrap_or(0);
-            let content_width = inner_area
-                .width
-                .saturating_sub(indent_width)
-                .saturating_sub(SCROLLBAR_MARGIN);
-
-            let current_image_height = ui_msg.total_image_height(content_width);
-
-            let mut height: u16 = 0;
-            if ui_msg.group == MessageGroup::Start {
-                height += 1;
-            }
-            if ui_msg.message.is_reply() {
-                height += 1;
-            }
-
-            if let Some(t) = &ui_msg.rendered_content {
-                height += u16::try_from(t.lines.len()).unwrap_or(0);
-            }
-
-            let non_image_attachments = ui_msg
-                .message
-                .attachments()
-                .iter()
-                .filter(|a| !a.is_image())
-                .count();
-            height += u16::try_from(non_image_attachments).unwrap_or(0);
-
-            if *image_preview {
-                height += current_image_height;
-            } else {
-                height += u16::try_from(ui_msg.image_attachments.len()).unwrap_or(0);
-            }
-
-            for embed in &ui_msg.rendered_embeds {
-                height += embed.height;
-            }
-
-            ui_msg.estimated_height = height;
-
             let h = ui_msg.estimated_height as usize;
             let current_y_usize = usize::try_from(current_y).unwrap_or(0);
 
@@ -2611,7 +2593,7 @@ mod tests {
         data.set_messages(messages);
 
         let markdown = MarkdownRenderer::new();
-        data.update_layout(100, &markdown, Color::Yellow, false);
+        data.update_layout(100, &markdown, Color::Yellow, false, true);
 
         let mut state = MessagePaneState::new();
         state.flags.is_following = true;

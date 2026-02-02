@@ -1384,6 +1384,10 @@ impl ChatScreenState {
         id: &crate::domain::entities::ImageId,
         image: &std::sync::Arc<image::DynamicImage>,
     ) {
+        if !self.image_preview {
+            return;
+        }
+
         for ui_msg in self.message_pane_data.ui_messages_mut() {
             for attachment in &mut ui_msg.image_attachments {
                 if &attachment.id == id {
@@ -1398,7 +1402,7 @@ impl ChatScreenState {
     /// Should be called before rendering.
     /// Only processes images that need protocol updates.
     pub fn update_visible_image_protocols(&mut self, terminal_width: u16) {
-        if self.message_pane_data.is_empty() {
+        if self.message_pane_data.is_empty() || !self.image_preview {
             return;
         }
 
@@ -1411,14 +1415,19 @@ impl ChatScreenState {
 
         let picker = self.image_manager.picker();
 
+        let mut dirty = false;
         for idx in start..end {
             if let Some(ui_msg) = self.message_pane_data.ui_messages_mut().get_mut(idx) {
                 for attachment in &mut ui_msg.image_attachments {
-                    if attachment.is_ready() {
-                        attachment.update_protocol_if_needed(picker);
+                    if attachment.is_ready() && attachment.update_protocol_if_needed(picker) {
+                        dirty = true;
                     }
                 }
             }
+        }
+
+        if dirty {
+            self.message_pane_data.mark_dirty();
         }
     }
 
@@ -2021,6 +2030,7 @@ fn render_message_pane(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer
         &service,
         state.theme.accent,
         state.message_pane_state.show_spoilers,
+        image_preview,
     );
 
     let style = MessagePaneStyle::from_theme(&state.theme);
