@@ -19,7 +19,11 @@ pub fn clean_text(s: &str) -> String {
         Regex::new(r"[\p{Extended_Pictographic}\p{Emoji_Presentation}\u{FE0F}\u{200D}\u{20E3}]")
             .expect("Invalid regex")
     });
-    re.replace_all(s, "").to_string()
+    re.replace_all(s, "")
+        .trim()
+        .trim_start_matches(['-', '|'])
+        .trim()
+        .to_string()
 }
 
 const USER_PALETTE: &[Color] = &[

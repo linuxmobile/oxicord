@@ -6,6 +6,7 @@ mod chat_screen;
 mod login_screen;
 mod main_screen;
 pub mod notification_popup;
+pub mod quick_switcher;
 pub mod splash_screen;
 pub mod utils;
 

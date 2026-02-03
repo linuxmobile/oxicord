@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::UserId;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(transparent)]
 pub struct GuildId(#[serde(with = "crate::domain::serde_utils::string_to_u64")] pub u64);
 

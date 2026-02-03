@@ -12,10 +12,11 @@ pub mod keybinding;
 pub mod notification;
 /// Port definitions.
 pub mod ports;
+/// Search definitions.
+pub mod search;
+pub mod serde_utils;
 
 pub use notification::{Notification, NotificationLevel};
-/// Serde utilities.
-pub mod serde_utils;
 
 pub use connection::ConnectionStatus;
 pub use entities::{AuthToken, User};

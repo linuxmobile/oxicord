@@ -9,6 +9,7 @@ pub mod discord;
 pub mod image;
 /// System notifications.
 pub mod notifications;
+pub mod search;
 /// Application state persistence.
 pub mod state_store;
 /// Token storage adapters.

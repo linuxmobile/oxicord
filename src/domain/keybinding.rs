@@ -51,6 +51,7 @@ pub enum Action {
     Paste,
     SecureLogout,
     ToggleDisplayName,
+    ToggleQuickSwitcher,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

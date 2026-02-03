@@ -71,6 +71,7 @@ pub enum Action {
     PasteImageLoaded(std::path::PathBuf),
     PasteTextLoaded(String),
     ShowNotification(String),
+    SearchResults(Vec<crate::domain::search::SearchResult>),
 }
 
 pub enum BackendCommand {

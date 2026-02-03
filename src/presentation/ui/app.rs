@@ -1679,6 +1679,11 @@ impl App {
             Action::ShowNotification(message) => {
                 self.show_notification(message);
             }
+            Action::SearchResults(results) => {
+                if let CurrentScreen::Chat(state) = &mut self.screen {
+                    state.set_quick_switcher_results(results);
+                }
+            }
         }
     }
 

@@ -1,9 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent};
-use ratatui::{
-    buffer::Buffer,
-    layout::{Constraint, Layout, Rect},
-    widgets::{StatefulWidget, Widget},
-};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use regex::Regex;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
@@ -21,15 +16,26 @@ use crate::domain::entities::{
 };
 use crate::domain::keybinding::{Action, Keybind};
 use crate::domain::ports::DirectMessageChannel;
+use crate::domain::search::{SearchKind, SearchProvider};
+use crate::infrastructure::search::{ChannelSearchProvider, DmSearchProvider, GuildSearchProvider};
 use crate::presentation::commands::{CommandRegistry, HasCommands};
 use crate::presentation::services::markdown_renderer::MarkdownRenderer;
 use crate::presentation::theme::Theme;
+use crate::presentation::ui::quick_switcher::{
+    QuickSwitcher, QuickSwitcherAction, QuickSwitcherWidget,
+};
 use crate::presentation::widgets::{
     ConfirmationModal, FileExplorerAction, FileExplorerComponent, FocusContext, FooterBar,
     ForumState, GuildsTree, GuildsTreeAction, GuildsTreeData, GuildsTreeState, HeaderBar,
     ImageManager, MentionPopup, MessageInput, MessageInputAction, MessageInputMode,
     MessageInputState, MessagePane, MessagePaneAction, MessagePaneData, MessagePaneState, ViewMode,
 };
+use ratatui::{
+    buffer::Buffer,
+    layout::{Constraint, Layout, Rect},
+    widgets::{StatefulWidget, Widget},
+};
+
 use crate::{NAME, VERSION};
 
 const GUILDS_TREE_WIDTH_PERCENT: u16 = 25;
@@ -149,6 +155,8 @@ pub struct ChatScreenState {
     theme: Theme,
     forum_states: std::collections::HashMap<ChannelId, crate::presentation::widgets::ForumState>,
     pending_deletion_id: Option<MessageId>,
+    quick_switcher: QuickSwitcher,
+    show_quick_switcher: bool,
 }
 
 impl ChatScreenState {
@@ -199,6 +207,8 @@ impl ChatScreenState {
             theme,
             forum_states: std::collections::HashMap::new(),
             pending_deletion_id: None,
+            quick_switcher: QuickSwitcher::new(),
+            show_quick_switcher: false,
         }
     }
 
@@ -206,6 +216,10 @@ impl ChatScreenState {
         self.use_display_name = use_display_name;
         self.message_pane_data
             .set_use_display_name(use_display_name);
+
+        if self.show_quick_switcher {
+            self.perform_search(&self.quick_switcher.input.clone());
+        }
     }
 
     pub fn restore_state(
@@ -479,6 +493,24 @@ impl ChatScreenState {
             return self.handle_file_explorer_key(key);
         }
 
+        if let Some(action) = self.registry.find_action(key)
+            && action == Action::ToggleQuickSwitcher
+            && !self.show_quick_switcher
+        {
+            self.toggle_quick_switcher();
+            return ChatKeyResult::Consumed;
+        }
+
+        if self.show_quick_switcher {
+            if let Some(action) = self.registry.find_action(key)
+                && action == Action::Cancel
+            {
+                self.toggle_quick_switcher();
+                return ChatKeyResult::Consumed;
+            }
+            return self.handle_quick_switcher_key(key);
+        }
+
         if self.focus == ChatFocus::MessageInput {
             let result = self.handle_message_input_key(key);
             if result != ChatKeyResult::Ignored {
@@ -550,6 +582,11 @@ impl ChatScreenState {
                 Some(ChatKeyResult::ToggleHelp)
             }
             Some(Action::ToggleDisplayName) => Some(ChatKeyResult::ToggleDisplayName),
+
+            Some(Action::ToggleQuickSwitcher) => {
+                self.toggle_quick_switcher();
+                Some(ChatKeyResult::Consumed)
+            }
             _ => None,
         }
     }
@@ -1536,6 +1573,125 @@ impl ChatScreenState {
             ChatKeyResult::Consumed
         }
     }
+
+    pub fn toggle_quick_switcher(&mut self) {
+        self.show_quick_switcher = !self.show_quick_switcher;
+        if self.show_quick_switcher {
+            self.quick_switcher.reset();
+            self.perform_search("");
+        }
+    }
+
+    pub fn set_quick_switcher_results(
+        &mut self,
+        results: Vec<crate::domain::search::SearchResult>,
+    ) {
+        self.quick_switcher.set_results(results);
+    }
+
+    fn handle_quick_switcher_key(&mut self, key: KeyEvent) -> ChatKeyResult {
+        if let Some(action) = self.registry.find_action(key) {
+            match action {
+                Action::NavigateUp => {
+                    self.quick_switcher.select_previous();
+                    return ChatKeyResult::Consumed;
+                }
+                Action::NavigateDown => {
+                    self.quick_switcher.select_next();
+                    return ChatKeyResult::Consumed;
+                }
+                _ => {}
+            }
+        }
+
+        match key.code {
+            KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.quick_switcher.select_previous();
+                return ChatKeyResult::Consumed;
+            }
+            KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.quick_switcher.select_next();
+                return ChatKeyResult::Consumed;
+            }
+            _ => {}
+        }
+
+        match self.quick_switcher.handle_key(key) {
+            QuickSwitcherAction::Close => {
+                self.show_quick_switcher = false;
+                ChatKeyResult::Consumed
+            }
+            QuickSwitcherAction::Select(result) => {
+                self.show_quick_switcher = false;
+                self.jump_to_result(&result)
+            }
+            QuickSwitcherAction::UpdateSearch(query) => {
+                self.perform_search(&query);
+                ChatKeyResult::Consumed
+            }
+            QuickSwitcherAction::None => ChatKeyResult::Consumed,
+        }
+    }
+
+    fn perform_search(&mut self, query: &str) {
+        let query = query.to_string();
+
+        let mut channels = Vec::new();
+        for guild in self.guilds_tree_data.guilds() {
+            if let Some(guild_channels) = self.guilds_tree_data.channels(guild.id()) {
+                for channel in guild_channels {
+                    channels.push((guild.name().to_string(), channel.clone()));
+                }
+            }
+        }
+
+        let dms = self.guilds_tree_data.dm_users().to_vec();
+        let guilds = self.guilds_tree_data.guilds().to_vec();
+
+        let channel_provider = ChannelSearchProvider::new(channels);
+        let dm_provider = DmSearchProvider::new(dms, self.use_display_name);
+        let guild_provider = GuildSearchProvider::new(guilds);
+
+        let results = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let mut results = Vec::new();
+                results.extend(channel_provider.search(&query).await);
+                results.extend(dm_provider.search(&query).await);
+                results.extend(guild_provider.search(&query).await);
+                results.sort_by(|a, b| b.score.cmp(&a.score));
+                results
+            })
+        });
+
+        self.quick_switcher.set_results(results);
+    }
+
+    fn jump_to_result(&mut self, result: &crate::domain::search::SearchResult) -> ChatKeyResult {
+        match result.kind {
+            SearchKind::DM => {
+                if let Some(result) = self.on_dm_selected(&result.id) {
+                    return result;
+                }
+            }
+            SearchKind::Channel | SearchKind::Forum | SearchKind::Thread => {
+                if let Ok(id) = result.id.parse::<u64>() {
+                    let channel_id = ChannelId(id);
+                    if let Some(result) = self.on_channel_selected(channel_id) {
+                        return result;
+                    }
+                }
+            }
+            SearchKind::Guild => {
+                if let Ok(id) = result.id.parse::<u64>() {
+                    let guild_id = GuildId(id);
+                    if let Some(result) = self.on_guild_selected(guild_id) {
+                        return result;
+                    }
+                }
+            }
+        }
+        ChatKeyResult::Consumed
+    }
 }
 
 impl HasCommands for ChatScreenState {
@@ -1736,6 +1892,11 @@ impl StatefulWidget for ChatScreen {
             render_explorer_popup(state, area, buf);
         }
 
+        if state.show_quick_switcher {
+            let widget = QuickSwitcherWidget::new(&state.quick_switcher, &state.theme);
+            widget.render(area, buf);
+        }
+
         if state.focus == ChatFocus::ConfirmationModal {
             let modal = ConfirmationModal::new(
                 "Delete Message",
@@ -1787,6 +1948,7 @@ fn render_help_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) 
                 (Action::FocusMessages, "Focus Messages"),
                 (Action::FocusInput, "Focus Input"),
                 (Action::ToggleGuildsTree, "Toggle Guilds Tree"),
+                (Action::ToggleQuickSwitcher, "Quick Switcher"),
             ],
         ),
         (
@@ -1854,22 +2016,19 @@ fn render_help_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) 
                         match k.code {
                             KeyCode::Char(c) => s.push(c),
                             KeyCode::Enter => s.push_str("Enter"),
+                            KeyCode::Tab | KeyCode::BackTab => s.push_str("Tab"),
                             KeyCode::Esc => s.push_str("Esc"),
-                            KeyCode::Tab => s.push_str("Tab"),
+                            KeyCode::Backspace => s.push_str("Backspace"),
                             KeyCode::Up => s.push_str("Up"),
                             KeyCode::Down => s.push_str("Down"),
                             KeyCode::Left => s.push_str("Left"),
                             KeyCode::Right => s.push_str("Right"),
-                            KeyCode::F(n) => {
-                                let _ = write!(s, "F{n}");
-                            }
-                            _ => {
-                                let _ = write!(s, "{k:?}");
-                            }
+                            KeyCode::F(n) => write!(s, "F{n}").unwrap(),
+                            _ => write!(s, "{k:?}").unwrap(),
                         }
                         s
                     })
-                    .collect::<Vec<String>>()
+                    .collect::<Vec<_>>()
                     .join(", ")
             },
         )

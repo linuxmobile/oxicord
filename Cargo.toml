@@ -63,6 +63,7 @@ arboard = { version = "3.6.1", features = ["wayland-data-control", "image-data"]
 notify-rust = "4"
 opener = "0.8.4"
 coolor = "1.1.0"
+fuzzy-matcher = "0.3.7"
 
 # Image rendering - Platform Specific
 

@@ -329,6 +329,12 @@ impl Default for CommandRegistry {
             true,
         );
 
+        register(
+            Action::ToggleQuickSwitcher,
+            KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL),
+            true,
+        );
+
         Self {
             display_bindings,
             input_bindings,
