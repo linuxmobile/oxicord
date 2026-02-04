@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 use std::sync::LazyLock;
 
 use crate::application::services::identity_resolver::IdentityResolver;
@@ -74,7 +75,7 @@ enum RenderItem {
 
 /// UI wrapper for a message with rendering state.
 pub struct UiMessage {
-    pub message: Message,
+    pub message: Arc<Message>,
     pub estimated_height: u16,
     pub rendered_content: Option<Text<'static>>,
     pub parsed_content: Vec<MdBlock>,
@@ -106,7 +107,7 @@ impl UiMessage {
         }
 
         Self {
-            message,
+            message: Arc::new(message),
             estimated_height: 1,
             rendered_content: None,
             parsed_content,
@@ -552,7 +553,7 @@ impl MessagePaneData {
 
     #[must_use]
     pub fn get_message(&self, index: usize) -> Option<&Message> {
-        self.messages.get(index).map(|m| &m.message)
+        self.messages.get(index).map(|m| m.message.as_ref())
     }
 
     #[must_use]
@@ -1098,8 +1099,8 @@ impl MessagePaneState {
                 None
             }
             Some(Action::NavigateUp) => {
-                let at_top = self.selected_index.is_none()
-                    || render_items.first().is_some_and(|item| match item {
+                let at_top = self.selected_index.is_some()
+                    && render_items.first().is_some_and(|item| match item {
                         RenderItem::Message { idx } => self.selected_index == Some(*idx),
                         RenderItem::BlockedRun { start_idx, count } => self
                             .selected_index

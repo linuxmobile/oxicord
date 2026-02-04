@@ -5,7 +5,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{RwLock, Semaphore, mpsc};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::domain::entities::{ImageId, ImageSource, LoadedImage};
@@ -56,6 +56,7 @@ pub struct ImageLoader {
     event_tx: mpsc::UnboundedSender<ImageLoadedEvent>,
     config: ImageLoaderConfig,
     http_client: reqwest::Client,
+    semaphore: Arc<Semaphore>,
 }
 
 impl std::fmt::Debug for ImageLoader {
@@ -83,6 +84,8 @@ impl ImageLoader {
             .build()
             .map_err(|e| CacheError::NetworkError(format!("Failed to create HTTP client: {e}")))?;
 
+        let semaphore = Arc::new(Semaphore::new(config.max_concurrent_downloads));
+
         Ok(Self {
             memory_cache,
             disk_cache,
@@ -90,6 +93,7 @@ impl ImageLoader {
             event_tx,
             config,
             http_client,
+            semaphore,
         })
     }
 
@@ -171,6 +175,7 @@ impl ImageLoader {
             pending_loads: self.pending_loads.clone(),
             event_tx: self.event_tx.clone(),
             http_client: self.http_client.clone(),
+            semaphore: self.semaphore.clone(),
         };
 
         tokio::spawn(async move {
@@ -183,7 +188,17 @@ impl ImageLoader {
                 pending.insert(id.clone());
             }
 
+            let _permit = match loader.semaphore.acquire().await {
+                Ok(permit) => permit,
+                Err(_) => {
+                    error!("Semaphore closed, cancelling load");
+                    return;
+                }
+            };
+
             let result = loader.load_image(&id, &url).await;
+
+            drop(_permit);
 
             {
                 let mut pending = loader.pending_loads.write().await;
@@ -358,6 +373,7 @@ struct ImageLoaderHandle {
     pending_loads: Arc<RwLock<HashSet<ImageId>>>,
     event_tx: mpsc::UnboundedSender<ImageLoadedEvent>,
     http_client: reqwest::Client,
+    semaphore: Arc<Semaphore>,
 }
 
 impl ImageLoaderHandle {

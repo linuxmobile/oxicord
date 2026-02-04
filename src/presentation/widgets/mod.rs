@@ -16,7 +16,8 @@ pub use confirmation_modal::ConfirmationModal;
 pub use file_explorer::{FileExplorerAction, FileExplorerComponent};
 pub use footer_bar::{FocusContext, FooterBar, FooterBarStyle};
 pub use guilds_tree::{
-    GuildsTree, GuildsTreeAction, GuildsTreeData, GuildsTreeState, GuildsTreeStyle, TreeNodeId,
+    GuildsTree, GuildsTreeAction, GuildsTreeData, GuildsTreeState, GuildsTreeStyle,
+    SortedGuildChannels, TreeNodeId,
 };
 pub use header_bar::{HeaderBar, HeaderBarStyle};
 pub use image_state::{ImageAttachment, ImageManager, LOAD_BUFFER, MAX_IMAGE_HEIGHT};

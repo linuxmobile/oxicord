@@ -2176,7 +2176,7 @@ impl ChatScreenState {
         ) {
             for guild in self.guilds_tree_data.guilds() {
                 if let Some(guild_channels) = self.guilds_tree_data.channels(guild.id()) {
-                    for channel in guild_channels {
+                    for channel in guild_channels.iter() {
                         let include = match prefix {
                             SearchPrefix::Text => !channel.kind().is_voice(),
                             SearchPrefix::Voice => channel.kind().is_voice(),

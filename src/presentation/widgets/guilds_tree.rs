@@ -367,11 +367,31 @@ pub struct FlattenedNode<'a> {
 }
 
 /// Data container for the guilds tree.
+pub struct CategoryNode {
+    pub category: Channel,
+    pub children: Vec<Channel>,
+}
+
+pub struct SortedGuildChannels {
+    pub orphans: Vec<Channel>,
+    pub categories: Vec<CategoryNode>,
+}
+
+impl SortedGuildChannels {
+    pub fn iter(&self) -> impl Iterator<Item = &Channel> {
+        self.orphans.iter().chain(
+            self.categories
+                .iter()
+                .flat_map(|cat| std::iter::once(&cat.category).chain(cat.children.iter())),
+        )
+    }
+}
+
 pub struct GuildsTreeData {
     guilds: Vec<Guild>,
     folders: Vec<GuildFolder>,
     group_guilds: bool,
-    channels_by_guild: std::collections::HashMap<GuildId, Vec<Channel>>,
+    channels_by_guild: std::collections::HashMap<GuildId, SortedGuildChannels>,
     dm_users: Vec<DirectMessageChannel>,
     active_guild_id: Option<GuildId>,
     active_channel_id: Option<ChannelId>,
@@ -439,7 +459,70 @@ impl GuildsTreeData {
             channel_count = channels.len(),
             "Storing channels for guild"
         );
-        self.channels_by_guild.insert(guild_id, channels);
+
+        let mut orphans = Vec::new();
+        let mut category_map: std::collections::HashMap<ChannelId, (Channel, Vec<Channel>)> =
+            std::collections::HashMap::new();
+
+        let temp_channels = channels;
+        let mut potential_children = Vec::new();
+
+        for channel in temp_channels {
+            if channel.kind().is_category() {
+                category_map.insert(channel.id(), (channel, Vec::new()));
+            } else {
+                potential_children.push(channel);
+            }
+        }
+
+        for channel in potential_children {
+            if let Some(parent_id) = channel.parent_id() {
+                if let Some((_, children)) = category_map.get_mut(&parent_id) {
+                    children.push(channel);
+                } else {
+                    orphans.push(channel);
+                }
+            } else {
+                orphans.push(channel);
+            }
+        }
+
+        let sort_fn = |a: &Channel, b: &Channel| match a.position().cmp(&b.position()) {
+            std::cmp::Ordering::Equal => {
+                let a_is_text = a.kind().is_text_based() || a.kind() == ChannelKind::Forum;
+                let b_is_text = b.kind().is_text_based() || b.kind() == ChannelKind::Forum;
+
+                match (a_is_text, b_is_text) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => match (a.kind() as u8).cmp(&(b.kind() as u8)) {
+                        std::cmp::Ordering::Equal => a.id().as_u64().cmp(&b.id().as_u64()),
+                        other => other,
+                    },
+                }
+            }
+            other => other,
+        };
+
+        orphans.sort_by(sort_fn);
+
+        let mut categories: Vec<CategoryNode> = category_map
+            .into_values()
+            .map(|(category, mut children)| {
+                children.sort_by(sort_fn);
+                CategoryNode { category, children }
+            })
+            .collect();
+
+        categories.sort_by(|a, b| sort_fn(&a.category, &b.category));
+
+        self.channels_by_guild.insert(
+            guild_id,
+            SortedGuildChannels {
+                orphans,
+                categories,
+            },
+        );
     }
 
     pub fn set_dm_users(&mut self, mut users: Vec<DirectMessageChannel>) {
@@ -460,7 +543,7 @@ impl GuildsTreeData {
     }
 
     #[must_use]
-    pub fn channels(&self, guild_id: GuildId) -> Option<&Vec<Channel>> {
+    pub fn channels(&self, guild_id: GuildId) -> Option<&SortedGuildChannels> {
         self.channels_by_guild.get(&guild_id)
     }
 
@@ -498,18 +581,34 @@ impl GuildsTreeData {
 
     #[must_use]
     pub fn find_guild_for_channel(&self, channel_id: ChannelId) -> Option<GuildId> {
-        for (guild_id, channels) in &self.channels_by_guild {
-            if channels.iter().any(|c| c.id() == channel_id) {
+        for (guild_id, sorted) in &self.channels_by_guild {
+            if sorted.orphans.iter().any(|c| c.id() == channel_id) {
                 return Some(*guild_id);
+            }
+            for cat in &sorted.categories {
+                if cat.category.id() == channel_id {
+                    return Some(*guild_id);
+                }
+                if cat.children.iter().any(|c| c.id() == channel_id) {
+                    return Some(*guild_id);
+                }
             }
         }
         None
     }
 
     pub fn get_channel_mut(&mut self, channel_id: ChannelId) -> Option<&mut Channel> {
-        for channels in self.channels_by_guild.values_mut() {
-            if let Some(channel) = channels.iter_mut().find(|c| c.id() == channel_id) {
+        for sorted in self.channels_by_guild.values_mut() {
+            if let Some(channel) = sorted.orphans.iter_mut().find(|c| c.id() == channel_id) {
                 return Some(channel);
+            }
+            for cat in &mut sorted.categories {
+                if cat.category.id() == channel_id {
+                    return Some(&mut cat.category);
+                }
+                if let Some(channel) = cat.children.iter_mut().find(|c| c.id() == channel_id) {
+                    return Some(channel);
+                }
             }
         }
         None
@@ -517,9 +616,17 @@ impl GuildsTreeData {
 
     #[must_use]
     pub fn get_channel(&self, channel_id: ChannelId) -> Option<&Channel> {
-        for channels in self.channels_by_guild.values() {
-            if let Some(channel) = channels.iter().find(|c| c.id() == channel_id) {
+        for sorted in self.channels_by_guild.values() {
+            if let Some(channel) = sorted.orphans.iter().find(|c| c.id() == channel_id) {
                 return Some(channel);
+            }
+            for cat in &sorted.categories {
+                if cat.category.id() == channel_id {
+                    return Some(&cat.category);
+                }
+                if let Some(channel) = cat.children.iter().find(|c| c.id() == channel_id) {
+                    return Some(channel);
+                }
             }
         }
         None
@@ -619,8 +726,8 @@ impl GuildsTreeData {
         &mut self,
         read_states: &std::collections::HashMap<ChannelId, ReadState>,
     ) {
-        for channels in self.channels_by_guild.values_mut() {
-            for channel in channels {
+        for sorted in self.channels_by_guild.values_mut() {
+            let update_channel = |channel: &mut Channel| {
                 if let Some(read_state) = read_states.get(&channel.id()) {
                     if let Some(last_msg_id) = channel.last_message_id() {
                         let is_unread = if let Some(last_read_id) = read_state.last_read_message_id
@@ -638,18 +745,38 @@ impl GuildsTreeData {
                     channel.set_unread(false);
                     channel.set_mention_count(0);
                 }
+            };
+
+            for channel in &mut sorted.orphans {
+                update_channel(channel);
+            }
+            for cat in &mut sorted.categories {
+                update_channel(&mut cat.category);
+                for channel in &mut cat.children {
+                    update_channel(channel);
+                }
             }
         }
 
         for guild in &mut self.guilds {
-            if let Some(channels) = self.channels_by_guild.get(&guild.id()) {
+            if let Some(sorted) = self.channels_by_guild.get(&guild.id()) {
                 let mut guild_mentions = 0;
                 let mut guild_unread = false;
 
-                for channel in channels {
+                let mut check_channel = |channel: &Channel| {
                     guild_mentions += channel.mention_count();
                     if channel.has_unread() {
                         guild_unread = true;
+                    }
+                };
+
+                for channel in &sorted.orphans {
+                    check_channel(channel);
+                }
+                for cat in &sorted.categories {
+                    check_channel(&cat.category);
+                    for channel in &cat.children {
+                        check_channel(channel);
                     }
                 }
 
@@ -1025,7 +1152,7 @@ impl GuildsTreeData {
     fn flatten_channels<'a>(
         &'a self,
         nodes: &mut Vec<FlattenedNode<'a>>,
-        channels: &'a [Channel],
+        channels: &'a SortedGuildChannels,
         state: &GuildsTreeState,
         width: u16,
         style: &GuildsTreeStyle,
@@ -1038,60 +1165,15 @@ impl GuildsTreeData {
     fn flatten_channels_nested<'a>(
         &'a self,
         nodes: &mut Vec<FlattenedNode<'a>>,
-        channels: &'a [Channel],
+        channels: &'a SortedGuildChannels,
         state: &GuildsTreeState,
         width: u16,
         style: &GuildsTreeStyle,
         base_indent_1: &'a str,
         base_indent_2: &'a str,
     ) {
-        let mut categories: std::collections::HashMap<ChannelId, Vec<&Channel>> =
-            std::collections::HashMap::new();
-        let mut orphan_channels: Vec<&Channel> = Vec::new();
-        let mut category_channels: Vec<&Channel> = Vec::new();
-
-        for channel in channels {
-            if channel.kind().is_category() {
-                category_channels.push(channel);
-            } else if let Some(parent_id) = channel.parent_id() {
-                categories.entry(parent_id).or_default().push(channel);
-            } else {
-                orphan_channels.push(channel);
-            }
-        }
-
-        let sort_channels = |channels: &mut Vec<&Channel>| {
-            channels.sort_by(|a, b| {
-                match a.position().cmp(&b.position()) {
-                    std::cmp::Ordering::Equal => {
-                        // If positions are equal, prioritize Text/Forum over Voice
-                        let a_is_text = a.kind().is_text_based() || a.kind() == ChannelKind::Forum;
-                        let b_is_text = b.kind().is_text_based() || b.kind() == ChannelKind::Forum;
-
-                        match (a_is_text, b_is_text) {
-                            (true, false) => std::cmp::Ordering::Less,
-                            (false, true) => std::cmp::Ordering::Greater,
-                            _ => {
-                                // Secondary sort by kind
-                                match (a.kind() as u8).cmp(&(b.kind() as u8)) {
-                                    std::cmp::Ordering::Equal => {
-                                        a.id().as_u64().cmp(&b.id().as_u64())
-                                    }
-                                    other => other,
-                                }
-                            }
-                        }
-                    }
-                    other => other,
-                }
-            });
-        };
-
-        sort_channels(&mut orphan_channels);
-        sort_channels(&mut category_channels);
-
-        for (i, channel) in orphan_channels.iter().enumerate() {
-            let is_last = i == orphan_channels.len() - 1 && category_channels.is_empty();
+        for (i, channel) in channels.orphans.iter().enumerate() {
+            let is_last = i == channels.orphans.len() - 1 && channels.categories.is_empty();
             let prefix = if is_last { "└── " } else { "├── " };
             if let Some(node) = self.create_channel_node(
                 channel,
@@ -1106,8 +1188,8 @@ impl GuildsTreeData {
             }
         }
 
-        for (i, category) in category_channels.iter().enumerate() {
-            let is_last_category = i == category_channels.len() - 1;
+        for (i, cat_node) in channels.categories.iter().enumerate() {
+            let is_last_category = i == channels.categories.len() - 1;
             let cat_prefix = if is_last_category {
                 "└── "
             } else {
@@ -1115,6 +1197,7 @@ impl GuildsTreeData {
             };
             let child_indent_comp = if is_last_category { "    " } else { "│   " };
 
+            let category = &cat_node.category;
             let expanded = state
                 .expanded
                 .contains(&TreeNodeId::Category(category.id()));
@@ -1122,11 +1205,8 @@ impl GuildsTreeData {
             let clean_name = clean_text(category.name());
 
             let mut cat_mentions = 0;
-
-            if let Some(children) = categories.get(&category.id()) {
-                for child in children {
-                    cat_mentions += child.mention_count();
-                }
+            for child in &cat_node.children {
+                cat_mentions += child.mention_count();
             }
 
             let mut spans = vec![
@@ -1175,12 +1255,9 @@ impl GuildsTreeData {
                 depth: 1,
             });
 
-            if expanded && let Some(children) = categories.get(&category.id()) {
-                let mut sorted_children = children.clone();
-                sort_channels(&mut sorted_children);
-
-                for (j, child) in sorted_children.iter().enumerate() {
-                    let is_last_child = j == sorted_children.len() - 1;
+            if expanded {
+                for (j, child) in cat_node.children.iter().enumerate() {
+                    let is_last_child = j == cat_node.children.len() - 1;
                     let mut prefix = child_indent_comp.to_string();
                     prefix.push_str(if is_last_child {
                         "└── "
