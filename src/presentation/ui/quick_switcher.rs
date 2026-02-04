@@ -1,10 +1,11 @@
 use crate::domain::search::{SearchKind, SearchResult};
 use crate::presentation::theme::Theme;
 use crate::presentation::ui::utils::clean_text;
+use crate::presentation::widgets::FooterBarStyle;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{
         Block, Borders, Clear, List, ListItem, ListState, Paragraph, StatefulWidget, Widget,
@@ -151,6 +152,71 @@ impl<'a> QuickSwitcherWidget<'a> {
     pub fn new(switcher: &'a QuickSwitcher, theme: &'a Theme) -> Self {
         Self { switcher, theme }
     }
+
+    fn render_results_list(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        Block::default().render(area, buf);
+
+        let list_width = area.width as usize;
+
+        let items: Vec<ListItem> = self
+            .switcher
+            .results
+            .iter()
+            .map(|res| {
+                let (type_label, icon) = match res.kind {
+                    SearchKind::DM => ("(user)", ""),
+                    SearchKind::Channel => ("(channel)", "󰆈"),
+                    SearchKind::Voice => ("(voice)", "󰕾"),
+                    SearchKind::Forum => ("(forum)", ""),
+                    SearchKind::Thread => ("(thread)", ""),
+                    SearchKind::Guild => ("(server)", ""),
+                };
+
+                let name = clean_text(&res.name);
+
+                let left_part_1 = format!(" {:<9} ", type_label);
+                let left_part_2 = format!(" {icon} ");
+                let left_part_3 = format!(" {name} ");
+
+                let left_len = left_part_1.len() + left_part_2.chars().count() + left_part_3.len();
+
+                let mut spans = vec![
+                    Span::styled(left_part_1, Style::default().fg(Color::DarkGray)),
+                    Span::styled(left_part_2, Style::default().fg(self.theme.accent)),
+                    Span::styled(left_part_3, Style::default().fg(Color::White)),
+                ];
+
+                if let Some(guild_name) = &res.guild_name {
+                    let right_part = format!(" {guild_name} ");
+                    let right_len = right_part.len();
+
+                    if list_width > left_len + right_len {
+                        let padding = list_width - left_len - right_len;
+                        spans.push(Span::raw(" ".repeat(padding)));
+                        spans.push(Span::styled(
+                            right_part,
+                            Style::default().fg(self.theme.accent),
+                        ));
+                    } else {
+                        spans.push(Span::raw("  "));
+                        spans.push(Span::styled(
+                            right_part,
+                            Style::default().fg(self.theme.accent),
+                        ));
+                    }
+                }
+
+                ListItem::new(Line::from(spans))
+            })
+            .collect();
+
+        let list = List::new(items).highlight_style(
+            Style::default().bg(self.theme.selection_style.bg.unwrap_or(Color::DarkGray)),
+        );
+
+        let mut state = self.switcher.list_state;
+        StatefulWidget::render(list, area, buf, &mut state);
+    }
 }
 
 impl Widget for QuickSwitcherWidget<'_> {
@@ -169,7 +235,12 @@ impl Widget for QuickSwitcherWidget<'_> {
 
         let layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Min(0)])
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Min(0),
+                Constraint::Length(1),
+                Constraint::Length(1),
+            ])
             .split(inner_area);
 
         let search_layout = Layout::default()
@@ -189,48 +260,34 @@ impl Widget for QuickSwitcherWidget<'_> {
             Paragraph::new(self.switcher.input.as_str()).style(Style::default().fg(Color::White));
         input.render(search_layout[2], buf);
 
-        Block::default().render(layout[1], buf);
+        self.render_results_list(layout[1], buf);
 
-        let items: Vec<ListItem> = self
-            .switcher
-            .results
-            .iter()
-            .map(|res| {
-                let (type_label, icon) = match res.kind {
-                    SearchKind::DM => ("(DM)", ""),
-                    SearchKind::Channel => ("(Channel)", "󰆈"),
-                    SearchKind::Forum => ("(Forum)", ""),
-                    SearchKind::Thread => ("(Thread)", ""),
-                    SearchKind::Guild => ("(Server)", ""),
-                };
+        let footer_style = FooterBarStyle::from_theme(self.theme);
 
-                let mut spans = vec![
-                    Span::styled(
-                        format!("{type_label} "),
-                        Style::default().fg(Color::DarkGray),
-                    ),
-                    Span::styled(format!("{icon} "), Style::default().fg(self.theme.accent)),
-                    Span::raw(clean_text(&res.name)),
-                ];
+        let prefixes = [
+            ("*", "Search servers"),
+            ("#", "Search channels"),
+            ("!", "Search voice channels"),
+            ("@", "Search users"),
+        ];
 
-                if let Some(guild_name) = &res.guild_name {
-                    spans.push(Span::raw(" • "));
-                    spans.push(Span::styled(
-                        guild_name,
-                        Style::default().add_modifier(Modifier::ITALIC),
-                    ));
-                }
+        let mut footer_spans = Vec::new();
+        for (i, (prefix, label)) in prefixes.iter().enumerate() {
+            if i > 0 {
+                footer_spans.push(Span::raw(" "));
+            }
+            footer_spans.push(Span::styled(
+                format!(" {prefix} "),
+                footer_style.label_style,
+            ));
+            footer_spans.push(Span::styled(format!(" {label} "), footer_style.key_style));
+        }
 
-                ListItem::new(Line::from(spans))
-            })
-            .collect();
-
-        let list = List::new(items).highlight_style(
-            Style::default().bg(self.theme.selection_style.bg.unwrap_or(Color::DarkGray)),
-        );
-
-        let mut state = self.switcher.list_state;
-        StatefulWidget::render(list, layout[1], buf, &mut state);
+        let footer = Paragraph::new(Line::from(footer_spans));
+        for x in layout[3].left()..layout[3].right() {
+            buf[(x, layout[3].y)].set_style(footer_style.background);
+        }
+        footer.render(layout[3], buf);
     }
 }
 

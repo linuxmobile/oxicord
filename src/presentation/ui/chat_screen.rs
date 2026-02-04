@@ -16,7 +16,7 @@ use crate::domain::entities::{
 };
 use crate::domain::keybinding::{Action, Keybind};
 use crate::domain::ports::DirectMessageChannel;
-use crate::domain::search::{SearchKind, SearchProvider};
+use crate::domain::search::{SearchKind, SearchPrefix, SearchProvider, parse_search_query};
 use crate::infrastructure::search::{ChannelSearchProvider, DmSearchProvider, GuildSearchProvider};
 use crate::presentation::commands::{CommandRegistry, HasCommands};
 use crate::presentation::services::markdown_renderer::MarkdownRenderer;
@@ -252,7 +252,6 @@ fn render_help_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) 
 
     let inner_area = block.inner(popup_area);
     block.render(popup_area, buf);
-
 
     let v_chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -2146,19 +2145,42 @@ impl ChatScreenState {
     }
 
     fn perform_search(&mut self, query: &str) {
+        let (prefix, query) = parse_search_query(query);
         let query = query.to_string();
 
         let mut channels = Vec::new();
-        for guild in self.guilds_tree_data.guilds() {
-            if let Some(guild_channels) = self.guilds_tree_data.channels(guild.id()) {
-                for channel in guild_channels {
-                    channels.push((guild.name().to_string(), channel.clone()));
+        if matches!(
+            prefix,
+            SearchPrefix::None | SearchPrefix::Text | SearchPrefix::Voice
+        ) {
+            for guild in self.guilds_tree_data.guilds() {
+                if let Some(guild_channels) = self.guilds_tree_data.channels(guild.id()) {
+                    for channel in guild_channels {
+                        let include = match prefix {
+                            SearchPrefix::Text => !channel.kind().is_voice(),
+                            SearchPrefix::Voice => channel.kind().is_voice(),
+                            _ => true,
+                        };
+
+                        if include {
+                            channels.push((guild.name().to_string(), channel.clone()));
+                        }
+                    }
                 }
             }
         }
 
-        let dms = self.guilds_tree_data.dm_users().to_vec();
-        let guilds = self.guilds_tree_data.guilds().to_vec();
+        let dms = if matches!(prefix, SearchPrefix::None | SearchPrefix::User) {
+            self.guilds_tree_data.dm_users().to_vec()
+        } else {
+            Vec::new()
+        };
+
+        let guilds = if matches!(prefix, SearchPrefix::None | SearchPrefix::Guild) {
+            self.guilds_tree_data.guilds().to_vec()
+        } else {
+            Vec::new()
+        };
 
         let channel_provider = ChannelSearchProvider::new(channels);
         let dm_provider = DmSearchProvider::new(dms, self.use_display_name);
@@ -2167,9 +2189,18 @@ impl ChatScreenState {
         let results = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
                 let mut results = Vec::new();
-                results.extend(channel_provider.search(&query).await);
-                results.extend(dm_provider.search(&query).await);
-                results.extend(guild_provider.search(&query).await);
+                if matches!(
+                    prefix,
+                    SearchPrefix::None | SearchPrefix::Text | SearchPrefix::Voice
+                ) {
+                    results.extend(channel_provider.search(&query).await);
+                }
+                if matches!(prefix, SearchPrefix::None | SearchPrefix::User) {
+                    results.extend(dm_provider.search(&query).await);
+                }
+                if matches!(prefix, SearchPrefix::None | SearchPrefix::Guild) {
+                    results.extend(guild_provider.search(&query).await);
+                }
                 results.sort_by(|a, b| b.score.cmp(&a.score));
                 results
             })
@@ -2185,7 +2216,7 @@ impl ChatScreenState {
                     return result;
                 }
             }
-            SearchKind::Channel | SearchKind::Forum | SearchKind::Thread => {
+            SearchKind::Channel | SearchKind::Forum | SearchKind::Thread | SearchKind::Voice => {
                 if let Ok(id) = result.id.parse::<u64>() {
                     let channel_id = ChannelId(id);
                     if let Some(result) = self.on_channel_selected(channel_id) {

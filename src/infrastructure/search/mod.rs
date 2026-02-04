@@ -66,6 +66,8 @@ impl SearchProvider for ChannelSearchProvider {
                     SearchKind::Forum
                 } else if channel.kind().is_thread() {
                     SearchKind::Thread
+                } else if channel.kind().is_voice() {
+                    SearchKind::Voice
                 } else {
                     SearchKind::Channel
                 };

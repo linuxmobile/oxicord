@@ -107,7 +107,7 @@ impl ChannelKind {
     #[must_use]
     pub const fn prefix(self) -> &'static str {
         match self {
-            Self::Voice | Self::StageVoice | Self::Lobby => "🔊",
+            Self::Voice | Self::StageVoice | Self::Lobby => "󰕾 ",
             Self::Dm | Self::GroupDm | Self::LfgGroupDm | Self::EphemeralDm => "@ ",
             Self::Category => "",
             Self::Forum | Self::Media => "󰭹 ",
@@ -525,7 +525,7 @@ mod tests {
     #[test]
     fn test_voice_channel_display() {
         let channel = Channel::new(123_u64, "Voice", ChannelKind::Voice);
-        assert_eq!(channel.display_name(), "🔊Voice");
+        assert_eq!(channel.display_name(), "󰕾 Voice");
     }
 
     #[test]
