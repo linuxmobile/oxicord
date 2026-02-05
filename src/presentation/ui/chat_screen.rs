@@ -1336,20 +1336,26 @@ impl ChatScreenState {
     }
 
     fn handle_message_input_key(&mut self, key: KeyEvent) -> ChatKeyResult {
-        if matches!(
-            self.registry.find_action(key),
-            Some(
-                Action::FocusMessages
-                    | Action::FocusGuilds
-                    | Action::FocusInput
-                    | Action::FocusNext
-                    | Action::FocusPrevious
-                    | Action::NextTab
-                    | Action::ToggleGuildsTree
-                    | Action::ToggleHelp
-                    | Action::ToggleQuickSwitcher
+        let is_text_editing = matches!(
+            key.code,
+            KeyCode::Backspace | KeyCode::Delete | KeyCode::Char('w' | 'h')
+        ) && (key.modifiers.contains(KeyModifiers::CONTROL)
+            || key.modifiers.contains(KeyModifiers::ALT));
+
+        if !is_text_editing
+            && matches!(
+                self.registry.find_action(key),
+                Some(
+                    Action::FocusMessages
+                        | Action::FocusGuilds
+                        | Action::FocusNext
+                        | Action::FocusPrevious
+                        | Action::NextTab
+                        | Action::ToggleGuildsTree
+                        | Action::ToggleQuickSwitcher
+                )
             )
-        ) {
+        {
             return ChatKeyResult::Ignored;
         }
 
@@ -3290,6 +3296,397 @@ mod tests {
         assert!(
             matches!(result, ChatKeyResult::StartTyping),
             "Character input should trigger StartTyping"
+        );
+    }
+
+    #[test]
+    fn test_i_key_types_in_input_focus() {
+        use crossterm::event::KeyModifiers;
+
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+        );
+
+        let guild = Guild::new(1_u64, "Guild A");
+        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
+        state.set_guilds(vec![guild.clone()]);
+        state.set_channels(guild.id(), vec![channel.clone()]);
+        state.on_channel_selected(channel.id());
+        state.focus_message_input();
+
+        state.message_input_state.clear();
+        let result = state.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+
+        assert!(
+            matches!(result, ChatKeyResult::StartTyping | ChatKeyResult::Ignored),
+            "Plain 'i' key should be consumed for typing, not trigger FocusInput action"
+        );
+        assert_eq!(
+            state.focus(),
+            ChatFocus::MessageInput,
+            "Focus should remain on MessageInput when typing 'i'"
+        );
+    }
+
+    #[test]
+    fn test_t_key_types_in_input_focus() {
+        use crossterm::event::KeyModifiers;
+
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+        );
+
+        let guild = Guild::new(1_u64, "Guild A");
+        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
+        state.set_guilds(vec![guild.clone()]);
+        state.set_channels(guild.id(), vec![channel.clone()]);
+        state.on_channel_selected(channel.id());
+        state.focus_message_input();
+
+        state.message_input_state.clear();
+        let result = state.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE));
+
+        assert!(
+            matches!(result, ChatKeyResult::StartTyping | ChatKeyResult::Ignored),
+            "Plain 't' key should be consumed for typing, not trigger FocusMessages action"
+        );
+        assert_eq!(
+            state.focus(),
+            ChatFocus::MessageInput,
+            "Focus should remain on MessageInput when typing 't'"
+        );
+    }
+
+    #[test]
+    fn test_ctrl_i_focuses_input_from_other_panes() {
+        use crossterm::event::KeyModifiers;
+
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+        );
+
+        let guild = Guild::new(1_u64, "Guild A");
+        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
+        state.set_guilds(vec![guild.clone()]);
+        state.set_channels(guild.id(), vec![channel.clone()]);
+        state.on_channel_selected(channel.id());
+        state.focus_messages_list();
+
+        let ctrl_i = KeyEvent::new(KeyCode::Char('i'), KeyModifiers::CONTROL);
+        let result = state.handle_key(ctrl_i);
+
+        assert_eq!(result, ChatKeyResult::Consumed, "Ctrl+i should be consumed");
+        assert_eq!(
+            state.focus(),
+            ChatFocus::MessageInput,
+            "Ctrl+i should focus the input field"
+        );
+    }
+
+    #[test]
+    fn test_ctrl_t_focuses_messages_from_input() {
+        use crossterm::event::KeyModifiers;
+
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+        );
+
+        let guild = Guild::new(1_u64, "Guild A");
+        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
+        state.set_guilds(vec![guild.clone()]);
+        state.set_channels(guild.id(), vec![channel.clone()]);
+        state.on_channel_selected(channel.id());
+        state.focus_message_input();
+
+        let ctrl_t = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
+        let result = state.handle_key(ctrl_t);
+
+        assert_eq!(result, ChatKeyResult::Consumed, "Ctrl+t should be consumed");
+        assert_eq!(
+            state.focus(),
+            ChatFocus::MessagesList,
+            "Ctrl+t should focus the messages list"
+        );
+    }
+
+    #[test]
+    fn test_alphanumeric_keys_work_in_input() {
+        use crossterm::event::KeyModifiers;
+
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+        );
+
+        let guild = Guild::new(1_u64, "Guild A");
+        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
+        state.set_guilds(vec![guild.clone()]);
+        state.set_channels(guild.id(), vec![channel.clone()]);
+        state.on_channel_selected(channel.id());
+        state.focus_message_input();
+        state.message_input_state.clear();
+
+        let test_chars = ['a', 'b', 'c', 'x', 'y', 'z', '1', '2', '3'];
+
+        for c in test_chars {
+            let result = state.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+            assert!(
+                matches!(result, ChatKeyResult::StartTyping | ChatKeyResult::Ignored),
+                "Character '{}' should be typed in input mode, not trigger actions",
+                c
+            );
+        }
+    }
+
+    #[test]
+    fn test_question_mark_types_in_input_focus() {
+        use crossterm::event::KeyModifiers;
+
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+        );
+
+        let guild = Guild::new(1_u64, "Guild A");
+        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
+        state.set_guilds(vec![guild.clone()]);
+        state.set_channels(guild.id(), vec![channel.clone()]);
+        state.on_channel_selected(channel.id());
+        state.focus_message_input();
+        state.message_input_state.clear();
+
+        let result = state.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::SHIFT));
+
+        assert!(
+            matches!(result, ChatKeyResult::StartTyping | ChatKeyResult::Ignored),
+            "Question mark should be typed in input mode, not trigger ToggleHelp"
+        );
+        assert_eq!(
+            state.focus(),
+            ChatFocus::MessageInput,
+            "Focus should remain on MessageInput when typing '?'"
+        );
+    }
+
+    #[test]
+    fn test_question_mark_toggles_help_in_messages_list() {
+        use crossterm::event::KeyModifiers;
+
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+        );
+
+        let guild = Guild::new(1_u64, "Guild A");
+        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
+        state.set_guilds(vec![guild.clone()]);
+        state.set_channels(guild.id(), vec![channel.clone()]);
+        state.on_channel_selected(channel.id());
+        state.focus_messages_list();
+
+        assert!(!state.show_help, "Help should not be shown initially");
+
+        let result = state.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::SHIFT));
+
+        assert!(
+            matches!(result, ChatKeyResult::ToggleHelp),
+            "Question mark should toggle help when not in input mode"
+        );
+        assert!(state.show_help, "Help should be shown after pressing '?'");
+    }
+
+    #[test]
+    fn test_question_mark_toggles_help_in_guilds_tree() {
+        use crossterm::event::KeyModifiers;
+
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+        );
+
+        let guild = Guild::new(1_u64, "Guild A");
+        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
+        state.set_guilds(vec![guild.clone()]);
+        state.set_channels(guild.id(), vec![channel.clone()]);
+        state.on_channel_selected(channel.id());
+        state.focus_guilds_tree();
+
+        assert!(!state.show_help, "Help should not be shown initially");
+
+        let result = state.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::SHIFT));
+
+        assert!(
+            matches!(result, ChatKeyResult::ToggleHelp),
+            "Question mark should toggle help in GuildsTree focus"
+        );
+        assert!(state.show_help, "Help should be shown after pressing '?'");
+    }
+
+    #[test]
+    fn test_i_key_focuses_input_from_messages_list() {
+        use crossterm::event::KeyModifiers;
+
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+        );
+
+        let guild = Guild::new(1_u64, "Guild A");
+        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
+        state.set_guilds(vec![guild.clone()]);
+        state.set_channels(guild.id(), vec![channel.clone()]);
+        state.on_channel_selected(channel.id());
+        state.focus_messages_list();
+
+        assert_eq!(state.focus(), ChatFocus::MessagesList);
+
+        let result = state.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+
+        assert_eq!(
+            result,
+            ChatKeyResult::Consumed,
+            "'i' should be consumed when focusing input"
+        );
+        assert_eq!(
+            state.focus(),
+            ChatFocus::MessageInput,
+            "'i' should focus the input field from MessagesList"
+        );
+    }
+
+    #[test]
+    fn test_i_key_focuses_input_from_guilds_tree() {
+        use crossterm::event::KeyModifiers;
+
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+        );
+
+        let guild = Guild::new(1_u64, "Guild A");
+        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
+        state.set_guilds(vec![guild.clone()]);
+        state.set_channels(guild.id(), vec![channel.clone()]);
+        state.on_channel_selected(channel.id());
+        state.focus_guilds_tree();
+
+        assert_eq!(state.focus(), ChatFocus::GuildsTree);
+
+        let result = state.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+
+        assert_eq!(
+            result,
+            ChatKeyResult::Consumed,
+            "'i' should be consumed when focusing input"
+        );
+        assert_eq!(
+            state.focus(),
+            ChatFocus::MessageInput,
+            "'i' should focus the input field from GuildsTree"
         );
     }
 }
