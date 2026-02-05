@@ -1103,4 +1103,66 @@ mod tests {
 
         assert_eq!(state.value(), expected);
     }
+
+    #[test_case('á', "á" ; "acute a")]
+    #[test_case('é', "é" ; "acute e")]
+    #[test_case('í', "í" ; "acute i")]
+    #[test_case('ó', "ó" ; "acute o")]
+    #[test_case('ú', "ú" ; "acute u")]
+    #[test_case('ã', "ã" ; "tilde a")]
+    #[test_case('õ', "õ" ; "tilde o")]
+    #[test_case('ñ', "ñ" ; "tilde n")]
+    #[test_case('ü', "ü" ; "umlaut u")]
+    #[test_case('ç', "ç" ; "cedilla c")]
+    #[test_case('Á', "Á" ; "uppercase acute A")]
+    #[test_case('É', "É" ; "uppercase acute E")]
+    #[test_case('Ñ', "Ñ" ; "uppercase tilde N")]
+    fn test_unicode_character_input(char_input: char, expected: &str) {
+        let mut state = MessageInputState::new();
+        let registry = CommandRegistry::default();
+        state.set_has_channel(true);
+        state.set_focused(true);
+
+        let modifiers = if char_input.is_uppercase() {
+            KeyModifiers::SHIFT
+        } else {
+            KeyModifiers::NONE
+        };
+
+        state.handle_key(
+            KeyEvent::new(KeyCode::Char(char_input), modifiers),
+            &registry,
+        );
+
+        assert_eq!(
+            state.value(),
+            expected,
+            "Unicode character '{}' should be correctly captured",
+            char_input
+        );
+    }
+
+    #[test]
+    fn test_unicode_text_input() {
+        let mut state = MessageInputState::new();
+        let registry = CommandRegistry::default();
+        state.set_has_channel(true);
+        state.set_focused(true);
+
+        let text = "¡Hola, señor! ¿Cómo está? Café";
+        for ch in text.chars() {
+            let modifiers = if ch.is_uppercase() {
+                KeyModifiers::SHIFT
+            } else {
+                KeyModifiers::NONE
+            };
+            state.handle_key(KeyEvent::new(KeyCode::Char(ch), modifiers), &registry);
+        }
+
+        assert_eq!(
+            state.value(),
+            text,
+            "Full Unicode text should be correctly captured"
+        );
+    }
 }

@@ -118,13 +118,10 @@ async fn main() -> Result<()> {
 
     let mut terminal = ratatui::init();
 
-    // Enable Bracketed Paste Mode to properly handle pasted text
-    // This prevents pasted text with newlines from automatically sending messages
     let _ = crossterm::execute!(std::io::stdout(), crossterm::event::EnableBracketedPaste);
 
     let result = app.run(&mut terminal, external_token).await;
 
-    // cleanup is handled by ratatui::restore() but we should also disable bracketed paste
     let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableBracketedPaste);
     ratatui::restore();
 
