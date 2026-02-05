@@ -1336,6 +1336,23 @@ impl ChatScreenState {
     }
 
     fn handle_message_input_key(&mut self, key: KeyEvent) -> ChatKeyResult {
+        if matches!(
+            self.registry.find_action(key),
+            Some(
+                Action::FocusMessages
+                    | Action::FocusGuilds
+                    | Action::FocusInput
+                    | Action::FocusNext
+                    | Action::FocusPrevious
+                    | Action::NextTab
+                    | Action::ToggleGuildsTree
+                    | Action::ToggleHelp
+                    | Action::ToggleQuickSwitcher
+            )
+        ) {
+            return ChatKeyResult::Ignored;
+        }
+
         if self.registry.find_action(key) == Some(Action::ToggleFileExplorer) {
             self.toggle_file_explorer();
             return ChatKeyResult::Consumed;
@@ -2598,6 +2615,9 @@ impl ChatScreenState {
         if let Some(key) = registry.get_first(Action::SendMessage) {
             commands.push(Keybind::new(key, Action::SendMessage, "Send"));
         }
+        if let Some(key) = registry.get_first(Action::FocusMessages) {
+            commands.push(Keybind::new(key, Action::FocusMessages, "Msgs"));
+        }
         if let Some(key) = registry.get_first(Action::OpenEditor) {
             commands.push(Keybind::new(key, Action::OpenEditor, "Editor"));
         }
@@ -3122,6 +3142,154 @@ mod tests {
             state.focus(),
             ChatFocus::GuildsTree,
             "Should return focus to Guilds Tree on Cancel from empty selection"
+        );
+    }
+
+    #[test]
+    fn test_ctrl_t_propagates_from_message_input() {
+        use crossterm::event::KeyModifiers;
+
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+        );
+
+        let guild = Guild::new(1_u64, "Guild A");
+        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
+        state.set_guilds(vec![guild.clone()]);
+        state.set_channels(guild.id(), vec![channel.clone()]);
+        state.on_channel_selected(channel.id());
+
+        state.focus_message_input();
+        assert_eq!(state.focus(), ChatFocus::MessageInput);
+
+        let text = "Draft message";
+        state.message_input_state.set_content(text);
+        assert_eq!(state.message_input_state.value(), text);
+
+        let ctrl_t = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
+        let result = state.handle_key(ctrl_t);
+
+        assert_eq!(result, ChatKeyResult::Consumed);
+        assert_eq!(
+            state.focus(),
+            ChatFocus::MessagesList,
+            "Ctrl+T should switch focus from input to messages list"
+        );
+
+        assert_eq!(
+            state.message_input_state.value(),
+            text,
+            "Text buffer should be preserved when switching focus"
+        );
+    }
+
+    #[test]
+    fn test_focus_g_preserves_input_buffer() {
+        use crossterm::event::KeyModifiers;
+
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+        );
+
+        let guild = Guild::new(1_u64, "Guild A");
+        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
+        state.set_guilds(vec![guild.clone()]);
+        state.set_channels(guild.id(), vec![channel.clone()]);
+        state.on_channel_selected(channel.id());
+
+        state.focus_message_input();
+        let text = "Important draft";
+        state.message_input_state.set_content(text);
+
+        let ctrl_g = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
+        let result = state.handle_key(ctrl_g);
+
+        assert_eq!(result, ChatKeyResult::Consumed);
+        assert_eq!(state.focus(), ChatFocus::GuildsTree);
+        assert_eq!(
+            state.message_input_state.value(),
+            text,
+            "Text buffer should be preserved when switching to guilds tree"
+        );
+    }
+
+    #[test]
+    fn test_message_input_shows_focus_messages_command() {
+        let state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+        );
+
+        let commands = state.get_message_input_commands(&state.registry);
+
+        assert!(
+            commands.iter().any(|k| k.action == Action::FocusMessages),
+            "Message input commands should include FocusMessages (Ctrl+T)"
+        );
+    }
+
+    #[test]
+    fn test_character_input_not_blocked_by_global_shortcuts() {
+        use crossterm::event::KeyModifiers;
+
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+        );
+
+        let guild = Guild::new(1_u64, "Guild A");
+        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
+        state.set_guilds(vec![guild.clone()]);
+        state.set_channels(guild.id(), vec![channel.clone()]);
+        state.on_channel_selected(channel.id());
+        state.focus_message_input();
+
+        let result = state.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE));
+        assert!(
+            matches!(result, ChatKeyResult::StartTyping),
+            "Character input should trigger StartTyping"
         );
     }
 }
