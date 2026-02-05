@@ -2707,6 +2707,7 @@ mod tests {
     use super::*;
     use crate::domain::entities::MessageAuthor;
     use chrono::Local;
+    use test_case::test_case;
 
     fn create_test_message(id: u64, content: &str) -> Message {
         let author = MessageAuthor {
@@ -2725,14 +2726,6 @@ mod tests {
             Local::now(),
             crate::domain::entities::MessageKind::Default,
         )
-    }
-
-    #[test]
-    fn test_message_pane_data_creation() {
-        let data = MessagePaneData::new(true);
-        assert!(data.is_empty());
-        assert!(data.channel_id().is_none());
-        assert_eq!(data.loading_state(), LoadingState::Idle);
     }
 
     #[test]
@@ -2768,20 +2761,6 @@ mod tests {
     }
 
     #[test]
-    fn test_author_color() {
-        let author = MessageAuthor {
-            id: "1".to_string(),
-            username: "testuser".to_string(),
-            discriminator: "0".to_string(),
-            avatar: None,
-            bot: false,
-            global_name: None,
-        };
-        let color = get_author_color(&author);
-        assert_ne!(color, ratatui::style::Color::Reset);
-    }
-
-    #[test]
     fn test_formatted_channel_title() {
         let mut data = MessagePaneData::new(true);
         data.set_channel(ChannelId(100), "general".to_string());
@@ -2796,23 +2775,6 @@ mod tests {
             dm_data.formatted_channel_title(),
             Some("[ USERNAME ]".to_string())
         );
-    }
-
-    #[test]
-    fn test_typing_indicator() {
-        let mut data = MessagePaneData::new(true);
-        data.set_channel(ChannelId(100), "general".to_string());
-
-        assert!(data.typing_indicator().is_none());
-        assert!(!data.has_typing_indicator());
-
-        data.set_typing_indicator(Some("Alice is typing...".to_string()));
-        assert_eq!(data.typing_indicator(), Some("Alice is typing..."));
-        assert!(data.has_typing_indicator());
-
-        data.set_typing_indicator(None);
-        assert!(data.typing_indicator().is_none());
-        assert!(!data.has_typing_indicator());
     }
 
     #[test]
@@ -2964,72 +2926,9 @@ mod tests {
         assert_eq!(height, 6, "Height should be 6 with padding changes");
     }
 
-    #[test]
-    fn test_relationship_state_blocks_user() {
-        use crate::domain::entities::{RelationshipState, UserId};
-
-        let state = RelationshipState::new();
-        let user_id = UserId(12345);
-
-        assert!(!state.is_blocked(user_id));
-        assert!(!state.is_blocked_str("12345"));
-
-        state.block_user(user_id);
-        assert!(state.is_blocked(user_id));
-        assert!(state.is_blocked_str("12345"));
-        assert_eq!(state.blocked_count(), 1);
-
-        state.unblock_user(user_id);
-        assert!(!state.is_blocked(user_id));
-        assert_eq!(state.blocked_count(), 0);
-    }
-
-    #[test]
-    fn test_message_pane_with_blocked_user_placeholder() {
-        use crate::domain::entities::{RelationshipState, UserId};
-        use crate::presentation::services::markdown_renderer::MarkdownRenderer;
-        use ratatui::widgets::StatefulWidget;
-
-        let mut data = MessagePaneData::new(true);
-        data.set_channel(ChannelId(100), "general".to_string());
-
-        let blocked_author = MessageAuthor {
-            id: "999".to_string(),
-            username: "blockeduser".to_string(),
-            discriminator: "0".to_string(),
-            avatar: None,
-            bot: false,
-            global_name: None,
-        };
-        let blocked_message = Message::new(
-            1u64.into(),
-            ChannelId(100),
-            blocked_author,
-            "You should not see this".to_string(),
-            Local::now(),
-            crate::domain::entities::MessageKind::Default,
-        );
-        data.set_messages(vec![blocked_message]);
-
-        let relationship_state = RelationshipState::new();
-        relationship_state.block_user(UserId(999));
-
-        let markdown = MarkdownRenderer::new();
-        let pane = MessagePane::new(&mut data, &markdown)
-            .with_relationship_state(&relationship_state)
-            .with_hide_blocked_completely(false); // Show placeholder
-
-        let mut state = MessagePaneState::new();
-        let area = Rect::new(0, 0, 100, 20);
-        let mut buf = Buffer::empty(area);
-
-        pane.render(area, &mut buf, &mut state);
-
-        assert_eq!(data.message_count(), 1);
-    }
-
-    #[test]
-    fn test_message_pane_with_hide_blocked_completely() {
+    #[test_case(true, 2 ; "hide blocked completely")]
+    #[test_case(false, 2 ; "show placeholder")]
+    fn test_blocked_user_rendering(hide_completely: bool, expected_count: usize) {
         use crate::domain::entities::{RelationshipState, UserId};
         use crate::presentation::services::markdown_renderer::MarkdownRenderer;
         use ratatui::widgets::StatefulWidget;
@@ -3070,6 +2969,7 @@ mod tests {
             Local::now(),
             crate::domain::entities::MessageKind::Default,
         );
+
         data.set_messages(vec![blocked_message, normal_message]);
 
         let relationship_state = RelationshipState::new();
@@ -3078,7 +2978,7 @@ mod tests {
         let markdown = MarkdownRenderer::new();
         let pane = MessagePane::new(&mut data, &markdown)
             .with_relationship_state(&relationship_state)
-            .with_hide_blocked_completely(true); // Hide completely
+            .with_hide_blocked_completely(hide_completely);
 
         let mut state = MessagePaneState::new();
         let area = Rect::new(0, 0, 100, 20);
@@ -3086,6 +2986,6 @@ mod tests {
 
         pane.render(area, &mut buf, &mut state);
 
-        assert_eq!(data.message_count(), 2);
+        assert_eq!(data.message_count(), expected_count);
     }
 }

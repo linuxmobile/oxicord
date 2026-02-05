@@ -482,60 +482,19 @@ pub trait HasCommands {
 mod tests {
     use super::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use test_case::test_case;
 
-    #[test]
-    fn test_parse_simple_char() {
+    #[test_case("a", KeyCode::Char('a'), KeyModifiers::NONE ; "simple char")]
+    #[test_case("A", KeyCode::Char('A'), KeyModifiers::SHIFT ; "uppercase char")]
+    #[test_case("Ctrl+c", KeyCode::Char('c'), KeyModifiers::CONTROL ; "ctrl char")]
+    #[test_case("Shift+a", KeyCode::Char('A'), KeyModifiers::SHIFT ; "shift char")]
+    #[test_case("+", KeyCode::Char('+'), KeyModifiers::NONE ; "plus key")]
+    #[test_case("Ctrl++", KeyCode::Char('+'), KeyModifiers::CONTROL ; "ctrl plus")]
+    #[test_case("F1", KeyCode::F(1), KeyModifiers::NONE ; "function key")]
+    fn test_key_parsing(input: &str, expected_code: KeyCode, expected_modifiers: KeyModifiers) {
         assert_eq!(
-            parse_key_event("a"),
-            Some(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE))
-        );
-    }
-
-    #[test]
-    fn test_parse_uppercase_char() {
-        assert_eq!(
-            parse_key_event("A"),
-            Some(KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT))
-        );
-    }
-
-    #[test]
-    fn test_parse_ctrl_char() {
-        assert_eq!(
-            parse_key_event("Ctrl+c"),
-            Some(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
-        );
-    }
-
-    #[test]
-    fn test_parse_shift_char() {
-        assert_eq!(
-            parse_key_event("Shift+a"),
-            Some(KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT))
-        );
-    }
-
-    #[test]
-    fn test_parse_plus_key() {
-        assert_eq!(
-            parse_key_event("+"),
-            Some(KeyEvent::new(KeyCode::Char('+'), KeyModifiers::NONE))
-        );
-    }
-
-    #[test]
-    fn test_parse_ctrl_plus() {
-        assert_eq!(
-            parse_key_event("Ctrl++"),
-            Some(KeyEvent::new(KeyCode::Char('+'), KeyModifiers::CONTROL))
-        );
-    }
-
-    #[test]
-    fn test_parse_function_key() {
-        assert_eq!(
-            parse_key_event("F1"),
-            Some(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE))
+            parse_key_event(input),
+            Some(KeyEvent::new(expected_code, expected_modifiers))
         );
     }
 }

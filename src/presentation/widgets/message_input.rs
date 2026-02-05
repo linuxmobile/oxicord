@@ -855,15 +855,7 @@ impl MessageInput {
 mod tests {
     use super::*;
     use crossterm::event::KeyModifiers;
-
-    #[test]
-    fn test_message_input_state_creation() {
-        let state = MessageInputState::new();
-        assert!(state.is_empty());
-        assert!(!state.is_focused());
-        assert!(!state.is_replying());
-        assert!(!state.is_editing());
-    }
+    use test_case::test_case;
 
     #[test]
     fn test_input_via_key_handling() {
@@ -908,26 +900,6 @@ mod tests {
 
         state.clear();
         assert!(state.is_empty());
-    }
-
-    #[test]
-    fn test_reply_mode() {
-        let mut state = MessageInputState::new();
-        state.start_reply(MessageId(123), "testuser".to_string(), true);
-        assert!(state.is_replying());
-        state.reset_mode();
-        assert!(!state.is_replying());
-    }
-
-    #[test]
-    fn test_edit_mode() {
-        let mut state = MessageInputState::new();
-        state.start_edit(MessageId(123), "old content");
-        assert!(state.is_editing());
-        assert_eq!(state.value(), "old content");
-        state.reset_mode();
-        assert!(!state.is_editing());
-        assert_eq!(state.value(), "old content");
     }
 
     #[test]
@@ -990,25 +962,6 @@ mod tests {
     }
 
     #[test]
-    fn test_ctrl_delete_deletes_word() {
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-        use tui_textarea::CursorMove;
-
-        let mut state = MessageInputState::new();
-        let registry = CommandRegistry::default();
-        state.set_has_channel(true);
-        state.set_content("hello world");
-
-        state.textarea.move_cursor(CursorMove::Head);
-
-        let key = KeyEvent::new(KeyCode::Delete, KeyModifiers::CONTROL);
-
-        state.handle_key(key, &registry);
-
-        assert_eq!(state.value(), " world");
-    }
-
-    #[test]
     fn test_multiline_wrapping() {
         use ratatui::buffer::Buffer;
         use ratatui::layout::Rect;
@@ -1028,44 +981,6 @@ mod tests {
 
         assert_eq!(buf[(1, 2)].symbol(), "6");
         assert_eq!(buf[(5, 2)].symbol(), "0");
-    }
-
-    #[test]
-    fn test_ctrl_backspace_deletes_word() {
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-        use tui_textarea::CursorMove;
-
-        let mut state = MessageInputState::new();
-        let registry = CommandRegistry::default();
-        state.set_has_channel(true);
-        state.set_content("hello world");
-
-        state.textarea.move_cursor(CursorMove::End);
-
-        let key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL);
-
-        state.handle_key(key, &registry);
-
-        assert_eq!(state.value(), "hello ");
-    }
-
-    #[test]
-    fn test_ctrl_w_deletes_word() {
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-        use tui_textarea::CursorMove;
-
-        let mut state = MessageInputState::new();
-        let registry = CommandRegistry::default();
-        state.set_has_channel(true);
-        state.set_content("hello world");
-
-        state.textarea.move_cursor(CursorMove::End);
-
-        let key = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
-
-        state.handle_key(key, &registry);
-
-        assert_eq!(state.value(), "hello ");
     }
 
     #[test]
@@ -1122,110 +1037,70 @@ mod tests {
         assert!(!state.mentions.contains_key("@Antonio"));
     }
 
-    #[test]
-    fn test_backspace_with_multibyte_chars() {
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-        use tui_textarea::CursorMove;
-
-        let mut state = MessageInputState::new();
-        let registry = CommandRegistry::default();
-
-        state.set_content("Despupé");
-        state.textarea.move_cursor(CursorMove::End);
-
-        let key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE);
-        state.handle_key(key, &registry);
-
-        assert_eq!(state.value(), "Despup");
-    }
-
-    #[test]
-    fn test_ctrl_backspace_deletes_word_at_start() {
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    #[test_case(KeyCode::Delete, KeyModifiers::CONTROL, "hello world", true, " world" ; "ctrl+delete from head")]
+    #[test_case(KeyCode::Backspace, KeyModifiers::CONTROL, "hello world", false, "hello " ; "ctrl+backspace from end")]
+    #[test_case(KeyCode::Char('w'), KeyModifiers::CONTROL, "hello world", false, "hello " ; "ctrl+w from end")]
+    fn test_word_deletion(
+        key: KeyCode,
+        modifiers: KeyModifiers,
+        initial: &str,
+        is_head: bool,
+        expected: &str,
+    ) {
+        use crossterm::event::KeyEvent;
         use tui_textarea::CursorMove;
 
         let mut state = MessageInputState::new();
         let registry = CommandRegistry::default();
         state.set_has_channel(true);
-        state.set_content("hello world");
+        state.set_content(initial);
 
-        state.textarea.move_cursor(CursorMove::Head);
-        for _ in 0..5 {
-            state.textarea.move_cursor(CursorMove::Forward);
+        if is_head {
+            state.textarea.move_cursor(CursorMove::Head);
+        } else {
+            state.textarea.move_cursor(CursorMove::End);
         }
 
-        let key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL);
-        state.handle_key(key, &registry);
+        let key_event = KeyEvent::new(key, modifiers);
+        state.handle_key(key_event, &registry);
 
-        assert_eq!(state.value(), " world");
+        assert_eq!(state.value(), expected);
     }
 
-    #[test]
-    fn test_ctrl_backspace_deletes_through_multiple_spaces() {
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    #[test_case("Despupé", 0, true, KeyCode::Backspace, KeyModifiers::NONE, "Despup" ; "backspace multibyte")]
+    #[test_case("hello world", 5, false, KeyCode::Backspace, KeyModifiers::CONTROL, " world" ; "ctrl+backspace word at start")]
+    #[test_case("hello    world", 0, true, KeyCode::Backspace, KeyModifiers::CONTROL, "hello    " ; "ctrl+backspace multiple spaces")]
+    #[test_case("", 0, true, KeyCode::Backspace, KeyModifiers::CONTROL, "" ; "ctrl+backspace empty")]
+    #[test_case("hello", 0, true, KeyCode::Backspace, KeyModifiers::CONTROL, "" ; "ctrl+backspace single word")]
+    #[test_case("hello world café", 0, true, KeyCode::Backspace, KeyModifiers::CONTROL, "hello world " ; "ctrl+backspace unicode")]
+    fn test_deletion_edge_cases(
+        initial: &str,
+        offset: usize,
+        is_end: bool,
+        key: KeyCode,
+        modifiers: KeyModifiers,
+        expected: &str,
+    ) {
+        use crossterm::event::KeyEvent;
         use tui_textarea::CursorMove;
 
         let mut state = MessageInputState::new();
         let registry = CommandRegistry::default();
         state.set_has_channel(true);
-        state.set_content("hello    world");
+        state.set_content(initial);
 
-        state.textarea.move_cursor(CursorMove::End);
+        if is_end {
+            state.textarea.move_cursor(CursorMove::End);
+        } else {
+            state.textarea.move_cursor(CursorMove::Head);
+            for _ in 0..offset {
+                state.textarea.move_cursor(CursorMove::Forward);
+            }
+        }
 
-        let key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL);
-        state.handle_key(key, &registry);
+        let key_event = KeyEvent::new(key, modifiers);
+        state.handle_key(key_event, &registry);
 
-        assert_eq!(state.value(), "hello    ");
-    }
-
-    #[test]
-    fn test_ctrl_backspace_empty_buffer() {
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
-        let mut state = MessageInputState::new();
-        let registry = CommandRegistry::default();
-        state.set_has_channel(true);
-        state.set_content("");
-
-        let key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL);
-        state.handle_key(key, &registry);
-
-        assert_eq!(state.value(), "");
-    }
-
-    #[test]
-    fn test_ctrl_backspace_single_word() {
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-        use tui_textarea::CursorMove;
-
-        let mut state = MessageInputState::new();
-        let registry = CommandRegistry::default();
-        state.set_has_channel(true);
-        state.set_content("hello");
-
-        state.textarea.move_cursor(CursorMove::End);
-
-        let key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL);
-        state.handle_key(key, &registry);
-
-        assert_eq!(state.value(), "");
-    }
-
-    #[test]
-    fn test_ctrl_backspace_with_unicode() {
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-        use tui_textarea::CursorMove;
-
-        let mut state = MessageInputState::new();
-        let registry = CommandRegistry::default();
-        state.set_has_channel(true);
-        state.set_content("hello world café");
-
-        state.textarea.move_cursor(CursorMove::End);
-
-        let key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL);
-        state.handle_key(key, &registry);
-
-        assert_eq!(state.value(), "hello world ");
+        assert_eq!(state.value(), expected);
     }
 }

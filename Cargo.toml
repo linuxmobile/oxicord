@@ -79,6 +79,7 @@ ratatui-image = { version = "10.0.3", features = ["crossterm"], default-features
 [dev-dependencies]
 tokio-test = "0.4"
 mockall = "0.14"
+test-case = "3.3.1"
 
 [profile.dev]
 opt-level = 0

@@ -91,7 +91,7 @@ impl ImageLoader {
     /// Returns error if disk cache or HTTP client cannot be created.
     pub fn new(
         config: ImageLoaderConfig,
-        event_tx: mpsc::UnboundedSender<ImageLoadedEvent>,
+        event_tx: &mpsc::UnboundedSender<ImageLoadedEvent>,
         disk_cache: Arc<DiskImageCache>,
     ) -> CacheResult<Self> {
         let memory_cache = Arc::new(MemoryImageCache::new(config.memory_cache_size));
@@ -197,7 +197,7 @@ impl ImageLoader {
         event_tx: mpsc::UnboundedSender<ImageLoadedEvent>,
     ) -> CacheResult<Self> {
         let disk_cache = Arc::new(DiskImageCache::default_location().await?);
-        Self::new(ImageLoaderConfig::default(), event_tx, disk_cache)
+        Self::new(ImageLoaderConfig::default(), &event_tx, disk_cache)
     }
 
     /// Checks memory cache synchronously (non-blocking peek).
@@ -522,7 +522,7 @@ mod tests {
         let disk_cache =
             Arc::new(DiskImageCache::new(temp_dir.path().to_path_buf(), 1024 * 1024).await?);
 
-        let loader = ImageLoader::new(ImageLoaderConfig::default(), tx, disk_cache);
+        let loader = ImageLoader::new(ImageLoaderConfig::default(), &tx, disk_cache);
         assert!(loader.is_ok());
         Ok(())
     }
@@ -533,8 +533,7 @@ mod tests {
         let temp_dir = tempfile::TempDir::new()?;
         let disk_cache =
             Arc::new(DiskImageCache::new(temp_dir.path().to_path_buf(), 1024 * 1024).await?);
-
-        let loader = ImageLoader::new(ImageLoaderConfig::default(), tx, disk_cache)?;
+        let loader = ImageLoader::new(ImageLoaderConfig::default(), &tx, disk_cache)?;
 
         assert_eq!(loader.pending_count().await, 0);
         Ok(())

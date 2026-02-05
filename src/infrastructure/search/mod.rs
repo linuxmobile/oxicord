@@ -91,9 +91,7 @@ impl SearchProvider for ChannelSearchProvider {
                         }
                     }
 
-                    if hits_name {
-                        c / 2
-                    } else if channel.kind().is_thread() {
+                    if hits_name || channel.kind().is_thread() {
                         c / 2
                     } else {
                         c / 10
