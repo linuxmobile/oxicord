@@ -106,6 +106,10 @@ impl GatewayCodec {
 
             self.decompressed_buffer.truncate(total_out);
 
+            if total_out == self.decompressed_buffer.capacity() {
+                continue;
+            }
+
             match status {
                 Status::Ok | Status::BufError => {
                     if total_in >= self.compressed_buffer.len() {
@@ -1098,6 +1102,9 @@ impl EventParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flate2::Compress;
+    use flate2::Compression;
+    use flate2::FlushCompress;
 
     #[test]
     fn test_codec_incomplete_message() {
@@ -1116,9 +1123,63 @@ mod tests {
     #[test]
     fn test_codec_reset() {
         let mut codec = GatewayCodec::new();
-        codec.compressed_buffer.extend_from_slice(&[1, 2, 3]);
+        let compressed = {
+            let mut encoder = Compress::new(Compression::default(), true);
+            let mut out = Vec::new();
+            encoder
+                .compress(b"test", &mut out, FlushCompress::Sync)
+                .unwrap();
+            out
+        };
+        codec.compressed_buffer.extend_from_slice(&compressed);
         codec.reset();
         assert!(codec.compressed_buffer.is_empty());
+    }
+
+    #[test]
+    fn test_codec_large_message() {
+        let mut codec = GatewayCodec::new();
+        let large_string = "a".repeat(50 * 1024);
+
+        let mut encoder = Compress::new(Compression::default(), true);
+        let mut compressed = Vec::with_capacity(large_string.len());
+        let mut out_buffer = vec![0u8; 4096];
+
+        let mut total_in = 0;
+        loop {
+            let input = &large_string.as_bytes()[total_in..];
+            let status = encoder
+                .compress(
+                    input,
+                    &mut out_buffer,
+                    if input.is_empty() {
+                        FlushCompress::Sync
+                    } else {
+                        FlushCompress::None
+                    },
+                )
+                .unwrap();
+
+            let produced = encoder.total_out() as usize - compressed.len();
+            compressed.extend_from_slice(&out_buffer[..produced]);
+
+            let consumed = encoder.total_in() as usize - total_in;
+            total_in += consumed;
+
+            if status == Status::StreamEnd || (input.is_empty() && status == Status::Ok) {
+                break;
+            }
+        }
+
+        let suffix = &compressed[compressed.len() - 4..];
+        assert_eq!(
+            suffix, ZLIB_SUFFIX,
+            "Compression did not end with ZLIB suffix"
+        );
+
+        let result = codec.decode_binary(&compressed).unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), large_string);
     }
 
     #[test]

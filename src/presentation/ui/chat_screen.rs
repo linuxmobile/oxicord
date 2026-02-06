@@ -819,7 +819,9 @@ impl ChatScreenState {
         if let Some(gid) = guild_id
             && let Some(chans) = channels
         {
-            self.set_channels(gid, chans);
+            self.raw_channels.insert(gid, chans.clone());
+            self.guilds_tree_data.set_channels(gid, chans);
+            self.recalculate_all_unread();
         }
 
         let mut restored = false;
@@ -935,25 +937,7 @@ impl ChatScreenState {
         let cached_member = self.guild_members.get(&guild_id);
         let guild_roles = self.guild_roles.get(&guild_id).map(std::vec::Vec::as_slice);
 
-        let fallback_member = if cached_member.is_none() {
-            Some(Member {
-                user: Some(self.user.clone()),
-                roles: vec![],
-                nick: None,
-                avatar: None,
-                joined_at: String::new(),
-                premium_since: None,
-                deaf: false,
-                mute: false,
-                pending: false,
-                permissions: None,
-                communication_disabled_until: None,
-            })
-        } else {
-            None
-        };
-
-        let member = cached_member.or(fallback_member.as_ref());
+        let member = cached_member;
 
         let mut visible_ids = std::collections::HashSet::new();
         for c in channels_ref {
@@ -3205,47 +3189,6 @@ mod tests {
 
         state.focus_next();
         assert_eq!(state.focus(), ChatFocus::GuildsTree);
-    }
-
-    #[test]
-    fn test_channels_visible_with_fallback_if_member_missing() {
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-        let guild_id = GuildId(1);
-        let channel =
-            Channel::new(ChannelId(10), "general", ChannelKind::Text).with_guild(guild_id);
-
-        let everyone_role = Role {
-            id: RoleId(1),
-            name: "@everyone".to_string(),
-            permissions: Permissions::VIEW_CHANNEL,
-            color: 0,
-            hoist: false,
-            icon: None,
-            unicode_emoji: None,
-            position: 0,
-            managed: false,
-            mentionable: false,
-        };
-
-        state.set_guild_data(guild_id, vec![everyone_role], vec![]);
-        state.set_channels(guild_id, vec![channel.clone()]);
-
-        assert!(state.guilds_tree_data.get_channel(channel.id()).is_some());
     }
 
     #[test]

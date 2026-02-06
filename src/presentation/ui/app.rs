@@ -56,7 +56,7 @@ enum AppState {
 }
 
 enum CurrentScreen {
-    Login(LoginScreen),
+    Login(Box<LoginScreen>),
     Splash(SplashScreen),
     Chat(Box<ChatScreenState>),
 }
@@ -217,7 +217,7 @@ impl App {
 
         Self {
             state: AppState::Login,
-            screen: CurrentScreen::Login(LoginScreen::new().with_theme(config.theme)),
+            screen: CurrentScreen::Login(Box::new(LoginScreen::new().with_theme(config.theme))),
             login_use_case,
             resolve_token_use_case,
             command_tx,
@@ -493,7 +493,7 @@ impl App {
     fn render(&mut self, frame: &mut Frame) {
         match &mut self.screen {
             CurrentScreen::Login(screen) => {
-                frame.render_widget(&*screen, frame.area());
+                frame.render_widget(&**screen, frame.area());
             }
             CurrentScreen::Splash(screen) => {
                 frame.render_widget(screen, frame.area());
@@ -1834,7 +1834,7 @@ impl App {
 
     fn transition_to_login(&mut self) {
         self.state = AppState::Login;
-        self.screen = CurrentScreen::Login(LoginScreen::new().with_theme(self.theme));
+        self.screen = CurrentScreen::Login(Box::new(LoginScreen::new().with_theme(self.theme)));
         self.current_token = None;
         self.gateway_ready = false;
         self.disconnect_gateway();

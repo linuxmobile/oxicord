@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use super::codec::{EventParser, GatewayCodec};
 use super::constants::{
@@ -116,12 +116,18 @@ impl GatewayConnection for WebSocketConnection {
             match reader.next().await {
                 Some(Ok(WsMessage::Binary(data))) => {
                     if let Some(json) = self.codec.decode_binary(&data)? {
-                        let message = EventParser::parse_message(&json)?;
+                        let message = EventParser::parse_message(&json).map_err(|e| {
+                            error!(error = %e, "Failed to parse decompressed message. Snippet: {:.200}", json);
+                            e
+                        })?;
                         return Ok(Some(message));
                     }
                 }
                 Some(Ok(WsMessage::Text(text))) => {
-                    let message = EventParser::parse_message(&text)?;
+                    let message = EventParser::parse_message(&text).map_err(|e| {
+                        error!(error = %e, "Failed to parse text message. Snippet: {:.200}", text);
+                        e
+                    })?;
                     return Ok(Some(message));
                 }
                 Some(Ok(WsMessage::Close(frame))) => {
