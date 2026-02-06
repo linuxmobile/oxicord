@@ -41,26 +41,11 @@ pub struct FooterBarStyle {
 impl FooterBarStyle {
     #[must_use]
     pub fn from_theme(theme: &Theme) -> Self {
-        use crate::presentation::theme::adapter::ColorConverter;
-
-        let accent = theme.accent;
-        let accent_hsl = ColorConverter::to_hsl(accent);
-
-        let mut key_bg_hsl = accent_hsl;
-        key_bg_hsl.l = 0.08;
-        key_bg_hsl.s = 0.5;
-        let key_bg = ColorConverter::to_ratatui(key_bg_hsl);
-
         Self {
-            label_style: Style::default()
-                .bg(accent)
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
-            key_style: Style::default().bg(key_bg).fg(Color::White),
-            focus_indicator: Style::default()
-                .bg(key_bg)
-                .fg(accent)
-                .add_modifier(Modifier::BOLD),
+            label_style: theme.title_style.add_modifier(Modifier::BOLD),
+            key_style: theme.keybind_style,
+            focus_indicator: theme.title_style.add_modifier(Modifier::BOLD),
+            info: theme.dimmed_style,
             ..Self::default()
         }
     }

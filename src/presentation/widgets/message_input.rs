@@ -795,12 +795,14 @@ impl MessageInputStyle {
     #[must_use]
     pub fn from_theme(theme: &Theme) -> Self {
         Self {
-            border_style: Style::default().fg(Color::Gray),
+            border_style: theme.border_style,
             border_style_focused: Style::default().fg(theme.accent),
+            text_style: theme.base_style,
+            placeholder_style: theme.dimmed_style,
+            cursor_style: theme.selection_style,
             reply_indicator_style: Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::ITALIC),
-            ..Self::default()
         }
     }
 }

@@ -46,38 +46,16 @@ pub struct HeaderBarStyle {
 impl HeaderBarStyle {
     #[must_use]
     pub fn from_theme(theme: &Theme) -> Self {
-        use crate::presentation::theme::adapter::ColorConverter;
-
-        let accent = theme.accent;
-        let accent_hsl = ColorConverter::to_hsl(accent);
-
-        let mut version_bg_hsl = accent_hsl;
-        version_bg_hsl.l = 0.08;
-        version_bg_hsl.s = 0.5;
-        let version_bg = ColorConverter::to_ratatui(version_bg_hsl);
-
         Self {
             app_name: Style::default()
-                .bg(accent)
+                .bg(theme.accent)
                 .fg(Color::Black)
                 .add_modifier(Modifier::BOLD),
-            version: Style::default().bg(version_bg).fg(Color::White),
-            status_connected: Style::default()
-                .bg(Color::Green)
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
-            status_disconnected: Style::default()
-                .bg(Color::Red)
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-            status_connecting: Style::default()
-                .bg(Color::Yellow)
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
-            status_error: Style::default()
-                .bg(Color::Red)
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
+            version: theme.dimmed_style,
+            status_connected: theme.success_style.add_modifier(Modifier::BOLD),
+            status_disconnected: theme.error_style.add_modifier(Modifier::BOLD),
+            status_connecting: theme.warning_style.add_modifier(Modifier::BOLD),
+            status_error: theme.error_style.add_modifier(Modifier::BOLD),
             ..Self::default()
         }
     }

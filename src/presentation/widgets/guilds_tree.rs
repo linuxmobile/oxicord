@@ -302,7 +302,7 @@ impl GuildsTreeStyle {
     #[must_use]
     pub fn from_theme(theme: &Theme) -> Self {
         Self {
-            border_style: Style::default().fg(Color::Gray),
+            border_style: theme.border_style,
             border_style_focused: Style::default().fg(theme.accent),
             title_style: Style::default()
                 .fg(theme.accent)
@@ -311,12 +311,9 @@ impl GuildsTreeStyle {
             active_guild_style: Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
-            active_channel_style: Style::default()
-                .fg(theme.accent)
-                .bg(Color::Rgb(30, 40, 50))
-                .add_modifier(Modifier::BOLD),
+            active_channel_style: theme.selection_style.add_modifier(Modifier::BOLD),
             dm_style: Style::default().fg(theme.accent),
-            tree_guide_style: Style::default().fg(Color::Gray),
+            tree_guide_style: theme.dimmed_style,
             folder_style: Style::default().fg(theme.accent),
             mention_style: Style::default().fg(theme.accent),
             ..Self::default()

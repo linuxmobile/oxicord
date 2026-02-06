@@ -44,6 +44,15 @@ fn init_logging(config: &AppConfig) -> Result<()> {
     Ok(())
 }
 
+fn detect_light_mode() -> bool {
+    let timeout = std::time::Duration::from_millis(100);
+    if let Ok(theme) = termbg::theme(timeout) {
+        matches!(theme, termbg::Theme::Light)
+    } else {
+        false
+    }
+}
+
 fn create_app() -> Result<(App, Option<(String, TokenSource)>)> {
     let args = CliArgs::parse();
 
@@ -75,9 +84,11 @@ fn create_app() -> Result<(App, Option<(String, TokenSource)>)> {
     let discord_client = Arc::new(DiscordClient::new()?);
     let identity = discord_client.identity.clone();
     let token_storage = Arc::new(KeyringTokenStorage::new());
+    let is_light_mode = detect_light_mode();
     let theme = Theme::new(
         &config.theme.accent_color,
         config.theme.mention_color.as_deref(),
+        is_light_mode,
     );
 
     let app_config = oxicord::presentation::AppConfig {

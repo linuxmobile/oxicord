@@ -1288,7 +1288,7 @@ impl MessagePaneStyle {
         let blocked_fg = ColorConverter::to_ratatui(blocked_hsl);
 
         Self {
-            border_style: Style::default().fg(Color::Gray),
+            border_style: theme.border_style,
             border_style_focused: Style::default().fg(theme.accent),
             title_style: Style::default()
                 .fg(theme.accent)
@@ -1298,11 +1298,11 @@ impl MessagePaneStyle {
                 .add_modifier(Modifier::BOLD),
             selected_style: theme.selection_style,
             mention_style: theme.mention_style,
-            reply_style: Style::default()
-                .fg(Color::DarkGray)
-                .add_modifier(Modifier::ITALIC),
-            timestamp_style: Style::default().fg(Color::DarkGray),
-            loading_style: Style::default().fg(theme.accent),
+            reply_style: theme.dimmed_style.add_modifier(Modifier::ITALIC),
+            timestamp_style: theme.timestamp_style,
+            loading_style: theme.info_style,
+            error_style: theme.error_style,
+            empty_style: theme.dimmed_style,
             blocked_style: Style::default()
                 .fg(blocked_fg)
                 .add_modifier(Modifier::ITALIC),

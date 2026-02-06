@@ -291,18 +291,15 @@ impl<'a> QuickSwitcherWidget<'a> {
                     left_part_1.len() + left_part_2.chars().count() + left_part_3.len();
 
                 let mut spans = vec![
-                    Span::styled(left_part_1, Style::default().fg(Color::DarkGray)),
+                    Span::styled(left_part_1, self.theme.dimmed_style),
                     Span::styled(left_part_2, Style::default().fg(self.theme.accent)),
-                    Span::styled(left_part_3, Style::default().fg(Color::White)),
+                    Span::styled(left_part_3, self.theme.base_style),
                 ];
 
                 if let Some(parent) = &res.parent_name {
                     let parent_text = format!("({}) ", sanitize_channel_name(parent));
                     left_len += parent_text.len();
-                    spans.push(Span::styled(
-                        parent_text,
-                        Style::default().fg(Color::DarkGray),
-                    ));
+                    spans.push(Span::styled(parent_text, self.theme.dimmed_style));
                 }
 
                 if let Some(guild_name) = &res.guild_name {
@@ -329,9 +326,7 @@ impl<'a> QuickSwitcherWidget<'a> {
             })
             .collect();
 
-        let list = List::new(items).highlight_style(
-            Style::default().bg(self.theme.selection_style.bg.unwrap_or(Color::DarkGray)),
-        );
+        let list = List::new(items).highlight_style(self.theme.selection_style);
 
         let mut state = self.switcher.list_state;
         StatefulWidget::render(list, area, buf, &mut state);
@@ -375,8 +370,7 @@ impl Widget for QuickSwitcherWidget<'_> {
             .style(Style::default().bg(self.theme.accent).fg(Color::Black));
         search_label.render(search_layout[0], buf);
 
-        let input =
-            Paragraph::new(self.switcher.input.as_str()).style(Style::default().fg(Color::White));
+        let input = Paragraph::new(self.switcher.input.as_str()).style(self.theme.base_style);
         input.render(search_layout[2], buf);
 
         self.render_results_list(layout[1], buf);

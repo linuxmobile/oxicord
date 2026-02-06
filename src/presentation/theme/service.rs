@@ -1,4 +1,4 @@
-use super::adapter::ColorConverter;
+use super::palette::{DarkPalette, LightPalette, Palette};
 use ratatui::style::{Color, Style};
 use std::str::FromStr;
 
@@ -9,49 +9,73 @@ pub struct Theme {
     pub selection_style: Style,
     pub dimmed_style: Style,
     pub base_style: Style,
+    pub error_style: Style,
+    pub warning_style: Style,
+    pub success_style: Style,
+    pub info_style: Style,
+    pub border_style: Style,
+    pub timestamp_style: Style,
+    pub keybind_style: Style,
+    pub keybind_description_style: Style,
+    pub title_style: Style,
+    pub tab_style: Style,
+    pub tab_selected_style: Style,
+    pub statusbar_style: Style,
 }
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::new("Yellow", None)
+        Self::new("Yellow", None, false)
     }
 }
 
 impl Theme {
-    pub fn new(accent_color_str: &str, mention_color_str: Option<&str>) -> Self {
+    pub fn new(
+        accent_color_str: &str,
+        mention_color_str: Option<&str>,
+        is_light_mode: bool,
+    ) -> Self {
         let accent = parse_color(accent_color_str);
         let mention = mention_color_str.map(parse_color);
-        Self::from_color(accent, mention)
+
+        if is_light_mode {
+            Self::from_palette(&LightPalette, accent, mention)
+        } else {
+            Self::from_palette(&DarkPalette, accent, mention)
+        }
+    }
+
+    pub fn from_palette<P: Palette>(
+        palette: &P,
+        accent: Color,
+        mention_color: Option<Color>,
+    ) -> Self {
+        let mention_base = mention_color.unwrap_or(Color::Blue);
+
+        Self {
+            keybind_style: palette.keybind_style(accent),
+            keybind_description_style: palette.keybind_description_style(),
+            title_style: palette.title_style(accent),
+            tab_style: palette.tab_style(),
+            tab_selected_style: palette.tab_selected_style(),
+            statusbar_style: palette.statusbar_style(),
+            accent: palette.accent(accent),
+            mention_style: palette.mention_style(mention_base),
+            selection_style: palette.selection_style(accent),
+            dimmed_style: palette.dimmed_style(),
+            base_style: palette.base_style(),
+            error_style: palette.error_style(),
+            warning_style: palette.warning_style(),
+            success_style: palette.success_style(),
+            info_style: palette.info_style(),
+            border_style: palette.border_style(),
+            timestamp_style: palette.timestamp_style(),
+        }
     }
 
     #[must_use]
     pub fn from_color(accent: Color, mention_color: Option<Color>) -> Self {
-        let accent_hsl = ColorConverter::to_hsl(accent);
-
-        let mention_base = mention_color.unwrap_or(Color::Blue);
-        let mut mention_bg_hsl = ColorConverter::to_hsl(mention_base);
-        mention_bg_hsl.l = 0.1;
-        mention_bg_hsl.s = 0.5;
-        let mention_bg = ColorConverter::to_ratatui(mention_bg_hsl);
-
-        let mention_style = Style::default().bg(mention_bg).fg(Color::White);
-
-        let mut selection_bg_hsl = accent_hsl;
-        selection_bg_hsl.l = 0.2;
-        selection_bg_hsl.s = 0.3;
-        let selection_bg = ColorConverter::to_ratatui(selection_bg_hsl);
-
-        let selection_style = Style::default().bg(selection_bg).fg(Color::White);
-
-        let dimmed_style = Style::default().fg(Color::DarkGray);
-
-        Self {
-            accent,
-            mention_style,
-            selection_style,
-            dimmed_style,
-            base_style: Style::default().fg(Color::Reset),
-        }
+        Self::from_palette(&DarkPalette, accent, mention_color)
     }
 }
 

@@ -4,7 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Widget},
 };
@@ -227,8 +227,8 @@ impl LoginScreen {
         let inner_layout = Layout::vertical(constraints);
         let areas = inner_layout.split(inner);
 
-        let title = Paragraph::new("Enter your Discord token to login")
-            .style(Style::default().fg(Color::White));
+        let title =
+            Paragraph::new("Enter your Discord token to login").style(self.theme.base_style);
         title.render(areas[0], buf);
 
         (&self.token_input).render(areas[2], buf);
@@ -242,11 +242,8 @@ impl LoginScreen {
                 tips.push("Token seems too long");
             }
             let tip_text = format!("Tip! {}", tips.join(", "));
-            let tip_para = Paragraph::new(tip_text).style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            );
+            let tip_para = Paragraph::new(tip_text)
+                .style(self.theme.warning_style.add_modifier(Modifier::BOLD));
             tip_para.render(areas[3], buf);
         }
 
@@ -260,11 +257,11 @@ impl LoginScreen {
 
         let status = match self.state {
             LoginState::Input => Line::from(vec![
-                Span::styled("Enter: Login", Style::default().fg(Color::DarkGray)),
+                Span::styled("Enter: Login", self.theme.dimmed_style),
                 Span::raw(" | "),
-                Span::styled("Esc: Quit", Style::default().fg(Color::DarkGray)),
+                Span::styled("Esc: Quit", self.theme.dimmed_style),
                 Span::raw(" | "),
-                Span::styled("Alt+D: Clear Saved", Style::default().fg(Color::DarkGray)),
+                Span::styled("Alt+D: Clear Saved", self.theme.dimmed_style),
             ]),
             LoginState::Validating => Line::from(Span::styled(
                 "Validating token...",
@@ -276,13 +273,12 @@ impl LoginScreen {
                 let msg = self.error_message.as_deref().unwrap_or("Unknown error");
                 Line::from(Span::styled(
                     format!("Error: {msg}"),
-                    Style::default().fg(Color::Red),
+                    self.theme.error_style,
                 ))
             }
-            LoginState::Success => Line::from(Span::styled(
-                "Login successful!",
-                Style::default().fg(Color::Green),
-            )),
+            LoginState::Success => {
+                Line::from(Span::styled("Login successful!", self.theme.success_style))
+            }
         };
 
         let status_para = Paragraph::new(status).wrap(ratatui::widgets::Wrap { trim: true });
