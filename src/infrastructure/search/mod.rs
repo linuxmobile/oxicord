@@ -47,11 +47,9 @@ impl ChannelSearchProvider {
             searcher: FuzzySearcher::new(),
         }
     }
-}
 
-#[async_trait::async_trait]
-impl SearchProvider for ChannelSearchProvider {
-    async fn search(&self, query: &str) -> Vec<SearchResult> {
+    #[must_use]
+    pub fn search_sync(&self, query: &str) -> Vec<SearchResult> {
         let mut results = Vec::new();
         let query_lower = query.to_lowercase();
 
@@ -144,6 +142,13 @@ impl SearchProvider for ChannelSearchProvider {
     }
 }
 
+#[async_trait::async_trait]
+impl SearchProvider for ChannelSearchProvider {
+    async fn search(&self, query: &str) -> Vec<SearchResult> {
+        self.search_sync(query)
+    }
+}
+
 /// Search provider for Direct Messages.
 pub struct DmSearchProvider {
     dms: Vec<DirectMessageChannel>,
@@ -160,11 +165,9 @@ impl DmSearchProvider {
             use_display_name,
         }
     }
-}
 
-#[async_trait::async_trait]
-impl SearchProvider for DmSearchProvider {
-    async fn search(&self, query: &str) -> Vec<SearchResult> {
+    #[must_use]
+    pub fn search_sync(&self, query: &str) -> Vec<SearchResult> {
         let mut results = Vec::new();
         let query_lower = query.to_lowercase();
 
@@ -195,6 +198,13 @@ impl SearchProvider for DmSearchProvider {
     }
 }
 
+#[async_trait::async_trait]
+impl SearchProvider for DmSearchProvider {
+    async fn search(&self, query: &str) -> Vec<SearchResult> {
+        self.search_sync(query)
+    }
+}
+
 /// Search provider for Guilds.
 pub struct GuildSearchProvider {
     guilds: Vec<Guild>,
@@ -209,11 +219,9 @@ impl GuildSearchProvider {
             searcher: FuzzySearcher::new(),
         }
     }
-}
 
-#[async_trait::async_trait]
-impl SearchProvider for GuildSearchProvider {
-    async fn search(&self, query: &str) -> Vec<SearchResult> {
+    #[must_use]
+    pub fn search_sync(&self, query: &str) -> Vec<SearchResult> {
         let mut results = Vec::new();
 
         for guild in &self.guilds {
@@ -226,6 +234,13 @@ impl SearchProvider for GuildSearchProvider {
         }
 
         results
+    }
+}
+
+#[async_trait::async_trait]
+impl SearchProvider for GuildSearchProvider {
+    async fn search(&self, query: &str) -> Vec<SearchResult> {
+        self.search_sync(query)
     }
 }
 

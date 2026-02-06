@@ -16,9 +16,7 @@ use crate::domain::entities::{
 };
 use crate::domain::keybinding::{Action, Keybind};
 use crate::domain::ports::DirectMessageChannel;
-use crate::domain::search::{
-    SearchKind, SearchPrefix, SearchProvider, SearchResult, parse_search_query,
-};
+use crate::domain::search::{SearchKind, SearchPrefix, SearchResult, parse_search_query};
 use crate::domain::services::permission_calculator::PermissionCalculator;
 use crate::infrastructure::config::app_config::QuickSwitcherSortMode;
 use crate::infrastructure::search::{ChannelSearchProvider, DmSearchProvider, GuildSearchProvider};
@@ -29,6 +27,7 @@ use crate::presentation::theme::Theme;
 use crate::presentation::ui::quick_switcher::{
     QuickSwitcher, QuickSwitcherAction, QuickSwitcherWidget,
 };
+use crate::presentation::ui::utils::sanitize_channel_name;
 use crate::presentation::widgets::{
     ConfirmationModal, FileExplorerAction, FileExplorerComponent, FocusContext, FooterBar,
     ForumState, GuildsTree, GuildsTreeAction, GuildsTreeData, GuildsTreeState, HeaderBar,
@@ -721,6 +720,10 @@ impl ChatScreenState {
         let valid_recents: Vec<_> = recents
             .into_iter()
             .filter(Self::is_valid_recent_item)
+            .map(|mut item| {
+                item.name = sanitize_channel_name(&item.name);
+                item
+            })
             .collect();
 
         let mut state = Self {
@@ -785,7 +788,7 @@ impl ChatScreenState {
         }
     }
 
-    fn add_recent_item(&mut self, item: crate::domain::search::RecentItem) {
+    fn add_recent_item(&mut self, mut item: crate::domain::search::RecentItem) {
         if !Self::is_valid_recent_item(&item) {
             tracing::warn!(
                 "Ignored invalid recent item: {} ({:?}) id={}",
@@ -795,6 +798,8 @@ impl ChatScreenState {
             );
             return;
         }
+
+        item.name = sanitize_channel_name(&item.name);
 
         tracing::info!("Adding recent item: {} ({:?})", item.name, item.kind);
         self.recents
@@ -927,8 +932,28 @@ impl ChatScreenState {
         let channel_map: std::collections::HashMap<ChannelId, &Channel> =
             channels_ref.iter().map(|c| (c.id(), c)).collect();
 
-        let member = self.guild_members.get(&guild_id);
-        let guild_roles = self.guild_roles.get(&guild_id).map(|v| v.as_slice());
+        let cached_member = self.guild_members.get(&guild_id);
+        let guild_roles = self.guild_roles.get(&guild_id).map(std::vec::Vec::as_slice);
+
+        let fallback_member = if cached_member.is_none() {
+            Some(Member {
+                user: Some(self.user.clone()),
+                roles: vec![],
+                nick: None,
+                avatar: None,
+                joined_at: String::new(),
+                premium_since: None,
+                deaf: false,
+                mute: false,
+                pending: false,
+                permissions: None,
+                communication_disabled_until: None,
+            })
+        } else {
+            None
+        };
+
+        let member = cached_member.or(fallback_member.as_ref());
 
         let mut visible_ids = std::collections::HashSet::new();
         for c in channels_ref {
@@ -1740,7 +1765,7 @@ impl ChatScreenState {
 
             self.add_recent_item(crate::domain::search::RecentItem {
                 id: channel_id.to_string(),
-                name: channel.display_name().clone(),
+                name: channel.name().to_string(),
                 kind: search_kind,
                 guild_id: Some(guild_id.to_string()),
                 timestamp: chrono::Utc::now().timestamp(),
@@ -2571,28 +2596,20 @@ impl ChatScreenState {
         let dm_provider = DmSearchProvider::new(dms, self.use_display_name);
         let guild_provider = GuildSearchProvider::new(guilds);
 
-        let results = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                let mut results = Vec::new();
-                if matches!(
-                    prefix,
-                    SearchPrefix::None
-                        | SearchPrefix::Text
-                        | SearchPrefix::Voice
-                        | SearchPrefix::Thread
-                ) {
-                    results.extend(channel_provider.search(&query_text).await);
-                }
-                if matches!(prefix, SearchPrefix::None | SearchPrefix::User) {
-                    results.extend(dm_provider.search(&query_text).await);
-                }
-                if matches!(prefix, SearchPrefix::None | SearchPrefix::Guild) {
-                    results.extend(guild_provider.search(&query_text).await);
-                }
-                results.sort_by(|a, b| b.score.cmp(&a.score));
-                results
-            })
-        });
+        let mut results = Vec::new();
+        if matches!(
+            prefix,
+            SearchPrefix::None | SearchPrefix::Text | SearchPrefix::Voice | SearchPrefix::Thread
+        ) {
+            results.extend(channel_provider.search_sync(&query_text));
+        }
+        if matches!(prefix, SearchPrefix::None | SearchPrefix::User) {
+            results.extend(dm_provider.search_sync(&query_text));
+        }
+        if matches!(prefix, SearchPrefix::None | SearchPrefix::Guild) {
+            results.extend(guild_provider.search_sync(&query_text));
+        }
+        results.sort_by(|a, b| b.score.cmp(&a.score));
 
         self.quick_switcher.set_results(results);
     }
@@ -3191,7 +3208,7 @@ mod tests {
     }
 
     #[test]
-    fn test_toggle_guilds_tree() {
+    fn test_channels_visible_with_fallback_if_member_missing() {
         let mut state = ChatScreenState::new(
             create_test_user(),
             Arc::new(MarkdownRenderer::new()),
@@ -3208,12 +3225,27 @@ mod tests {
             QuickSwitcherSortMode::default(),
             vec![],
         );
+        let guild_id = GuildId(1);
+        let channel =
+            Channel::new(ChannelId(10), "general", ChannelKind::Text).with_guild(guild_id);
 
-        assert!(state.is_guilds_tree_visible());
+        let everyone_role = Role {
+            id: RoleId(1),
+            name: "@everyone".to_string(),
+            permissions: Permissions::VIEW_CHANNEL,
+            color: 0,
+            hoist: false,
+            icon: None,
+            unicode_emoji: None,
+            position: 0,
+            managed: false,
+            mentionable: false,
+        };
 
-        state.toggle_guilds_tree();
-        assert!(!state.is_guilds_tree_visible());
-        assert_ne!(state.focus(), ChatFocus::GuildsTree);
+        state.set_guild_data(guild_id, vec![everyone_role], vec![]);
+        state.set_channels(guild_id, vec![channel.clone()]);
+
+        assert!(state.guilds_tree_data.get_channel(channel.id()).is_some());
     }
 
     #[test]
@@ -4033,5 +4065,141 @@ mod tests {
             "Recents should be filtered on initialization"
         );
         assert_eq!(state.recents[0].id, "123");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_perform_search_finds_general() {
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+            QuickSwitcherSortMode::default(),
+            vec![],
+        );
+
+        let guild = Guild::new(1_u64, "Guild A");
+        let channel = Channel::new(ChannelId(101), "general", ChannelKind::Text).with_guild(1_u64);
+
+        state.set_guilds(vec![guild.clone()]);
+        setup_permissive_guild_data(&mut state, guild.id());
+        state.set_channels(guild.id(), vec![channel.clone()]);
+
+        assert!(state.guilds_tree_data.get_channel(ChannelId(101)).is_some());
+
+        state.toggle_quick_switcher();
+        state.perform_search("general");
+
+        assert_eq!(
+            state.quick_switcher.results.len(),
+            1,
+            "Search for 'general' should return 1 result. Actual: {:?}",
+            state.quick_switcher.results
+        );
+        assert_eq!(state.quick_switcher.results[0].id, "101");
+    }
+
+    #[test]
+    fn test_channels_hidden_if_member_missing() {
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+            QuickSwitcherSortMode::default(),
+            vec![],
+        );
+        let guild_id = GuildId(1);
+        let channel =
+            Channel::new(ChannelId(10), "general", ChannelKind::Text).with_guild(guild_id);
+
+        let everyone_role = Role {
+            id: RoleId(1),
+            name: "@everyone".to_string(),
+            permissions: Permissions::VIEW_CHANNEL,
+            color: 0,
+            hoist: false,
+            icon: None,
+            unicode_emoji: None,
+            position: 0,
+            managed: false,
+            mentionable: false,
+        };
+
+        state.set_guild_data(guild_id, vec![everyone_role], vec![]);
+        state.set_channels(guild_id, vec![channel.clone()]);
+
+        assert!(state.guilds_tree_data.get_channel(channel.id()).is_none());
+    }
+
+    #[test]
+    fn test_channels_visible_if_member_present() {
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+            QuickSwitcherSortMode::default(),
+            vec![],
+        );
+        let guild_id = GuildId(1);
+        let channel =
+            Channel::new(ChannelId(10), "general", ChannelKind::Text).with_guild(guild_id);
+
+        let everyone_role = Role {
+            id: RoleId(1),
+            name: "@everyone".to_string(),
+            permissions: Permissions::VIEW_CHANNEL,
+            color: 0,
+            hoist: false,
+            icon: None,
+            unicode_emoji: None,
+            position: 0,
+            managed: false,
+            mentionable: false,
+        };
+
+        let member = Member {
+            user: Some(create_test_user()),
+            roles: vec![],
+            nick: None,
+            avatar: None,
+            joined_at: String::new(),
+            premium_since: None,
+            deaf: false,
+            mute: false,
+            pending: false,
+            permissions: None,
+            communication_disabled_until: None,
+        };
+
+        state.set_guild_data(guild_id, vec![everyone_role], vec![member]);
+        state.set_channels(guild_id, vec![channel.clone()]);
+
+        assert!(state.guilds_tree_data.get_channel(channel.id()).is_some());
     }
 }

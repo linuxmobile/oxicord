@@ -26,6 +26,18 @@ pub fn clean_text(s: &str) -> String {
         .to_string()
 }
 
+/// Sanitizes a channel name by removing common prefixes and internal markers.
+/// This ensures we don't store or display names like "#- -general" or "##general".
+#[must_use]
+pub fn sanitize_channel_name(name: &str) -> String {
+    let cleaned = clean_text(name);
+    cleaned
+        .trim_start_matches(['#', '@', '!', '^', '󰕾', '󰭹'])
+        .trim_start_matches(['-', '|', ' '])
+        .trim()
+        .to_string()
+}
+
 const USER_PALETTE: &[Color] = &[
     Color::Red,
     Color::Green,
@@ -121,4 +133,23 @@ pub fn format_iso_timestamp(iso_str: &str) -> String {
     }
 
     iso_str.chars().take(10).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_channel_name() {
+        assert_eq!(sanitize_channel_name("general"), "general");
+        assert_eq!(sanitize_channel_name("#general"), "general");
+        assert_eq!(sanitize_channel_name("##general"), "general");
+        assert_eq!(sanitize_channel_name("#- -general"), "general");
+        assert_eq!(sanitize_channel_name(" - general"), "general");
+        assert_eq!(sanitize_channel_name("@linuxmobile"), "linuxmobile");
+        assert_eq!(sanitize_channel_name("!voice"), "voice");
+        assert_eq!(sanitize_channel_name("󰕾 voice"), "voice");
+        assert_eq!(sanitize_channel_name("󰭹 forum"), "forum");
+        assert_eq!(sanitize_channel_name("^thread"), "thread");
+    }
 }

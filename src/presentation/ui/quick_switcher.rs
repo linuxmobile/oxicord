@@ -1,7 +1,7 @@
 use crate::domain::search::{RecentItem, SearchKind, SearchResult};
 use crate::infrastructure::config::app_config::QuickSwitcherSortMode;
 use crate::presentation::theme::Theme;
-use crate::presentation::ui::utils::clean_text;
+use crate::presentation::ui::utils::sanitize_channel_name;
 use crate::presentation::widgets::FooterBarStyle;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -281,7 +281,7 @@ impl<'a> QuickSwitcherWidget<'a> {
                     SearchKind::Guild => ("(server)", ""),
                 };
 
-                let name = clean_text(&res.name);
+                let name = sanitize_channel_name(&res.name);
 
                 let left_part_1 = format!(" {type_label:<9} ");
                 let left_part_2 = format!(" {icon} ");
@@ -297,7 +297,7 @@ impl<'a> QuickSwitcherWidget<'a> {
                 ];
 
                 if let Some(parent) = &res.parent_name {
-                    let parent_text = format!("({}) ", clean_text(parent));
+                    let parent_text = format!("({}) ", sanitize_channel_name(parent));
                     left_len += parent_text.len();
                     spans.push(Span::styled(
                         parent_text,

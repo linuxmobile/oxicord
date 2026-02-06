@@ -3,6 +3,7 @@ use crate::domain::entities::{Channel, Member, Permissions, Role};
 pub struct PermissionCalculator;
 
 impl PermissionCalculator {
+    #[must_use]
     pub fn compute_permissions(
         guild_id: u64,
         channel: &Channel,
@@ -59,19 +60,18 @@ impl PermissionCalculator {
         permissions &= !role_deny;
         permissions |= role_allow;
 
-        if let Some(user) = &member.user {
-            if let Some(overwrite) = channel
+        if let Some(user) = &member.user
+            && let Some(overwrite) = channel
                 .permission_overwrites()
                 .iter()
                 .find(|o| o.id == user.id().to_string())
-                && let (Ok(allow), Ok(deny)) = (
-                    overwrite.allow.parse::<u64>(),
-                    overwrite.deny.parse::<u64>(),
-                )
-            {
-                permissions &= !Permissions::from_bits_truncate(deny);
-                permissions |= Permissions::from_bits_truncate(allow);
-            }
+            && let (Ok(allow), Ok(deny)) = (
+                overwrite.allow.parse::<u64>(),
+                overwrite.deny.parse::<u64>(),
+            )
+        {
+            permissions &= !Permissions::from_bits_truncate(deny);
+            permissions |= Permissions::from_bits_truncate(allow);
         }
 
         permissions
