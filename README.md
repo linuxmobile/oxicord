@@ -27,14 +27,14 @@ Made components optional for static builds:
 - Successfully built fully static binary on Alpine Linux
 
 3. Clipboard Rewrite
-Before: Used arboard crate (glib dependency, hard to static link)
-After: Shell command wrapper around xclip/wl-copy
+- Before: Used arboard crate (glib dependency, hard to static link)
+- After: Shell command wrapper around xclip/wl-copy
 - set_text() / get_text() for text
 - set_binary() / get_binary() for images/files
 - No compile-time dependencies, minimal runtime deps
 
 4. Conditional Compilation
-Added #[cfg(feature = "...")] throughout:
+- Added #[cfg(feature = "...")] throughout:
 - Image loading code only compiled with image feature
 - Keyring storage stub when disabled
 - Image entity stubs when disabled
@@ -76,6 +76,9 @@ Ensure you have the latest stable Rust toolchain installed. You will also need t
 - **Alpine:**
   ```bash
   doas apk add -S pkgconf chafa-dev glib-static musl-dev clang rustup libressl-dev xclip wl-clipboard
+  ```
+
+  ```bash
   rustup-init
   ```
 
@@ -89,15 +92,15 @@ cd oxicord-static
 
 - **For fully static binary with image support (chafa needed)**
 
-``bash
+```bash
 cargo build --release --no-default-features --features="image"
-``
+```
 
 - **For fully static binary without image support**
 
-``bash
-cargo build --release --no-default-features --features="image"
-``
+```bash
+cargo build --release --no-default-features
+```
 
 
 ### Configuration
