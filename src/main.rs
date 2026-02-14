@@ -62,20 +62,9 @@ fn create_app() -> Result<(App, Option<(String, TokenSource)>)> {
 
     config.merge_with_args(args);
 
-    let external_token: Option<(String, TokenSource)> =
-        if let Ok(env_token) = std::env::var("OXICORD_TOKEN") {
-            if let Some(ref token) = config.token {
-                if token == &env_token {
-                    Some((token.clone(), TokenSource::Environment))
-                } else {
-                    Some((token.clone(), TokenSource::CommandLine))
-                }
-            } else {
-                Some((env_token, TokenSource::Environment))
-            }
-        } else {
-            config.token.clone().map(|t| (t, TokenSource::CommandLine))
-        };
+    let external_token: Option<(String, TokenSource)> = std::env::var("OXICORD_TOKEN")
+        .ok()
+        .map(|token| (token, TokenSource::Environment));
 
     init_logging(&config)?;
 

@@ -56,10 +56,6 @@ impl std::fmt::Display for LogLevel {
 /// Application configuration from CLI.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppConfig {
-    /// Discord authentication token.
-    #[serde(skip)]
-    pub token: Option<String>,
-
     /// Configuration file path.
     #[serde(skip)]
     pub config: Option<PathBuf>,
@@ -261,9 +257,6 @@ use super::args::CliArgs;
 impl AppConfig {
     /// Merges CLI arguments into the configuration.
     pub fn merge_with_args(&mut self, args: CliArgs) {
-        if let Some(token) = args.token {
-            self.token = Some(token);
-        }
         if let Some(config_path) = args.config {
             self.config = Some(config_path);
         }
@@ -341,7 +334,6 @@ impl AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            token: None,
             config: None,
             log_path: None,
             log_level: LogLevel::Info,
@@ -367,10 +359,10 @@ mod tests {
     fn test_parse_config_with_new_fields() {
         let toml_content = r#"
             editor = "nvim"
-            
+
             [ui]
             enable_animations = false
-            
+
             [notifications]
             internal_notifications = false
 

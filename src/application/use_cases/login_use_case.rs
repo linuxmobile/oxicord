@@ -139,7 +139,7 @@ mod tests {
         let storage_port = Arc::new(MockTokenStorage::new());
 
         let use_case = LoginUseCase::new(auth_port, storage_port);
-        let request = LoginRequest::new(make_valid_token(), TokenSource::CommandLine);
+        let request = LoginRequest::new(make_valid_token(), TokenSource::UserInput);
 
         let result = use_case.execute(request).await;
 
@@ -153,7 +153,7 @@ mod tests {
 
         let use_case = LoginUseCase::new(auth_port, storage_port.clone());
         let request =
-            LoginRequest::new(make_valid_token(), TokenSource::CommandLine).without_persistence();
+            LoginRequest::new(make_valid_token(), TokenSource::Environment).without_persistence();
 
         let result = use_case.execute(request).await;
 

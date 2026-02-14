@@ -300,9 +300,7 @@ impl App {
             Some(TokenSource::Keyring) => {
                 matches!(self.resolve_token_use_case.execute(None).await, Ok(Some(_)))
             }
-            Some(TokenSource::CommandLine | TokenSource::Environment | TokenSource::UserInput) => {
-                true
-            }
+            Some(TokenSource::Environment | TokenSource::UserInput) => true,
             None => false,
         }
     }
