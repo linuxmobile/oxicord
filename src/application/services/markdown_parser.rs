@@ -44,13 +44,10 @@ pub fn parse_markdown(content: &str) -> Vec<MdBlock> {
     Parser::parse(content)
 }
 
-struct Parser<'a> {
-    #[allow(dead_code)]
-    input: &'a str,
-}
+struct Parser;
 
-impl<'a> Parser<'a> {
-    fn parse(input: &'a str) -> Vec<MdBlock> {
+impl Parser {
+    fn parse(input: &str) -> Vec<MdBlock> {
         let mut blocks = Vec::new();
         let mut lines = input.lines().peekable();
 
