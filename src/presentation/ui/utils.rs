@@ -110,6 +110,43 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
+/// Splits a command string into arguments, handling shell-like quoting and escaping.
+/// This allows for paths with spaces and prevents simple whitespace splitting issues.
+#[must_use]
+pub fn split_command(s: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut in_double_quotes = false;
+    let mut in_single_quotes = false;
+    let mut escaped = false;
+
+    for c in s.chars() {
+        if escaped {
+            current.push(c);
+            escaped = false;
+        } else if c == '\\' {
+            escaped = true;
+        } else if c == '"' && !in_single_quotes {
+            in_double_quotes = !in_double_quotes;
+        } else if c == '\'' && !in_double_quotes {
+            in_single_quotes = !in_single_quotes;
+        } else if c.is_whitespace() && !in_double_quotes && !in_single_quotes {
+            if !current.is_empty() {
+                args.push(current);
+                current = String::new();
+            }
+        } else {
+            current.push(c);
+        }
+    }
+
+    if !current.is_empty() {
+        args.push(current);
+    }
+
+    args
+}
+
 /// Formats an ISO 8601 timestamp string to local time (HH:MM format).
 /// Falls back to the original string if parsing fails.
 #[must_use]
@@ -151,5 +188,29 @@ mod tests {
         assert_eq!(sanitize_channel_name("󰕾 voice"), "voice");
         assert_eq!(sanitize_channel_name("󰭹 forum"), "forum");
         assert_eq!(sanitize_channel_name("^thread"), "thread");
+    }
+    #[test]
+    fn test_split_command() {
+        assert_eq!(split_command("nvim"), vec!["nvim"]);
+        assert_eq!(split_command("code --wait"), vec!["code", "--wait"]);
+        assert_eq!(
+            split_command("\"/usr/bin/my editor\" --file"),
+            vec!["/usr/bin/my editor", "--file"]
+        );
+        assert_eq!(split_command("nvim -u NONE"), vec!["nvim", "-u", "NONE"]);
+        assert_eq!(
+            split_command("editor 'file with spaces.txt'"),
+            vec!["editor", "file with spaces.txt"]
+        );
+        assert_eq!(
+            split_command("editor \"file with spaces.txt\""),
+            vec!["editor", "file with spaces.txt"]
+        );
+        assert_eq!(
+            split_command("editor file\\ with\\ spaces.txt"),
+            vec!["editor", "file with spaces.txt"]
+        );
+        assert_eq!(split_command(""), Vec::<String>::new());
+        assert_eq!(split_command("   "), Vec::<String>::new());
     }
 }

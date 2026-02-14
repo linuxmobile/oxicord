@@ -1977,10 +1977,11 @@ impl App {
             crossterm::cursor::Show
         )?;
 
-        let mut parts = editor.split_whitespace();
-        let status = if let Some(cmd) = parts.next() {
+        let parts = crate::presentation::ui::utils::split_command(&editor);
+        let mut parts_iter = parts.into_iter();
+        let status = if let Some(cmd) = parts_iter.next() {
             std::process::Command::new(cmd)
-                .args(parts)
+                .args(parts_iter)
                 .arg(&temp_path)
                 .status()
         } else {
