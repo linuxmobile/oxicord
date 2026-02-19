@@ -66,7 +66,7 @@ enum CurrentScreen {
 pub struct AppConfig {
     pub disable_user_colors: bool,
     pub group_guilds: bool,
-    pub enable_desktop_notifications: bool,
+    pub desktop_notifications: bool,
     pub use_display_name: bool,
     pub image_preview: bool,
     pub timestamp_format: String,
@@ -164,7 +164,7 @@ impl App {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let markdown_service = Arc::new(MarkdownRenderer::new());
         let notification_port = Arc::new(DesktopNotificationService::new(
-            config.enable_desktop_notifications,
+            config.desktop_notifications,
         ));
         let notification_service = NotificationService::new(notification_port);
 
@@ -2187,7 +2187,7 @@ mod tests {
         let config = AppConfig {
             disable_user_colors: false,
             group_guilds: false,
-            enable_desktop_notifications: false,
+            desktop_notifications: false,
             use_display_name: true,
             image_preview: true,
             timestamp_format: "%H:%M".to_string(),

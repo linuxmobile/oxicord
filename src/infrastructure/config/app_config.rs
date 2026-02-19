@@ -72,10 +72,6 @@ pub struct AppConfig {
     #[serde(default = "default_true")]
     pub mouse: bool,
 
-    /// Enable desktop notifications.
-    #[serde(default = "default_true")]
-    pub enable_desktop_notifications: bool,
-
     /// Disable user colors (monochrome mode).
     #[serde(default)]
     pub disable_user_colors: bool,
@@ -161,20 +157,20 @@ impl Default for UiConfig {
 /// Notification configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationsConfig {
-    /// Enable notifications globally.
-    #[serde(default = "default_true")]
-    pub enabled: bool,
+    /// Enable desktop notifications.
+    #[serde(default = "default_true", alias = "enabled")]
+    pub desktop: bool,
 
     /// Enable internal TUI notifications.
-    #[serde(default = "default_true")]
-    pub internal_notifications: bool,
+    #[serde(default = "default_true", alias = "internal_notifications")]
+    pub internal: bool,
 }
 
 impl Default for NotificationsConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
-            internal_notifications: true,
+            desktop: true,
+            internal: true,
         }
     }
 }
@@ -270,7 +266,7 @@ impl AppConfig {
             self.mouse = mouse;
         }
         if let Some(notifications) = args.enable_desktop_notifications {
-            self.enable_desktop_notifications = notifications;
+            self.notifications.desktop = notifications;
         }
         if let Some(disable_colors) = args.disable_user_colors {
             self.disable_user_colors = disable_colors;
@@ -291,7 +287,7 @@ impl AppConfig {
             self.ui.show_typing = show_typing;
         }
         if let Some(internal_notifications) = args.internal_notifications {
-            self.notifications.internal_notifications = internal_notifications;
+            self.notifications.internal = internal_notifications;
         }
         if let Some(enable_animations) = args.enable_animations {
             self.ui.enable_animations = enable_animations;
@@ -338,7 +334,6 @@ impl Default for AppConfig {
             log_path: None,
             log_level: LogLevel::Info,
             mouse: true,
-            enable_desktop_notifications: true,
             disable_user_colors: false,
             editor: None,
             keybindings: HashMap::new(),
@@ -375,7 +370,7 @@ mod tests {
 
         assert_eq!(config.editor, Some("nvim".to_string()));
         assert!(!config.ui.enable_animations);
-        assert!(!config.notifications.internal_notifications);
+        assert!(!config.notifications.internal);
         assert_eq!(
             config.quick_switcher_order,
             QuickSwitcherSortMode::default()
@@ -396,6 +391,6 @@ mod tests {
         assert_eq!(config.editor, None);
         assert!(config.keybindings.is_empty());
         assert!(config.ui.enable_animations); // default_true
-        assert!(config.notifications.internal_notifications); // default_true
+        assert!(config.notifications.internal); // default_true
     }
 }
