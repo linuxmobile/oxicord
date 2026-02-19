@@ -1094,6 +1094,11 @@ impl App {
             }
             DispatchEvent::ChannelDelete { channel_id, .. } => {
                 info!(channel_id = %channel_id, "Channel deleted");
+                if let CurrentScreen::Chat(ref mut state) = self.screen {
+                    state.remove_channel(channel_id);
+                } else if let Some(ref mut state) = self.pending_chat_state {
+                    state.remove_channel(channel_id);
+                }
             }
             DispatchEvent::GuildCreate {
                 guild_id,
@@ -1133,6 +1138,15 @@ impl App {
                     warn!(guild_id = %guild_id, "Guild became unavailable");
                 } else {
                     info!(guild_id = %guild_id, "Left guild");
+                    if let CurrentScreen::Chat(ref mut state) = self.screen {
+                        state.remove_guild(guild_id);
+                    } else if let Some(ref mut state) = self.pending_chat_state {
+                        state.remove_guild(guild_id);
+                    } else {
+                        self.pending_roles.remove(&guild_id);
+                        self.pending_members.remove(&guild_id);
+                        self.pending_channels.remove(&guild_id);
+                    }
                 }
             }
             DispatchEvent::UserUpdate {

@@ -544,6 +544,33 @@ impl GuildsTreeData {
         self.dm_users = users;
     }
 
+    pub fn remove_guild(&mut self, guild_id: GuildId) {
+        self.guilds.retain(|g| g.id() != guild_id);
+        self.channels_by_guild.remove(&guild_id);
+        if self.active_guild_id == Some(guild_id) {
+            self.active_guild_id = None;
+        }
+    }
+
+    pub fn remove_channel(&mut self, channel_id: ChannelId) {
+        let channel_id_str = channel_id.to_string();
+        self.dm_users.retain(|dm| dm.channel_id != channel_id_str);
+
+        for sorted in self.channels_by_guild.values_mut() {
+            sorted.orphans.retain(|c| c.id() != channel_id);
+            sorted.threads.retain(|c| c.id() != channel_id);
+            for cat in &mut sorted.categories {
+                cat.children.retain(|c| c.id() != channel_id);
+            }
+            sorted
+                .categories
+                .retain(|cat| cat.category.id() != channel_id);
+        }
+        if self.active_channel_id == Some(channel_id) {
+            self.active_channel_id = None;
+        }
+    }
+
     #[must_use]
     pub fn guilds(&self) -> &[Guild] {
         &self.guilds
