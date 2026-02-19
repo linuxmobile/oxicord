@@ -50,6 +50,7 @@ pub enum Action {
     ClearInput,
     Cancel,
     Paste,
+    NewLine,
     SecureLogout,
     ToggleDisplayName,
     ToggleQuickSwitcher,

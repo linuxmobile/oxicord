@@ -319,6 +319,7 @@ fn render_help_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) 
         vec![
             (Action::ToggleFileExplorer, "Attachments"),
             (Action::SendMessage, "Send Message"),
+            (Action::NewLine, "New Line"),
             (Action::Paste, "Paste (Text/Image)"),
             (Action::OpenEditor, "Open External Editor"),
             (Action::ClearInput, "Clear Input"),
@@ -2948,6 +2949,9 @@ impl ChatScreenState {
         let mut commands = Vec::new();
         if let Some(key) = registry.get_first(Action::SendMessage) {
             commands.push(Keybind::new(key, Action::SendMessage, "Send"));
+        }
+        if let Some(key) = registry.get_first(Action::NewLine) {
+            commands.push(Keybind::new(key, Action::NewLine, "NL"));
         }
         if let Some(key) = registry.get_first(Action::FocusMessages) {
             commands.push(Keybind::new(key, Action::FocusMessages, "Msgs"));

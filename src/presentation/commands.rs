@@ -279,6 +279,11 @@ impl Default for CommandRegistry {
             true,
         );
         register(
+            Action::NewLine,
+            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL),
+            true,
+        );
+        register(
             Action::OpenEditor,
             KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL),
             true,
