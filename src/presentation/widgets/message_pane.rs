@@ -471,17 +471,19 @@ impl MessagePaneData {
 
     pub fn refresh_authors(&mut self) {
         self.authors.clear();
+        let resolver = IdentityResolver::with_preference(self.use_display_name);
         for ui_msg in &self.messages {
-            self.authors.insert(
-                ui_msg.message.author().id().to_string(),
-                IdentityResolver::with_preference(self.use_display_name)
-                    .resolve(ui_msg.message.author()),
-            );
+            let author = ui_msg.message.author();
+            if !self.authors.contains_key(author.id()) {
+                self.authors
+                    .insert(author.id().to_string(), resolver.resolve(author));
+            }
+
             for mention in ui_msg.message.mentions() {
-                self.authors.insert(
-                    mention.id().to_string(),
-                    IdentityResolver::with_preference(self.use_display_name).resolve(mention),
-                );
+                let id_str = mention.id().to_string();
+                if !self.authors.contains_key(&id_str) {
+                    self.authors.insert(id_str, resolver.resolve(mention));
+                }
             }
         }
         self.is_dirty = true;
