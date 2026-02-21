@@ -11,6 +11,7 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
 };
+use crate::infrastructure::search::FuzzySearcher;
 
 #[derive(Debug, Clone)]
 pub enum FileExplorerAction {
@@ -30,6 +31,10 @@ pub struct FileExplorerComponent {
     current_dir: PathBuf,
     entries: Vec<FileEntry>,
     state: ListState,
+    all_entries: Vec<FileEntry>,
+    search_query: String,
+    is_searching: bool,
+    searcher: FuzzySearcher,
     show_hidden: bool,
 }
 
@@ -41,18 +46,24 @@ impl FileExplorerComponent {
             entries: Vec::new(),
             state: ListState::default(),
             show_hidden: false,
+            all_entries: Vec::new(),
+            search_query: String::new(),
+            is_searching: false,
+            searcher: FuzzySearcher::new(),
         };
         component.load_entries(&root);
         component
     }
 
     pub fn load_entries(&mut self, path: &Path) {
+        self.is_searching = false;
+        self.search_query.clear();
         let selected_name = self.selected_entry().map(|e| e.name.clone());
 
-        self.entries.clear();
+        self.all_entries.clear();
 
         if let Some(parent) = path.parent() {
-            self.entries.push(FileEntry {
+            self.all_entries.push(FileEntry {
                 path: parent.to_path_buf(),
                 is_dir: true,
                 name: "..".to_string(),
@@ -89,9 +100,10 @@ impl FileExplorerComponent {
                 _ => a.name.cmp(&b.name),
             });
 
-            self.entries.extend(entries);
+            self.all_entries.extend(entries);
         }
 
+        self.update_search_results();
         if let Some(name) = selected_name {
             if let Some(idx) = self.entries.iter().position(|e| e.name == name) {
                 self.state.select(Some(idx));
@@ -105,6 +117,36 @@ impl FileExplorerComponent {
         }
     }
 
+    fn update_search_results(&mut self) {
+        if !self.is_searching || self.search_query.is_empty() {
+            self.entries = self.all_entries.clone();
+        } else {
+            let mut matched_entries: Vec<(i64, FileEntry)> = Vec::new();
+
+            for entry in &self.all_entries {
+                if let Some(score) = self.searcher.score(&entry.name, &self.search_query) {
+                    matched_entries.push((score, entry.clone()));
+                }
+            }
+
+            matched_entries.sort_by(|(score_a, entry_a), (score_b, entry_b)| {
+                match (entry_a.is_dir, entry_b.is_dir) {
+                    (true, false) => Ordering::Less,
+                    (false, true) => Ordering::Greater,
+                    _ => score_b.cmp(score_a), // Descending score
+                }
+            });
+
+            self.entries = matched_entries.into_iter().map(|(_, entry)| entry).collect();
+        }
+
+        if !self.entries.is_empty() {
+            self.state.select(Some(0));
+        } else {
+            self.state.select(None);
+        }
+    }
+
     pub fn toggle_hidden(&mut self) {
         self.show_hidden = !self.show_hidden;
         let path = self.current_dir.clone();
@@ -112,71 +154,141 @@ impl FileExplorerComponent {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> FileExplorerAction {
-        match key.code {
-            KeyCode::Esc => FileExplorerAction::Close,
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.previous();
-                FileExplorerAction::None
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.next();
-                FileExplorerAction::None
-            }
-            KeyCode::Char('h') => {
-                let parent = self
-                    .current_dir
-                    .parent()
-                    .map(PathBuf::from)
-                    .unwrap_or(self.current_dir.clone());
-                self.current_dir = parent;
-                let path = self.current_dir.clone();
-                self.load_entries(&path);
-                FileExplorerAction::None
-            }
-            KeyCode::Char('l') => {
-                if let Some(selected) = self.selected_entry() {
-                    if selected.name == ".." {
-                        FileExplorerAction::None
-                    } else if selected.is_dir {
-                        self.current_dir = selected.path.clone();
-                        let path = self.current_dir.clone();
-                        self.load_entries(&path);
-                        FileExplorerAction::None
-                    } else {
-                        FileExplorerAction::SelectFile(selected.path.clone())
-                    }
-                } else {
+        if self.is_searching {
+            match key.code {
+                KeyCode::Esc => {
+                    self.is_searching = false;
+                    self.search_query.clear();
+                    self.update_search_results();
                     FileExplorerAction::None
                 }
-            }
-            KeyCode::Enter => {
-                if let Some(selected) = self.selected_entry() {
-                    if selected.name == ".." {
-                        let parent = self
-                            .current_dir
-                            .parent()
-                            .map(PathBuf::from)
-                            .unwrap_or(self.current_dir.clone());
-                        self.current_dir = parent;
-                        let path = self.current_dir.clone();
-                        self.load_entries(&path);
-                        FileExplorerAction::None
-                    } else if selected.is_dir {
-                        self.current_dir = selected.path.clone();
-                        let path = self.current_dir.clone();
-                        self.load_entries(&path);
-                        FileExplorerAction::None
+                KeyCode::Enter => {
+                    // Execute selection (existing logic)
+                    if let Some(selected) = self.selected_entry() {
+                        if selected.name == ".." {
+                            // ".." usually shouldn't appear in search results unless query is empty
+                            // but let's handle it just in case.
+                            let parent = self
+                                .current_dir
+                                .parent()
+                                .map(PathBuf::from)
+                                .unwrap_or(self.current_dir.clone());
+                            self.current_dir = parent;
+                            let path = self.current_dir.clone();
+                            self.load_entries(&path);
+                            FileExplorerAction::None
+                        } else if selected.is_dir {
+                            self.current_dir = selected.path.clone();
+                            let path = self.current_dir.clone();
+                            self.load_entries(&path);
+                            FileExplorerAction::None
+                        } else {
+                            FileExplorerAction::SelectFile(selected.path.clone())
+                        }
                     } else {
-                        FileExplorerAction::SelectFile(selected.path.clone())
+                        FileExplorerAction::None
                     }
-                } else {
+                }
+                KeyCode::Up => {
+                    self.previous();
                     FileExplorerAction::None
                 }
+                KeyCode::Down => {
+                    self.next();
+                    FileExplorerAction::None
+                }
+                KeyCode::Char('j') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                    self.next();
+                    FileExplorerAction::None
+                }
+                KeyCode::Char('k') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                    self.previous();
+                    FileExplorerAction::None
+                }
+                KeyCode::Backspace => {
+                    self.search_query.pop();
+                    self.update_search_results();
+                    FileExplorerAction::None
+                }
+                KeyCode::Char(c) => {
+                    self.search_query.push(c);
+                    self.update_search_results();
+                    FileExplorerAction::None
+                }
+                _ => FileExplorerAction::None,
             }
-            _ => FileExplorerAction::None,
+        } else {
+            match key.code {
+                KeyCode::Char('/') => {
+                    self.is_searching = true;
+                    self.search_query.clear();
+                    self.update_search_results();
+                    FileExplorerAction::None
+                }
+                KeyCode::Esc => FileExplorerAction::Close,
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.previous();
+                    FileExplorerAction::None
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.next();
+                    FileExplorerAction::None
+                }
+                KeyCode::Char('h') => {
+                    let parent = self
+                        .current_dir
+                        .parent()
+                        .map(PathBuf::from)
+                        .unwrap_or(self.current_dir.clone());
+                    self.current_dir = parent;
+                    let path = self.current_dir.clone();
+                    self.load_entries(&path);
+                    FileExplorerAction::None
+                }
+                KeyCode::Char('l') => {
+                    if let Some(selected) = self.selected_entry() {
+                        if selected.name == ".." {
+                            FileExplorerAction::None
+                        } else if selected.is_dir {
+                            self.current_dir = selected.path.clone();
+                            let path = self.current_dir.clone();
+                            self.load_entries(&path);
+                            FileExplorerAction::None
+                        } else {
+                            FileExplorerAction::SelectFile(selected.path.clone())
+                        }
+                    } else {
+                        FileExplorerAction::None
+                    }
+                }
+                KeyCode::Enter => {
+                    if let Some(selected) = self.selected_entry() {
+                        if selected.name == ".." {
+                            let parent = self
+                                .current_dir
+                                .parent()
+                                .map(PathBuf::from)
+                                .unwrap_or(self.current_dir.clone());
+                            self.current_dir = parent;
+                            let path = self.current_dir.clone();
+                            self.load_entries(&path);
+                            FileExplorerAction::None
+                        } else if selected.is_dir {
+                            self.current_dir = selected.path.clone();
+                            let path = self.current_dir.clone();
+                            self.load_entries(&path);
+                            FileExplorerAction::None
+                        } else {
+                            FileExplorerAction::SelectFile(selected.path.clone())
+                        }
+                    } else {
+                        FileExplorerAction::None
+                    }
+                }
+                _ => FileExplorerAction::None,
+            }
         }
     }
-
     fn next(&mut self) {
         let i = match self.state.selected() {
             Some(i) => {
@@ -212,11 +324,14 @@ impl FileExplorerComponent {
     pub fn render(&mut self, area: Rect, buf: &mut Buffer) {
         Clear.render(area, buf);
 
-        let title = if self.show_hidden {
-            " File Explorer (H) - Select Attachment "
+        let title_string = if self.is_searching {
+            format!(" File Explorer (Search: {}) ", self.search_query)
+        } else if self.show_hidden {
+            " File Explorer (H) - Select Attachment ".to_string()
         } else {
-            " File Explorer - Select Attachment "
+            " File Explorer - Select Attachment ".to_string()
         };
+        let title = title_string.as_str();
 
         let block = Block::default()
             .borders(Borders::ALL)
@@ -264,7 +379,7 @@ impl FileExplorerComponent {
 
         Widget::render(footer, footer_area, buf);
     }
-}
+    }
 
 impl Default for FileExplorerComponent {
     fn default() -> Self {
