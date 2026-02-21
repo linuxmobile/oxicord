@@ -2077,8 +2077,8 @@ fn build_render_items(
     let mut i = 0;
 
     while i < messages.len() {
-        let author_id = messages[i].message.author().id().to_string();
-        let is_blocked = relationship_state.is_some_and(|s| s.is_blocked_str(&author_id));
+        let author_id = messages[i].message.author().id();
+        let is_blocked = relationship_state.is_some_and(|s| s.is_blocked_str(author_id));
 
         if is_blocked && hide_blocked_completely {
             i += 1;
@@ -2089,8 +2089,8 @@ fn build_render_items(
             let start_idx = i;
             let mut count = 0;
             while i < messages.len() {
-                let aid = messages[i].message.author().id().to_string();
-                let blocked = relationship_state.is_some_and(|s| s.is_blocked_str(&aid));
+                let aid = messages[i].message.author().id();
+                let blocked = relationship_state.is_some_and(|s| s.is_blocked_str(aid));
                 if !blocked {
                     break;
                 }

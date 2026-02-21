@@ -1,3 +1,4 @@
+use crate::infrastructure::search::FuzzySearcher;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     buffer::Buffer,
@@ -11,7 +12,6 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
 };
-use crate::infrastructure::search::FuzzySearcher;
 
 #[derive(Debug, Clone)]
 pub enum FileExplorerAction {
@@ -137,7 +137,10 @@ impl FileExplorerComponent {
                 }
             });
 
-            self.entries = matched_entries.into_iter().map(|(_, entry)| entry).collect();
+            self.entries = matched_entries
+                .into_iter()
+                .map(|(_, entry)| entry)
+                .collect();
         }
 
         if !self.entries.is_empty() {
@@ -197,11 +200,19 @@ impl FileExplorerComponent {
                     self.next();
                     FileExplorerAction::None
                 }
-                KeyCode::Char('j') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                KeyCode::Char('j')
+                    if key
+                        .modifiers
+                        .contains(crossterm::event::KeyModifiers::CONTROL) =>
+                {
                     self.next();
                     FileExplorerAction::None
                 }
-                KeyCode::Char('k') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                KeyCode::Char('k')
+                    if key
+                        .modifiers
+                        .contains(crossterm::event::KeyModifiers::CONTROL) =>
+                {
                     self.previous();
                     FileExplorerAction::None
                 }
@@ -379,7 +390,7 @@ impl FileExplorerComponent {
 
         Widget::render(footer, footer_area, buf);
     }
-    }
+}
 
 impl Default for FileExplorerComponent {
     fn default() -> Self {
