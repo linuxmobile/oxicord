@@ -66,6 +66,8 @@ coolor = "1.1.0"
 fuzzy-matcher = "0.3.7"
 termbg = "0.6.2"
 bytes = "1.11.1"
+url = "2.5"
+percent-encoding = "2.3"
 
 # Image rendering - Platform Specific
 
