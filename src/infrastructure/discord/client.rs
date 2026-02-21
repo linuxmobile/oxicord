@@ -45,7 +45,9 @@ impl DiscordClient {
 
         tokio::spawn(async move {
             if let Some(build) = scraper::fetch_latest_build_number().await {
-                id_clone.update_build_number(build);
+                if let Err(e) = id_clone.update_build_number(build) {
+                    warn!("Failed to update build number: {}", e);
+                }
             }
         });
 
