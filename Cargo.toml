@@ -73,7 +73,7 @@ bytes = "1.11.1"
 ratatui-image = { version = "10.0.3", features = ["crossterm", "chafa-dyn"], default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-ratatui-image = { version = "10.0.3", features = ["crossterm"], default-features = false }
+ratatui-image = { version = "10.0.3", features = ["crossterm", "chafa-dyn"], default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 ratatui-image = { version = "10.0.3", features = ["crossterm"], default-features = false }
