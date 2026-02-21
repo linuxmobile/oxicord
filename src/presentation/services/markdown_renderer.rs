@@ -1,8 +1,8 @@
+use percent_encoding::percent_decode_str;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use std::sync::Arc;
 use url::Url;
-use percent_encoding::percent_decode_str;
 
 use super::syntax_highlighting::{SyntaxHighlighter, SyntectHighlighter};
 use crate::application::services::markdown_parser::{MdBlock, MdInline, MentionResolver};
@@ -235,21 +235,21 @@ impl<'a> InternalRenderer<'a> {
                 }
                 MdInline::Url(url_str) => {
                     let display_text = if let Ok(parsed) = Url::parse(&url_str) {
-                         let scheme = parsed.scheme();
-                         let host = parsed.host_str().unwrap_or("");
-                         let path = percent_decode_str(parsed.path()).decode_utf8_lossy();
-                         let query = if let Some(q) = parsed.query() {
-                             format!("?{}", percent_decode_str(q).decode_utf8_lossy())
-                         } else {
-                             String::new()
-                         };
-                         let fragment = if let Some(f) = parsed.fragment() {
-                             format!("#{}", percent_decode_str(f).decode_utf8_lossy())
-                         } else {
-                             String::new()
-                         };
+                        let scheme = parsed.scheme();
+                        let host = parsed.host_str().unwrap_or("");
+                        let path = percent_decode_str(parsed.path()).decode_utf8_lossy();
+                        let query = if let Some(q) = parsed.query() {
+                            format!("?{}", percent_decode_str(q).decode_utf8_lossy())
+                        } else {
+                            String::new()
+                        };
+                        let fragment = if let Some(f) = parsed.fragment() {
+                            format!("#{}", percent_decode_str(f).decode_utf8_lossy())
+                        } else {
+                            String::new()
+                        };
 
-                         format!("{}://{}{}{}{}", scheme, host, path, query, fragment)
+                        format!("{}://{}{}{}{}", scheme, host, path, query, fragment)
                     } else {
                         url_str.clone()
                     };
@@ -313,7 +313,10 @@ mod tests {
         // Depending on parser implementation, it might just find the URL.
 
         // Find the span that corresponds to URL.
-        let url_span = spans.iter().find(|s| s.content.starts_with("https://example.com/")).unwrap();
+        let url_span = spans
+            .iter()
+            .find(|s| s.content.starts_with("https://example.com/"))
+            .unwrap();
 
         // "测试" is the decoded characters for %E6%B5%8B%E8%AF%95
         assert_eq!(url_span.content, "https://example.com/测试");
