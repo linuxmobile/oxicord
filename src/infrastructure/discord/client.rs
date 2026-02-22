@@ -550,7 +550,8 @@ impl DiscordDataPort for DiscordClient {
         let channel_responses: Vec<ChannelResponse> =
             serde_json::from_str(&body_text).map_err(|e| {
                 warn!(error = %e, "Failed to parse channels response");
-                debug!(body = %body_text, "Raw response body causing decode failure");
+                let truncated_body: String = body_text.chars().take(200).collect();
+                debug!(body = %truncated_body, "Raw response body causing decode failure (truncated)");
                 AuthError::unexpected(format!("failed to parse channels: {e}"))
             })?;
 
@@ -993,12 +994,13 @@ impl DiscordDataPort for DiscordClient {
         let status = response.status();
         if !status.is_success() {
             let error_text = response.text().await.unwrap_or_default();
+            let truncated_error: String = error_text.chars().take(200).collect();
             warn!(
-                "Fetch forum threads failed: Status={} Body={}",
-                status, error_text
+                "Fetch forum threads failed: Status={} Body={} (truncated)",
+                status, truncated_error
             );
             return Err(AuthError::unexpected(format!(
-                "Fetch threads failed: {status} - {error_text}"
+                "Fetch threads failed: {status} - {truncated_error}"
             )));
         }
 
