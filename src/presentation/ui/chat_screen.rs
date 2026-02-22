@@ -319,6 +319,7 @@ fn render_help_popup(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer) 
         vec![
             (Action::ToggleFileExplorer, "Attachments"),
             (Action::SendMessage, "Send Message"),
+            (Action::NewLine, "New Line"),
             (Action::Paste, "Paste (Text/Image)"),
             (Action::OpenEditor, "Open External Editor"),
             (Action::ClearInput, "Clear Input"),
@@ -906,6 +907,45 @@ impl ChatScreenState {
 
     pub fn set_group_guilds(&mut self, group: bool) {
         self.guilds_tree_data.set_group_guilds(group);
+    }
+
+    pub fn remove_guild(&mut self, guild_id: GuildId) {
+        if let Some(channels) = self.raw_channels.get(&guild_id) {
+            for c in channels {
+                self.forum_states.remove(&c.id());
+            }
+        }
+
+        self.guilds_tree_data.remove_guild(guild_id);
+        self.raw_channels.remove(&guild_id);
+        self.guild_roles.remove(&guild_id);
+        self.guild_members.remove(&guild_id);
+
+        let guild_id_str = guild_id.to_string();
+        self.recents.retain(|r| {
+            let is_guild_itself =
+                r.kind == crate::domain::search::SearchKind::Guild && r.id == guild_id_str;
+            let is_in_guild = r.guild_id.as_deref() == Some(&guild_id_str);
+            !is_guild_itself && !is_in_guild
+        });
+
+        self.quick_switcher.set_recents(self.recents.clone());
+        if self.show_quick_switcher {
+            self.perform_search(&self.quick_switcher.input.clone());
+        }
+    }
+
+    pub fn remove_channel(&mut self, channel_id: ChannelId) {
+        self.guilds_tree_data.remove_channel(channel_id);
+        self.forum_states.remove(&channel_id);
+
+        let channel_id_str = channel_id.to_string();
+        self.recents.retain(|r| r.id != channel_id_str);
+
+        self.quick_switcher.set_recents(self.recents.clone());
+        if self.show_quick_switcher {
+            self.perform_search(&self.quick_switcher.input.clone());
+        }
     }
 
     pub fn set_guild_data(
@@ -2949,6 +2989,9 @@ impl ChatScreenState {
         if let Some(key) = registry.get_first(Action::SendMessage) {
             commands.push(Keybind::new(key, Action::SendMessage, "Send"));
         }
+        if let Some(key) = registry.get_first(Action::NewLine) {
+            commands.push(Keybind::new(key, Action::NewLine, "NL"));
+        }
         if let Some(key) = registry.get_first(Action::FocusMessages) {
             commands.push(Keybind::new(key, Action::FocusMessages, "Msgs"));
         }
@@ -3682,14 +3725,12 @@ mod tests {
 
         assert!(
             matches!(result, ChatKeyResult::StartTyping | ChatKeyResult::Ignored),
-            "Character '{}' should be typed in input mode, not trigger actions",
-            c
+            "Character '{c}' should be typed in input mode, not trigger actions"
         );
         assert_eq!(
             state.focus(),
             ChatFocus::MessageInput,
-            "Focus should remain on MessageInput when typing '{}'",
-            c
+            "Focus should remain on MessageInput when typing '{c}'"
         );
     }
 
@@ -3956,8 +3997,7 @@ mod tests {
 
         assert!(
             null_recent.is_none(),
-            "Should not add null channel to recents. Found: {:?}",
-            null_recent
+            "Should not add null channel to recents. Found: {null_recent:?}"
         );
 
         if state.selected_channel().is_none() {
@@ -4144,5 +4184,79 @@ mod tests {
         state.set_channels(guild_id, vec![channel.clone()]);
 
         assert!(state.guilds_tree_data.get_channel(channel.id()).is_some());
+    }
+
+    #[test]
+    fn test_remove_guild_updates_recents() {
+        use crate::domain::search::{RecentItem, SearchKind, SearchResult};
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None, false),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+            QuickSwitcherSortMode::Mixed,
+            vec![],
+        );
+
+        let guild_id = GuildId(1);
+        let guild_id_str = guild_id.to_string();
+        let channel_id = ChannelId(10);
+        let channel_id_str = channel_id.to_string();
+
+        let res_guild = SearchResult::new(guild_id_str.clone(), "Guild", SearchKind::Guild);
+        let res_channel = SearchResult::new(channel_id_str.clone(), "Channel", SearchKind::Channel)
+            .with_guild(guild_id_str.clone(), "Guild");
+
+        state.add_recent_item(RecentItem::new(&res_guild));
+        state.add_recent_item(RecentItem::new(&res_channel));
+
+        assert_eq!(state.recents.len(), 2);
+
+        state.remove_guild(guild_id);
+
+        assert_eq!(state.recents.len(), 0);
+        assert_eq!(state.quick_switcher.recents.len(), 0);
+    }
+
+    #[test]
+    fn test_remove_channel_updates_recents() {
+        use crate::domain::search::{RecentItem, SearchKind, SearchResult};
+        let mut state = ChatScreenState::new(
+            create_test_user(),
+            Arc::new(MarkdownRenderer::new()),
+            UserCache::new(),
+            false,
+            true,
+            true,
+            "%H:%M".to_string(),
+            Theme::new("Orange", None, false),
+            true,
+            CommandRegistry::default(),
+            RelationshipState::new(),
+            false,
+            QuickSwitcherSortMode::Mixed,
+            vec![],
+        );
+
+        let channel_id = ChannelId(10);
+        let channel_id_str = channel_id.to_string();
+
+        let res_channel = SearchResult::new(channel_id_str.clone(), "Channel", SearchKind::Channel);
+
+        state.add_recent_item(RecentItem::new(&res_channel));
+
+        assert_eq!(state.recents.len(), 1);
+
+        state.remove_channel(channel_id);
+
+        assert_eq!(state.recents.len(), 0);
     }
 }

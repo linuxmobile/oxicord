@@ -37,6 +37,7 @@ pub enum MdInline {
     Code(String),
     Mention(String),
     Channel(String),
+    Url(String),
 }
 
 #[must_use]
@@ -44,13 +45,10 @@ pub fn parse_markdown(content: &str) -> Vec<MdBlock> {
     Parser::parse(content)
 }
 
-struct Parser<'a> {
-    #[allow(dead_code)]
-    input: &'a str,
-}
+struct Parser;
 
-impl<'a> Parser<'a> {
-    fn parse(input: &'a str) -> Vec<MdBlock> {
+impl Parser {
+    fn parse(input: &str) -> Vec<MdBlock> {
         let mut blocks = Vec::new();
         let mut lines = input.lines().peekable();
 
@@ -231,7 +229,7 @@ fn handle_special_chars(
             true
         }
         'h' => {
-            handle_discord_url(input, idx, start, inlines, chars);
+            handle_url(input, idx, start, inlines, chars);
             true
         }
         '\\' => {
@@ -277,7 +275,7 @@ fn handle_inline_code(
     }
 }
 
-fn handle_discord_url(
+fn handle_url(
     input: &str,
     idx: usize,
     start: &mut usize,
@@ -285,6 +283,8 @@ fn handle_discord_url(
     chars: &mut Peekable<CharIndices>,
 ) {
     let remaining = &input[idx..];
+
+    // Check for Discord Channel URLs first
     if remaining.starts_with("https://discord.com/channels/")
         || remaining.starts_with("https://ptb.discord.com/channels/")
         || remaining.starts_with("https://canary.discord.com/channels/")
@@ -314,8 +314,33 @@ fn handle_discord_url(
                     }
                 }
                 *start = end_pos;
+                return;
             }
         }
+    }
+
+    // Generic URL handling
+    if remaining.starts_with("http://") || remaining.starts_with("https://") {
+        let url_end_offset = remaining
+            .find(|c: char| c.is_whitespace() || c == ')')
+            .unwrap_or(remaining.len());
+        let url_str = &remaining[..url_end_offset];
+
+        if idx > *start {
+            inlines.push(MdInline::Text(input[*start..idx].to_string()));
+        }
+
+        inlines.push(MdInline::Url(url_str.to_string()));
+
+        let end_pos = idx + url_end_offset;
+        while let Some((curr, _)) = chars.peek() {
+            if *curr < end_pos {
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        *start = end_pos;
     }
 }
 
@@ -565,6 +590,37 @@ mod tests {
                 assert_eq!(id, "456");
             } else {
                 panic!("Expected Channel inline");
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_generic_url() {
+        let content = "Check https://example.com/foo";
+        let blocks = parse_markdown(content);
+        if let MdBlock::Paragraph(inlines) = &blocks[0] {
+            assert_eq!(inlines.len(), 2);
+            if let MdInline::Text(t) = &inlines[0] {
+                assert_eq!(t, "Check ");
+            }
+            if let MdInline::Url(url) = &inlines[1] {
+                assert_eq!(url, "https://example.com/foo");
+            } else {
+                panic!("Expected Url inline");
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_generic_url_in_text() {
+        let content = "Link https://google.com here";
+        let blocks = parse_markdown(content);
+        if let MdBlock::Paragraph(inlines) = &blocks[0] {
+            assert_eq!(inlines.len(), 3);
+            if let MdInline::Url(url) = &inlines[1] {
+                assert_eq!(url, "https://google.com");
+            } else {
+                panic!("Expected Url inline");
             }
         }
     }

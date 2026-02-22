@@ -66,7 +66,7 @@ enum CurrentScreen {
 pub struct AppConfig {
     pub disable_user_colors: bool,
     pub group_guilds: bool,
-    pub enable_desktop_notifications: bool,
+    pub desktop_notifications: bool,
     pub use_display_name: bool,
     pub image_preview: bool,
     pub timestamp_format: String,
@@ -164,7 +164,7 @@ impl App {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let markdown_service = Arc::new(MarkdownRenderer::new());
         let notification_port = Arc::new(DesktopNotificationService::new(
-            config.enable_desktop_notifications,
+            config.desktop_notifications,
         ));
         let notification_service = NotificationService::new(notification_port);
 
@@ -300,9 +300,7 @@ impl App {
             Some(TokenSource::Keyring) => {
                 matches!(self.resolve_token_use_case.execute(None).await, Ok(Some(_)))
             }
-            Some(TokenSource::CommandLine | TokenSource::Environment | TokenSource::UserInput) => {
-                true
-            }
+            Some(TokenSource::Environment | TokenSource::UserInput) => true,
             None => false,
         }
     }
@@ -1096,6 +1094,11 @@ impl App {
             }
             DispatchEvent::ChannelDelete { channel_id, .. } => {
                 info!(channel_id = %channel_id, "Channel deleted");
+                if let CurrentScreen::Chat(ref mut state) = self.screen {
+                    state.remove_channel(channel_id);
+                } else if let Some(ref mut state) = self.pending_chat_state {
+                    state.remove_channel(channel_id);
+                }
             }
             DispatchEvent::GuildCreate {
                 guild_id,
@@ -1135,6 +1138,15 @@ impl App {
                     warn!(guild_id = %guild_id, "Guild became unavailable");
                 } else {
                     info!(guild_id = %guild_id, "Left guild");
+                    if let CurrentScreen::Chat(ref mut state) = self.screen {
+                        state.remove_guild(guild_id);
+                    } else if let Some(ref mut state) = self.pending_chat_state {
+                        state.remove_guild(guild_id);
+                    } else {
+                        self.pending_roles.remove(&guild_id);
+                        self.pending_members.remove(&guild_id);
+                        self.pending_channels.remove(&guild_id);
+                    }
                 }
             }
             DispatchEvent::UserUpdate {
@@ -1972,6 +1984,14 @@ impl App {
 
         debug!(editor = %editor, path = %temp_path.display(), "Opening external editor");
 
+        let parts = crate::presentation::ui::utils::split_command(&editor)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid editor command syntax"))?;
+
+        let mut parts_iter = parts.into_iter();
+        let cmd = parts_iter.next().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "Empty editor command")
+        })?;
+
         crossterm::terminal::disable_raw_mode()?;
         crossterm::execute!(
             std::io::stdout(),
@@ -1979,18 +1999,10 @@ impl App {
             crossterm::cursor::Show
         )?;
 
-        let mut parts = editor.split_whitespace();
-        let status = if let Some(cmd) = parts.next() {
-            std::process::Command::new(cmd)
-                .args(parts)
-                .arg(&temp_path)
-                .status()
-        } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "Empty editor command",
-            ))
-        };
+        let status = std::process::Command::new(cmd)
+            .args(parts_iter)
+            .arg(&temp_path)
+            .status();
 
         crossterm::terminal::enable_raw_mode()?;
         crossterm::execute!(
@@ -2188,7 +2200,7 @@ mod tests {
         let config = AppConfig {
             disable_user_colors: false,
             group_guilds: false,
-            enable_desktop_notifications: false,
+            desktop_notifications: false,
             use_display_name: true,
             image_preview: true,
             timestamp_format: "%H:%M".to_string(),

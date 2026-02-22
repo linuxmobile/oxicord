@@ -5,8 +5,6 @@ use crate::domain::entities::User;
 /// Source of the authentication token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenSource {
-    /// Token from CLI argument.
-    CommandLine,
     /// Token from environment variable.
     Environment,
     /// Token from system keyring.
@@ -20,7 +18,6 @@ impl TokenSource {
     #[must_use]
     pub const fn description(&self) -> &'static str {
         match self {
-            Self::CommandLine => "command-line argument",
             Self::Environment => "environment variable",
             Self::Keyring => "system keyring",
             Self::UserInput => "user input",

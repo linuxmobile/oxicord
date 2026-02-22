@@ -227,6 +227,7 @@ enum QrLoginState {
 | Key      | Action             | Description              |
 | -------- | ------------------ | ------------------------ |
 | `Enter`  | `send`             | Send message             |
+| `Ctrl+J` | `new_line`         | Insert new line          |
 | `Esc`    | `cancel`           | Clear input/cancel reply |
 | `Tab`    | `tab_complete`     | Autocomplete @mention    |
 | `Ctrl+V` | `paste`            | Paste text/image         |

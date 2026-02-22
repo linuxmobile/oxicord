@@ -92,20 +92,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cli_priority() {
+    async fn test_external_token_priority() {
         let storage = Arc::new(MockTokenStorage::with_token(AuthToken::new_unchecked(
             make_valid_token(),
         )));
         let use_case = ResolveTokenUseCase::new(storage);
 
-        let cli_token = make_valid_token();
+        let env_token = make_valid_token();
         let result = use_case
-            .execute(Some((cli_token, TokenSource::CommandLine)))
+            .execute(Some((env_token, TokenSource::Environment)))
             .await
             .unwrap();
 
         assert!(result.is_some());
-        assert_eq!(result.unwrap().source, TokenSource::CommandLine);
+        assert_eq!(result.unwrap().source, TokenSource::Environment);
     }
 
     #[tokio::test]

@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
@@ -17,6 +18,8 @@ pub const DEFAULT_MAX_CACHE_SIZE: u64 = 200 * 1024 * 1024;
 pub struct DiskImageCache {
     cache_dir: PathBuf,
     max_size: u64,
+    current_size: AtomicU64,
+    item_count: AtomicUsize,
 }
 
 impl DiskImageCache {
@@ -28,10 +31,28 @@ impl DiskImageCache {
         fs::create_dir_all(&cache_dir)
             .await
             .map_err(|e| CacheError::IoError(format!("Failed to create cache dir: {e}")))?;
+        let mut total_size = 0u64;
+        let mut count = 0usize;
+
+        let mut entries = fs::read_dir(&cache_dir)
+            .await
+            .map_err(|e| CacheError::IoError(format!("Failed to read cache dir: {e}")))?;
+
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "img")
+                && let Ok(meta) = entry.metadata().await
+            {
+                total_size += meta.len();
+                count += 1;
+            }
+        }
 
         let cache = Self {
             cache_dir,
             max_size,
+            current_size: AtomicU64::new(total_size),
+            item_count: AtomicUsize::new(count),
         };
 
         cache.cleanup_if_needed().await;
@@ -95,6 +116,8 @@ impl DiskImageCache {
     pub async fn put_bytes(&self, id: &ImageId, bytes: &[u8]) -> CacheResult<()> {
         let path = self.cache_path(id);
 
+        let old_size = fs::metadata(&path).await.map(|m| m.len()).ok();
+
         let mut file = fs::File::create(&path)
             .await
             .map_err(|e| CacheError::IoError(format!("Failed to create cache file: {e}")))?;
@@ -106,6 +129,19 @@ impl DiskImageCache {
         file.flush()
             .await
             .map_err(|e| CacheError::IoError(format!("Failed to flush cache file: {e}")))?;
+        let new_size = bytes.len() as u64;
+        if let Some(old) = old_size {
+            if new_size > old {
+                self.current_size
+                    .fetch_add(new_size - old, Ordering::Relaxed);
+            } else {
+                self.current_size
+                    .fetch_sub(old - new_size, Ordering::Relaxed);
+            }
+        } else {
+            self.current_size.fetch_add(new_size, Ordering::Relaxed);
+            self.item_count.fetch_add(1, Ordering::Relaxed);
+        }
 
         debug!(id = %id, path = %path.display(), size = bytes.len(), "Stored image in disk cache");
 
@@ -117,11 +153,14 @@ impl DiskImageCache {
     /// Removes an image from disk cache.
     pub async fn evict(&self, id: &ImageId) {
         let path = self.cache_path(id);
+        let size = fs::metadata(&path).await.map(|m| m.len()).ok();
         if let Err(e) = fs::remove_file(&path).await {
             if e.kind() != std::io::ErrorKind::NotFound {
                 warn!(id = %id, error = %e, "Failed to evict from disk cache");
             }
-        } else {
+        } else if let Some(s) = size {
+            self.current_size.fetch_sub(s, Ordering::Relaxed);
+            self.item_count.fetch_sub(1, Ordering::Relaxed);
             debug!(id = %id, "Evicted from disk cache");
         }
     }
@@ -147,44 +186,22 @@ impl DiskImageCache {
                 warn!(path = %path.display(), "Failed to remove cache file");
             }
         }
-
+        self.current_size.store(0, Ordering::Relaxed);
+        self.item_count.store(0, Ordering::Relaxed);
         debug!("Cleared disk cache");
         Ok(())
     }
 
     /// Returns the current cache size in bytes.
+    #[allow(clippy::unused_async)]
     pub async fn current_size(&self) -> u64 {
-        let mut total = 0u64;
-
-        let Ok(mut entries) = fs::read_dir(&self.cache_dir).await else {
-            return 0;
-        };
-
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            if let Ok(meta) = entry.metadata().await
-                && meta.is_file()
-            {
-                total += meta.len();
-            }
-        }
-
-        total
+        self.current_size.load(Ordering::Relaxed)
     }
 
     /// Returns the number of cached files.
+    #[allow(clippy::unused_async)]
     pub async fn len(&self) -> usize {
-        let Ok(mut entries) = fs::read_dir(&self.cache_dir).await else {
-            return 0;
-        };
-
-        let mut count = 0;
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            if entry.path().extension().is_some_and(|ext| ext == "img") {
-                count += 1;
-            }
-        }
-
-        count
+        self.item_count.load(Ordering::Relaxed)
     }
 
     /// Returns true if the cache is empty.
@@ -225,11 +242,12 @@ impl DiskImageCache {
 
         files.sort_by_key(|(_, time, _)| *time);
 
-        let mut freed = 0u64;
+        let mut freed_size = 0u64;
+        let mut freed_count = 0usize;
         let target = current_size - self.max_size + (self.max_size / 10);
 
         for (path, _, size) in files {
-            if freed >= target {
+            if freed_size >= target {
                 break;
             }
 
@@ -237,11 +255,18 @@ impl DiskImageCache {
                 warn!(path = %path.display(), error = %e, "Failed to remove old cache file");
             } else {
                 debug!(path = %path.display(), "Removed old cache file");
-                freed += size;
+                freed_size += size;
+                freed_count += 1;
             }
         }
+        self.current_size.fetch_sub(freed_size, Ordering::Relaxed);
+        self.item_count.fetch_sub(freed_count, Ordering::Relaxed);
 
-        debug!(freed = freed, "Disk cache cleanup complete");
+        debug!(
+            freed_size = freed_size,
+            freed_count = freed_count,
+            "Disk cache cleanup complete"
+        );
     }
 
     /// Checks if an image is cached.
@@ -328,5 +353,62 @@ mod tests {
 
         cache.clear().await.unwrap();
         assert_eq!(cache.len().await, 0);
+    }
+    #[tokio::test]
+    async fn test_atomic_counters_sync() {
+        let (cache, _temp) = create_test_cache().await;
+
+        assert_eq!(cache.current_size().await, 0);
+        assert_eq!(cache.len().await, 0);
+
+        cache
+            .put_bytes(&ImageId::new("test1"), b"hello")
+            .await
+            .unwrap();
+        cache
+            .put_bytes(&ImageId::new("test2"), b"world!")
+            .await
+            .unwrap();
+
+        assert_eq!(cache.len().await, 2);
+        assert_eq!(cache.current_size().await, 11);
+
+        cache
+            .put_bytes(&ImageId::new("test1"), b"hey")
+            .await
+            .unwrap();
+        assert_eq!(cache.len().await, 2);
+        assert_eq!(cache.current_size().await, 9);
+
+        cache.evict(&ImageId::new("test2")).await;
+        assert_eq!(cache.len().await, 1);
+        assert_eq!(cache.current_size().await, 3);
+
+        cache.clear().await.unwrap();
+        assert_eq!(cache.len().await, 0);
+        assert_eq!(cache.current_size().await, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_updates_counters() {
+        let temp_dir = TempDir::new().unwrap();
+        let cache = DiskImageCache::new(temp_dir.path().to_path_buf(), 10)
+            .await
+            .unwrap();
+
+        cache
+            .put_bytes(&ImageId::new("test1"), b"123456")
+            .await
+            .unwrap();
+
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+        cache
+            .put_bytes(&ImageId::new("test2"), b"123456")
+            .await
+            .unwrap();
+
+        assert_eq!(cache.len().await, 1);
+        assert_eq!(cache.current_size().await, 6);
     }
 }

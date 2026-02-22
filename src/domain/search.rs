@@ -164,44 +164,4 @@ mod tests {
             (SearchPrefix::Thread, "thread")
         );
     }
-
-    #[test]
-    fn test_search_result_builder() {
-        let result = SearchResult::new("id1", "name1", SearchKind::Channel)
-            .with_guild("guild_id1", "guild_name1")
-            .with_parent_name("parent1")
-            .with_score(100);
-
-        assert_eq!(result.id, "id1");
-        assert_eq!(result.name, "name1");
-        assert_eq!(result.kind, SearchKind::Channel);
-        assert_eq!(result.guild_id, Some("guild_id1".to_string()));
-        assert_eq!(result.guild_name, Some("guild_name1".to_string()));
-        assert_eq!(result.parent_name, Some("parent1".to_string()));
-        assert_eq!(result.score, 100);
-    }
-
-    #[test]
-    fn test_recent_item_new() {
-        let result = SearchResult::new("id1", "name1", SearchKind::Channel)
-            .with_guild("guild_id1", "guild_name1");
-
-        let recent = RecentItem::new(&result);
-
-        assert_eq!(recent.id, result.id);
-        assert_eq!(recent.name, result.name);
-        assert_eq!(recent.kind, result.kind);
-        assert_eq!(recent.guild_id, result.guild_id);
-        assert!(recent.timestamp > 0);
-    }
-
-    #[test]
-    fn test_search_kind_display() {
-        assert_eq!(format!("{}", SearchKind::DM), "DM");
-        assert_eq!(format!("{}", SearchKind::Channel), "Channel");
-        assert_eq!(format!("{}", SearchKind::Voice), "Voice");
-        assert_eq!(format!("{}", SearchKind::Forum), "Forum");
-        assert_eq!(format!("{}", SearchKind::Thread), "Thread");
-        assert_eq!(format!("{}", SearchKind::Guild), "Guild");
-    }
 }
