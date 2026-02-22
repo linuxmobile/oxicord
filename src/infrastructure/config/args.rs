@@ -10,10 +10,6 @@ use std::path::PathBuf;
     long_about = None
 )]
 pub struct CliArgs {
-    /// Discord authentication token.
-    #[arg(short, long, env = "OXICORD_TOKEN", hide_env_values = true)]
-    pub token: Option<String>,
-
     /// Configuration file path.
     #[arg(short, long, value_name = "PATH")]
     pub config: Option<PathBuf>,

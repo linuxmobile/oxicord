@@ -222,8 +222,8 @@ pub struct UserSettingsPayload {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct GuildFolderPayload {
-    #[serde(default)]
-    pub id: Option<u64>,
+    #[serde(default, deserialize_with = "deserialize_option_string_or_int")]
+    pub id: Option<String>,
     pub name: Option<String>,
     pub color: Option<u64>,
     #[serde(default)]
@@ -685,5 +685,23 @@ mod tests {
         let obj = payload.d.as_object().unwrap();
         assert_eq!(obj.get("session_id").unwrap(), "session123");
         assert_eq!(obj.get("seq").unwrap(), 100);
+    }
+
+    #[test]
+    fn test_guild_folder_payload_with_negative_string_id() {
+        let json = r#"{
+            "id": "-6757263541388715000",
+            "guild_ids": [],
+            "name": null,
+            "color": null
+        }"#;
+
+        let folder: Result<GuildFolderPayload, _> = serde_json::from_str(json);
+        match folder {
+            Ok(f) => {
+                assert_eq!(f.id, Some("-6757263541388715000".to_string()));
+            }
+            Err(e) => panic!("Should succeed parsing negative string ID: {e}"),
+        }
     }
 }

@@ -156,12 +156,12 @@ mod tests {
             (SearchPrefix::Guild, "server")
         );
     }
-}
 
-#[test]
-fn test_parse_thread_prefix() {
-    assert_eq!(
-        parse_search_query("^thread"),
-        (SearchPrefix::Thread, "thread")
-    );
+    #[test]
+    fn test_parse_thread_prefix() {
+        assert_eq!(
+            parse_search_query("^thread"),
+            (SearchPrefix::Thread, "thread")
+        );
+    }
 }

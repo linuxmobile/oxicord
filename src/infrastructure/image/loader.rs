@@ -5,6 +5,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use bytes::Bytes;
 use tokio::sync::{RwLock, Semaphore, mpsc};
 use tracing::{debug, error, info, trace, warn};
 
@@ -312,7 +313,7 @@ impl ImageLoader {
     }
 
     /// Downloads image bytes from a URL.
-    async fn download(&self, url: &str) -> CacheResult<(Vec<u8>, Option<String>)> {
+    async fn download(&self, url: &str) -> CacheResult<(Bytes, Option<String>)> {
         let response = self
             .http_client
             .get(url)
@@ -339,7 +340,7 @@ impl ImageLoader {
             .await
             .map_err(|e| CacheError::NetworkError(format!("Failed to read body: {e}")))?;
 
-        Ok((bytes.to_vec(), content_type))
+        Ok((bytes, content_type))
     }
 
     /// Exports an image to a temporary file for external viewing.
@@ -357,7 +358,7 @@ impl ImageLoader {
     ) -> CacheResult<std::path::PathBuf> {
         let (bytes, content_type) = if let Some(cached_bytes) = self.disk_cache.get_bytes(id).await
         {
-            (cached_bytes, None)
+            (Bytes::from(cached_bytes), None)
         } else {
             let optimized_url = optimize_cdn_url_default(url);
             let (bytes, ctype) = self.download(&optimized_url).await?;
@@ -473,10 +474,10 @@ impl ImageLoaderHandle {
             .await
             .map_err(|e| format!("Failed to read body: {e}"))?;
 
-        let bytes_clone = bytes.to_vec();
+        let bytes_for_decode = bytes.clone();
         let decoded =
             tokio::task::spawn_blocking(move || -> Result<image::DynamicImage, String> {
-                let img = image::load_from_memory(&bytes_clone)
+                let img = image::load_from_memory(&bytes_for_decode)
                     .map_err(|e| format!("Decode failed: {e}"))?;
 
                 if img.width() > 400 {
@@ -494,9 +495,9 @@ impl ImageLoaderHandle {
 
         let disk_cache = self.disk_cache.clone();
         let id_clone = id.clone();
-        let bytes_vec = bytes.to_vec();
+        let bytes_for_disk = bytes.clone();
         tokio::spawn(async move {
-            if let Err(e) = disk_cache.put_bytes(&id_clone, &bytes_vec).await {
+            if let Err(e) = disk_cache.put_bytes(&id_clone, &bytes_for_disk).await {
                 warn!(id = %id_clone, error = %e, "Failed to cache to disk");
             }
         });

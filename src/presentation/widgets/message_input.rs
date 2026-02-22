@@ -461,7 +461,7 @@ impl MessageInputState<'_> {
             _ => {}
         }
 
-        match if key.code == KeyCode::Enter && !key.modifiers.contains(KeyModifiers::SHIFT) {
+        match if key.code == KeyCode::Enter && key.modifiers.is_empty() {
             Some(Action::SendMessage)
         } else {
             registry.find_action(key)
@@ -509,6 +509,10 @@ impl MessageInputState<'_> {
                     reply_to,
                     attachments,
                 })
+            }
+            Some(Action::NewLine) => {
+                self.textarea.insert_newline();
+                Some(MessageInputAction::StartTyping)
             }
             Some(Action::OpenEditor) => Some(MessageInputAction::OpenEditor),
             Some(Action::ClearInput) => {
@@ -605,8 +609,6 @@ impl MessageInputState<'_> {
                     self.move_cursor_up();
                 } else if key.code == KeyCode::Down {
                     self.move_cursor_down();
-                } else if key.code == KeyCode::Enter {
-                    self.textarea.insert_newline();
                 }
 
                 let was_empty = self.is_empty();
@@ -942,19 +944,21 @@ mod tests {
     }
 
     #[test]
-    fn test_enter_and_shift_enter() {
+    fn test_enter_and_newline_shortcuts() {
         let mut state = MessageInputState::new();
         let registry = CommandRegistry::default();
         state.set_has_channel(true);
         state.set_content("hello");
 
+        // Ctrl+j (New Line)
         let action = state.handle_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT),
+            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL),
             &registry,
         );
         assert!(matches!(action, Some(MessageInputAction::StartTyping)));
         assert_eq!(state.value(), "hello\n");
 
+        // Normal Enter (Send)
         let action = state.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &registry);
         assert!(matches!(
             action,
@@ -1139,8 +1143,7 @@ mod tests {
         assert_eq!(
             state.value(),
             expected,
-            "Unicode character '{}' should be correctly captured",
-            char_input
+            "Unicode character '{char_input}' should be correctly captured"
         );
     }
 

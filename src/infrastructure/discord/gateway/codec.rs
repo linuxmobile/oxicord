@@ -365,7 +365,15 @@ impl EventParser {
             .unwrap_or_default()
             .into_iter()
             .map(|f| crate::domain::entities::GuildFolder {
-                id: f.id,
+                id: f.id.and_then(|s| {
+                    s.parse::<u64>().ok().or_else(|| {
+                        s.parse::<i64>().ok().map(|v| {
+                            #[allow(clippy::cast_sign_loss)]
+                            let v_u64 = v as u64;
+                            v_u64
+                        })
+                    })
+                }),
                 name: f.name,
                 color: f.color,
                 guild_ids: f
@@ -896,7 +904,15 @@ impl EventParser {
             .guild_folders
             .into_iter()
             .map(|f| crate::domain::entities::GuildFolder {
-                id: f.id,
+                id: f.id.and_then(|s| {
+                    s.parse::<u64>().ok().or_else(|| {
+                        s.parse::<i64>().ok().map(|v| {
+                            #[allow(clippy::cast_sign_loss)]
+                            let v_u64 = v as u64;
+                            v_u64
+                        })
+                    })
+                }),
                 name: f.name,
                 color: f.color,
                 guild_ids: f
@@ -1160,10 +1176,12 @@ mod tests {
                 )
                 .unwrap();
 
-            let produced = encoder.total_out() as usize - compressed.len();
+            let total_out = usize::try_from(encoder.total_out()).expect("total_out should fit in usize");
+            let produced = total_out - compressed.len();
             compressed.extend_from_slice(&out_buffer[..produced]);
 
-            let consumed = encoder.total_in() as usize - total_in;
+            let total_in_now = usize::try_from(encoder.total_in()).expect("total_in should fit in usize");
+            let consumed = total_in_now - total_in;
             total_in += consumed;
 
             if status == Status::StreamEnd || (input.is_empty() && status == Status::Ok) {

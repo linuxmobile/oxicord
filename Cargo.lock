@@ -418,9 +418,9 @@ checksum = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495"
 
 [[package]]
 name = "bytes"
-version = "1.11.0"
+version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b35204fbdc0b3f4446b89fc1ac2cf84a8a68971995d0bf2e925ec7cd960f9cb3"
+checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
 name = "cassowary"
@@ -782,27 +782,6 @@ name = "data-encoding"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
-
-[[package]]
-name = "dbus"
-version = "0.9.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21b3aa68d7e7abee336255bd7248ea965cc393f3e70411135a6f6a4b651345d4"
-dependencies = [
- "libc",
- "libdbus-sys",
- "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "dbus-secret-service"
-version = "4.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "708b509edf7889e53d7efb0ffadd994cc6c2345ccb62f55cfd6b0682165e4fa6"
-dependencies = [
- "dbus",
- "zeroize",
-]
 
 [[package]]
 name = "deranged"
@@ -1662,7 +1641,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eebcc3aff044e5944a8fbaf69eb277d11986064cba30c468730e8b9909fb551c"
 dependencies = [
  "byteorder",
- "dbus-secret-service",
  "log",
  "security-framework 2.11.1",
  "security-framework 3.5.1",
@@ -1681,15 +1659,6 @@ name = "libc"
 version = "0.2.180"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bcc35a38544a891a5f7c865aca548a982ccb3b8650a5b06d0fd33a10283c56fc"
-
-[[package]]
-name = "libdbus-sys"
-version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "328c4789d42200f1eeec05bd86c9c13c7f091d2ba9a6ea35acdf51f31bc0f043"
-dependencies = [
- "pkg-config",
-]
 
 [[package]]
 name = "libm"
@@ -2149,6 +2118,7 @@ dependencies = [
  "async-trait",
  "base64",
  "bitflags",
+ "bytes",
  "chrono",
  "clap",
  "color-eyre",
@@ -2167,6 +2137,7 @@ dependencies = [
  "notify-rust",
  "opener",
  "parking_lot",
+ "percent-encoding",
  "ratatui 0.30.0",
  "ratatui-image",
  "regex",
@@ -2174,6 +2145,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "shlex",
  "syntect",
  "tachyonfx",
  "tempfile",
@@ -2189,6 +2161,7 @@ dependencies = [
  "tui-scrollbar",
  "tui-textarea",
  "unicode-width 0.2.0",
+ "url",
  "uuid",
  "zeroize",
 ]

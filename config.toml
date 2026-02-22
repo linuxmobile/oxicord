@@ -6,9 +6,6 @@ log_level = "info"
 # Enable mouse support
 mouse = true
 
-# Enable desktop notifications
-enable_desktop_notifications = true
-
 # Disable user colors (monochrome mode)
 disable_user_colors = false
 
@@ -129,11 +126,11 @@ notification_duration = 5
 hide_blocked_completely = false
 
 [notifications]
-# Enable notifications globally
-enabled = true
+# Enable desktop notifications
+desktop = true
 
 # Enable internal TUI notifications
-internal_notifications = true
+internal = true
 
 [theme]
 # Accent color (name or hex code)

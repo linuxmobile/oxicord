@@ -205,12 +205,6 @@ impl ImageManager {
         }
     }
 
-    #[deprecated(since = "0.2.0", note = "use `new()` instead")]
-    #[must_use]
-    pub fn from_query() -> Self {
-        Self::new()
-    }
-
     #[must_use]
     pub fn protocol_type(&self) -> ProtocolType {
         self.picker.protocol_type()

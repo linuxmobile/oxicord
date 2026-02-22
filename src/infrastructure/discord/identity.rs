@@ -130,24 +130,29 @@ impl ClientIdentity {
 
     /// Updates the client build number.
     ///
-    /// # Panics
-    /// Panics if the internal lock is poisoned.
-    pub fn update_build_number(&self, build_number: u32) {
-        {
-            let mut props = self.properties.write().unwrap();
+    /// # Errors
+    /// Returns an error if the internal lock is poisoned.
+    pub fn update_build_number(&self, build_number: u32) -> Result<(), String> {
+        let header = {
+            let mut props = self
+                .properties
+                .write()
+                .map_err(|e| format!("properties lock poisoned: {e}"))?;
             if props.client_build_number == build_number {
-                return;
+                return Ok(());
             }
             props.client_build_number = build_number;
-        }
 
-        // Update cache
-        let props = self.properties.read().unwrap();
-        let json = serde_json::to_string(&*props).unwrap_or_default();
-        let header = general_purpose::STANDARD.encode(json);
+            let json = serde_json::to_string(&*props).unwrap_or_default();
+            general_purpose::STANDARD.encode(json)
+        };
 
-        let mut cache = self.header_cache.write().unwrap();
+        let mut cache = self
+            .header_cache
+            .write()
+            .map_err(|e| format!("header_cache lock poisoned: {e}"))?;
         *cache = header;
+        Ok(())
     }
 
     /// Returns a copy of the current properties.
@@ -189,7 +194,9 @@ mod tests {
     #[test]
     fn test_update_build_number() {
         let identity = ClientIdentity::new();
-        identity.update_build_number(123_456);
+        identity
+            .update_build_number(123_456)
+            .expect("should succeed");
         let props = identity.get_props();
         assert_eq!(props.client_build_number, 123_456);
 
@@ -206,7 +213,9 @@ mod tests {
     fn test_header_value_encoding() {
         let identity = ClientIdentity::new();
         // Override with known values for deterministic output test
-        identity.update_build_number(123_456);
+        identity
+            .update_build_number(123_456)
+            .expect("should succeed");
         // Note: we can't easily override other private fields without creating a new method
         // but checking build number update verifies the cache mechanism works
 
