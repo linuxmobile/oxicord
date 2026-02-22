@@ -334,7 +334,7 @@ impl MessagePaneData {
     pub fn set_messages(&mut self, messages: Vec<Message>) {
         for msg in &messages {
             self.update_author(
-                msg.author().id().to_string(),
+                msg.author().id(),
                 IdentityResolver::with_preference(self.use_display_name).resolve(msg.author()),
             );
             for mention in msg.mentions() {
@@ -356,7 +356,7 @@ impl MessagePaneData {
             && !self.messages.iter().any(|m| m.message.id() == message.id())
         {
             self.update_author(
-                message.author().id().to_string(),
+                message.author().id(),
                 IdentityResolver::with_preference(self.use_display_name).resolve(message.author()),
             );
             for mention in message.mentions() {
@@ -377,7 +377,7 @@ impl MessagePaneData {
         for msg in new_messages.into_iter().rev() {
             if !existing_ids.contains(&msg.id()) {
                 self.update_author(
-                    msg.author().id().to_string(),
+                    msg.author().id(),
                     IdentityResolver::with_preference(self.use_display_name).resolve(msg.author()),
                 );
                 for mention in msg.mentions() {
@@ -416,9 +416,10 @@ impl MessagePaneData {
         self.is_dirty = true;
     }
 
-    fn update_author(&mut self, id: String, name: String) {
-        if self.authors.get(&id) != Some(&name) {
-            self.authors.insert(id, name);
+    fn update_author<'a>(&mut self, id: impl Into<std::borrow::Cow<'a, str>>, name: String) {
+        let id = id.into();
+        if self.authors.get(id.as_ref()) != Some(&name) {
+            self.authors.insert(id.into_owned(), name);
             self.authors_generation = self.authors_generation.wrapping_add(1);
         }
     }
@@ -433,22 +434,27 @@ impl MessagePaneData {
 
         for ui_msg in &mut self.messages {
             let msg = &ui_msg.message;
-            let current_author_id = msg.author().id().to_string();
+            let current_author_id = msg.author().id();
             let current_timestamp = msg.timestamp().timestamp();
 
             ui_msg.group = MessageGroup::Start;
 
-            if !msg.is_reply()
-                && let (Some(prev_id), Some(prev_ts)) = (&previous_author_id, previous_timestamp)
-                && prev_id == &current_author_id
-            {
-                let diff = current_timestamp.saturating_sub(prev_ts);
-                if diff < GROUPING_WINDOW_SECONDS {
-                    ui_msg.group = MessageGroup::Compact;
+            let same_author = previous_author_id
+                .as_deref()
+                .is_some_and(|id| id == current_author_id);
+
+            if !msg.is_reply() && same_author {
+                if let Some(prev_ts) = previous_timestamp {
+                    let diff = current_timestamp.saturating_sub(prev_ts);
+                    if diff < GROUPING_WINDOW_SECONDS {
+                        ui_msg.group = MessageGroup::Compact;
+                    }
                 }
             }
 
-            previous_author_id = Some(current_author_id);
+            if !same_author {
+                previous_author_id = Some(current_author_id.to_string());
+            }
             previous_timestamp = Some(current_timestamp);
         }
     }
