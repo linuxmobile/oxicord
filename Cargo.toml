@@ -34,7 +34,7 @@ color-eyre = "0.6.5"
 toml = "0.9"
 directories = "6.0"
 
-keyring = { version = "3.6.3", default-features = false, features = ["sync-secret-service", "apple-native", "windows-native"] }
+keyring = { version = "3.6.3", default-features = false, features = ["apple-native", "windows-native"] }
 zeroize = { version = "1.8.1", features = ["derive"] }
 
 tracing = { version = "0.1.44", default-features = false, features = ["std", "attributes"] }

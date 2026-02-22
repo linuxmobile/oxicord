@@ -86,6 +86,7 @@ pub struct UiMessage {
     /// Cached reply preview line
     pub reply_preview: Option<Line<'static>>,
     pub group: MessageGroup,
+    pub rendered_generation: Option<usize>,
 }
 
 impl UiMessage {
@@ -115,6 +116,7 @@ impl UiMessage {
             rendered_embeds: Vec::new(),
             reply_preview: None,
             group: MessageGroup::Start,
+            rendered_generation: None,
         }
     }
 
@@ -278,6 +280,7 @@ pub struct MessagePaneData {
     last_image_preview: Option<bool>,
     is_dirty: bool,
     use_display_name: bool,
+    authors_generation: usize,
 }
 
 impl MessagePaneData {
@@ -301,6 +304,7 @@ impl MessagePaneData {
             last_image_preview: None,
             is_dirty: true,
             use_display_name,
+            authors_generation: 0,
         }
     }
 
@@ -329,12 +333,12 @@ impl MessagePaneData {
 
     pub fn set_messages(&mut self, messages: Vec<Message>) {
         for msg in &messages {
-            self.authors.insert(
+            self.update_author(
                 msg.author().id().to_string(),
                 IdentityResolver::with_preference(self.use_display_name).resolve(msg.author()),
             );
             for mention in msg.mentions() {
-                self.authors.insert(
+                self.update_author(
                     mention.id().to_string(),
                     IdentityResolver::with_preference(self.use_display_name).resolve(mention),
                 );
@@ -351,12 +355,12 @@ impl MessagePaneData {
         if self.channel_id == Some(message.channel_id())
             && !self.messages.iter().any(|m| m.message.id() == message.id())
         {
-            self.authors.insert(
+            self.update_author(
                 message.author().id().to_string(),
                 IdentityResolver::with_preference(self.use_display_name).resolve(message.author()),
             );
             for mention in message.mentions() {
-                self.authors.insert(
+                self.update_author(
                     mention.id().to_string(),
                     IdentityResolver::with_preference(self.use_display_name).resolve(mention),
                 );
@@ -372,12 +376,12 @@ impl MessagePaneData {
         let mut added = 0;
         for msg in new_messages.into_iter().rev() {
             if !existing_ids.contains(&msg.id()) {
-                self.authors.insert(
+                self.update_author(
                     msg.author().id().to_string(),
                     IdentityResolver::with_preference(self.use_display_name).resolve(msg.author()),
                 );
                 for mention in msg.mentions() {
-                    self.authors.insert(
+                    self.update_author(
                         mention.id().to_string(),
                         IdentityResolver::with_preference(self.use_display_name).resolve(mention),
                     );
@@ -410,6 +414,13 @@ impl MessagePaneData {
         self.messages.retain(|m| m.message.id() != message_id);
         self.update_grouping();
         self.is_dirty = true;
+    }
+
+    fn update_author(&mut self, id: String, name: String) {
+        if self.authors.get(&id) != Some(&name) {
+            self.authors.insert(id, name);
+            self.authors_generation = self.authors_generation.wrapping_add(1);
+        }
     }
 
     fn update_grouping(&mut self) {
@@ -460,6 +471,7 @@ impl MessagePaneData {
         self.is_dm = false;
         self.typing_indicator = None;
         self.authors.clear();
+        self.authors_generation = 0;
         self.channels.clear();
         self.is_dirty = true;
     }
@@ -471,6 +483,7 @@ impl MessagePaneData {
 
     pub fn refresh_authors(&mut self) {
         self.authors.clear();
+        self.authors_generation = 0;
         let resolver = IdentityResolver::with_preference(self.use_display_name);
         for ui_msg in &self.messages {
             let author = ui_msg.message.author();
@@ -482,7 +495,7 @@ impl MessagePaneData {
             for mention in ui_msg.message.mentions() {
                 let id_str = mention.id().to_string();
                 if !self.authors.contains_key(&id_str) {
-                    self.authors.insert(id_str, resolver.resolve(mention));
+                    self.update_author(id_str, resolver.resolve(mention));
                 }
             }
         }
@@ -575,10 +588,12 @@ impl MessagePaneData {
         show_spoilers: bool,
         image_preview: bool,
     ) {
+        let full_invalidation = self.last_layout_width != Some(width)
+            || self.last_show_spoilers != Some(show_spoilers)
+            || self.last_image_preview != Some(image_preview);
+
         if !self.is_dirty
-            && self.last_layout_width == Some(width)
-            && self.last_show_spoilers == Some(show_spoilers)
-            && self.last_image_preview == Some(image_preview)
+            && !full_invalidation
             && !self.messages.iter().any(|m| m.rendered_content.is_none())
         {
             return;
@@ -596,8 +611,16 @@ impl MessagePaneData {
         let authors = &self.authors;
         let channels = &self.channels;
         let resolver = HashMapResolver { authors, channels };
+        let current_generation = self.authors_generation;
 
         for ui_msg in &mut self.messages {
+            if !full_invalidation
+                && ui_msg.rendered_content.is_some()
+                && ui_msg.rendered_generation == Some(current_generation)
+            {
+                continue;
+            }
+
             Self::layout_message(
                 ui_msg,
                 content_width,
@@ -609,6 +632,7 @@ impl MessagePaneData {
                 authors,
                 self.use_display_name,
             );
+            ui_msg.rendered_generation = Some(current_generation);
         }
 
         self.last_layout_width = Some(width);
@@ -628,6 +652,7 @@ impl MessagePaneData {
         resolver: &HashMapResolver<'_>,
         authors: &HashMap<String, String>,
         use_display_name: bool,
+    authors_generation: usize,
     ) {
         let message = &ui_msg.message;
 
@@ -2155,6 +2180,7 @@ fn render_ui_message(
     state: &mut MessagePaneState,
     disable_user_colors: bool,
     use_display_name: bool,
+    authors_generation: usize,
     image_preview: bool,
     timestamp_format: &str,
     current_user_id: Option<&str>,
