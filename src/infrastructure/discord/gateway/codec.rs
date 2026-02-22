@@ -1176,11 +1176,13 @@ mod tests {
                 )
                 .unwrap();
 
-            let total_out = usize::try_from(encoder.total_out()).expect("total_out should fit in usize");
+            let total_out =
+                usize::try_from(encoder.total_out()).expect("total_out should fit in usize");
             let produced = total_out - compressed.len();
             compressed.extend_from_slice(&out_buffer[..produced]);
 
-            let total_in_now = usize::try_from(encoder.total_in()).expect("total_in should fit in usize");
+            let total_in_now =
+                usize::try_from(encoder.total_in()).expect("total_in should fit in usize");
             let consumed = total_in_now - total_in;
             total_in += consumed;
 

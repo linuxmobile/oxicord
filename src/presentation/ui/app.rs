@@ -1984,8 +1984,12 @@ impl App {
 
         debug!(editor = %editor, path = %temp_path.display(), "Opening external editor");
 
-        let parts = crate::presentation::ui::utils::split_command(&editor)
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid editor command syntax"))?;
+        let parts = crate::presentation::ui::utils::split_command(&editor).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Invalid editor command syntax",
+            )
+        })?;
 
         let mut parts_iter = parts.into_iter();
         let cmd = parts_iter.next().ok_or_else(|| {

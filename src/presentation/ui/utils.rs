@@ -165,23 +165,42 @@ mod tests {
     #[test]
     fn test_split_command() {
         assert_eq!(split_command("nvim"), Some(vec!["nvim".to_string()]));
-        assert_eq!(split_command("code --wait"), Some(vec!["code".to_string(), "--wait".to_string()]));
+        assert_eq!(
+            split_command("code --wait"),
+            Some(vec!["code".to_string(), "--wait".to_string()])
+        );
         assert_eq!(
             split_command("\"/usr/bin/my editor\" --file"),
             Some(vec!["/usr/bin/my editor".to_string(), "--file".to_string()])
         );
-        assert_eq!(split_command("nvim -u NONE"), Some(vec!["nvim".to_string(), "-u".to_string(), "NONE".to_string()]));
+        assert_eq!(
+            split_command("nvim -u NONE"),
+            Some(vec![
+                "nvim".to_string(),
+                "-u".to_string(),
+                "NONE".to_string()
+            ])
+        );
         assert_eq!(
             split_command("editor 'file with spaces.txt'"),
-            Some(vec!["editor".to_string(), "file with spaces.txt".to_string()])
+            Some(vec![
+                "editor".to_string(),
+                "file with spaces.txt".to_string()
+            ])
         );
         assert_eq!(
             split_command("editor \"file with spaces.txt\""),
-            Some(vec!["editor".to_string(), "file with spaces.txt".to_string()])
+            Some(vec![
+                "editor".to_string(),
+                "file with spaces.txt".to_string()
+            ])
         );
         assert_eq!(
             split_command("editor file\\ with\\ spaces.txt"),
-            Some(vec!["editor".to_string(), "file with spaces.txt".to_string()])
+            Some(vec![
+                "editor".to_string(),
+                "file with spaces.txt".to_string()
+            ])
         );
         assert_eq!(split_command(""), Some(Vec::<String>::new()));
         assert_eq!(split_command("   "), Some(Vec::<String>::new()));
