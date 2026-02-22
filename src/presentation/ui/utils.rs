@@ -88,7 +88,7 @@ pub fn get_user_color(user: &User) -> Color {
     }
 }
 
-/// Helper function to create a centered rect using up certain percentage of the available rect `r`
+/// Helper function to create a centered rect using up certain percentage of the available rect
 #[must_use]
 pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
@@ -112,39 +112,12 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
 
 /// Splits a command string into arguments, handling shell-like quoting and escaping.
 /// This allows for paths with spaces and prevents simple whitespace splitting issues.
+///
+/// Uses `shlex` to ensure robust and secure parsing. Returns `None` if parsing fails
+/// (e.g. mismatched quotes).
 #[must_use]
-pub fn split_command(s: &str) -> Vec<String> {
-    let mut args = Vec::new();
-    let mut current = String::new();
-    let mut in_double_quotes = false;
-    let mut in_single_quotes = false;
-    let mut escaped = false;
-
-    for c in s.chars() {
-        if escaped {
-            current.push(c);
-            escaped = false;
-        } else if c == '\\' {
-            escaped = true;
-        } else if c == '"' && !in_single_quotes {
-            in_double_quotes = !in_double_quotes;
-        } else if c == '\'' && !in_double_quotes {
-            in_single_quotes = !in_single_quotes;
-        } else if c.is_whitespace() && !in_double_quotes && !in_single_quotes {
-            if !current.is_empty() {
-                args.push(current);
-                current = String::new();
-            }
-        } else {
-            current.push(c);
-        }
-    }
-
-    if !current.is_empty() {
-        args.push(current);
-    }
-
-    args
+pub fn split_command(s: &str) -> Option<Vec<String>> {
+    shlex::split(s)
 }
 
 /// Formats an ISO 8601 timestamp string to local time (HH:MM format).
@@ -191,26 +164,29 @@ mod tests {
     }
     #[test]
     fn test_split_command() {
-        assert_eq!(split_command("nvim"), vec!["nvim"]);
-        assert_eq!(split_command("code --wait"), vec!["code", "--wait"]);
+        assert_eq!(split_command("nvim"), Some(vec!["nvim".to_string()]));
+        assert_eq!(split_command("code --wait"), Some(vec!["code".to_string(), "--wait".to_string()]));
         assert_eq!(
             split_command("\"/usr/bin/my editor\" --file"),
-            vec!["/usr/bin/my editor", "--file"]
+            Some(vec!["/usr/bin/my editor".to_string(), "--file".to_string()])
         );
-        assert_eq!(split_command("nvim -u NONE"), vec!["nvim", "-u", "NONE"]);
+        assert_eq!(split_command("nvim -u NONE"), Some(vec!["nvim".to_string(), "-u".to_string(), "NONE".to_string()]));
         assert_eq!(
             split_command("editor 'file with spaces.txt'"),
-            vec!["editor", "file with spaces.txt"]
+            Some(vec!["editor".to_string(), "file with spaces.txt".to_string()])
         );
         assert_eq!(
             split_command("editor \"file with spaces.txt\""),
-            vec!["editor", "file with spaces.txt"]
+            Some(vec!["editor".to_string(), "file with spaces.txt".to_string()])
         );
         assert_eq!(
             split_command("editor file\\ with\\ spaces.txt"),
-            vec!["editor", "file with spaces.txt"]
+            Some(vec!["editor".to_string(), "file with spaces.txt".to_string()])
         );
-        assert_eq!(split_command(""), Vec::<String>::new());
-        assert_eq!(split_command("   "), Vec::<String>::new());
+        assert_eq!(split_command(""), Some(Vec::<String>::new()));
+        assert_eq!(split_command("   "), Some(Vec::<String>::new()));
+
+        // Invalid input
+        assert_eq!(split_command("vim \"unclosed"), None);
     }
 }

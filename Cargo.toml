@@ -41,6 +41,7 @@ tracing = { version = "0.1.44", default-features = false, features = ["std", "at
 tracing-subscriber = { version = "0.3.22", default-features = false, features = ["env-filter", "fmt", "ansi", "std", "registry"] }
 
 async-trait = "0.1.89"
+shlex = "1.3"
 
 dotenvy = "0.15.7"
 
