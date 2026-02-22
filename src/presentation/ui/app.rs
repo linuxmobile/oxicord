@@ -1984,6 +1984,14 @@ impl App {
 
         debug!(editor = %editor, path = %temp_path.display(), "Opening external editor");
 
+        let parts = crate::presentation::ui::utils::split_command(&editor)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid editor command syntax"))?;
+
+        let mut parts_iter = parts.into_iter();
+        let cmd = parts_iter.next().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "Empty editor command")
+        })?;
+
         crossterm::terminal::disable_raw_mode()?;
         crossterm::execute!(
             std::io::stdout(),
@@ -1991,19 +1999,8 @@ impl App {
             crossterm::cursor::Show
         )?;
 
-        let parts = crate::presentation::ui::utils::split_command(&editor);
-        let mut parts_iter = parts.into_iter();
-        let status = if let Some(cmd) = parts_iter.next() {
-            std::process::Command::new(cmd)
-                .args(parts_iter)
-                .arg(&temp_path)
-                .status()
-        } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "Empty editor command",
-            ))
-        };
+        let status = std::process::Command::new(cmd)
+            .args(parts_iter)
 
         crossterm::terminal::enable_raw_mode()?;
         crossterm::execute!(
