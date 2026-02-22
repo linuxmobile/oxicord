@@ -458,8 +458,8 @@ mod tests {
     }
 
     #[test_case(KeyCode::Char('a'), "", "a", QuickSwitcherAction::UpdateSearch("a".to_string()) ; "type_char")]
-    #[test_case(KeyCode::Backspace, "a", "", QuickSwitcherAction::UpdateSearch("".to_string()) ; "backspace_char")]
-    #[test_case(KeyCode::Backspace, "", "", QuickSwitcherAction::UpdateSearch("".to_string()) ; "backspace_empty")]
+    #[test_case(KeyCode::Backspace, "a", "", QuickSwitcherAction::UpdateSearch(String::new()) ; "backspace_char")]
+    #[test_case(KeyCode::Backspace, "", "", QuickSwitcherAction::UpdateSearch(String::new()) ; "backspace_empty")]
     #[test_case(KeyCode::Esc, "abc", "abc", QuickSwitcherAction::Close ; "escape_preserves_input")]
     #[test_case(KeyCode::Tab, "abc", "abc", QuickSwitcherAction::ToggleSortMode ; "tab_toggles_mode")]
     fn test_handle_key_input(
@@ -477,11 +477,11 @@ mod tests {
 
         match (action, expected_action) {
             (QuickSwitcherAction::UpdateSearch(a), QuickSwitcherAction::UpdateSearch(b)) => {
-                assert_eq!(a, b)
+                assert_eq!(a, b);
             }
-            (QuickSwitcherAction::Close, QuickSwitcherAction::Close) => {}
-            (QuickSwitcherAction::ToggleSortMode, QuickSwitcherAction::ToggleSortMode) => {}
-            (a, b) => panic!("Action mismatch: got {:?}, expected {:?}", a, b),
+            (QuickSwitcherAction::Close, QuickSwitcherAction::Close)
+            | (QuickSwitcherAction::ToggleSortMode, QuickSwitcherAction::ToggleSortMode) => {}
+            (a, b) => panic!("Action mismatch: got {a:?}, expected {b:?}"),
         }
     }
 

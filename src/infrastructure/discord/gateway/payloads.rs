@@ -701,7 +701,7 @@ mod tests {
             Ok(f) => {
                 assert_eq!(f.id, Some("-6757263541388715000".to_string()));
             }
-            Err(e) => panic!("Should succeed parsing negative string ID: {}", e),
+            Err(e) => panic!("Should succeed parsing negative string ID: {e}"),
         }
     }
 }

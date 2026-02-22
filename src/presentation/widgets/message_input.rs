@@ -1143,8 +1143,7 @@ mod tests {
         assert_eq!(
             state.value(),
             expected,
-            "Unicode character '{}' should be correctly captured",
-            char_input
+            "Unicode character '{char_input}' should be correctly captured"
         );
     }
 

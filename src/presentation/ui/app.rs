@@ -2001,6 +2001,8 @@ impl App {
 
         let status = std::process::Command::new(cmd)
             .args(parts_iter)
+            .arg(&temp_path)
+            .status();
 
         crossterm::terminal::enable_raw_mode()?;
         crossterm::execute!(

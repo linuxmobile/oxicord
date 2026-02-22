@@ -3725,14 +3725,12 @@ mod tests {
 
         assert!(
             matches!(result, ChatKeyResult::StartTyping | ChatKeyResult::Ignored),
-            "Character '{}' should be typed in input mode, not trigger actions",
-            c
+            "Character '{c}' should be typed in input mode, not trigger actions"
         );
         assert_eq!(
             state.focus(),
             ChatFocus::MessageInput,
-            "Focus should remain on MessageInput when typing '{}'",
-            c
+            "Focus should remain on MessageInput when typing '{c}'"
         );
     }
 
@@ -3999,8 +3997,7 @@ mod tests {
 
         assert!(
             null_recent.is_none(),
-            "Should not add null channel to recents. Found: {:?}",
-            null_recent
+            "Should not add null channel to recents. Found: {null_recent:?}"
         );
 
         if state.selected_channel().is_none() {
