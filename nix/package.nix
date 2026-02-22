@@ -14,7 +14,7 @@ rustPlatform.buildRustPackage (final: let
   inherit (lib) licenses platforms;
 in {
   pname = "oxicord";
-  version = "0.1.8";
+  version = "0.1.9";
 
   src = toSource {
     root = ../.;
