@@ -143,10 +143,10 @@ impl FileExplorerComponent {
                 .collect();
         }
 
-        if !self.entries.is_empty() {
-            self.state.select(Some(0));
-        } else {
+        if self.entries.is_empty() {
             self.state.select(None);
+        } else {
+            self.state.select(Some(0));
         }
     }
 
@@ -158,146 +158,148 @@ impl FileExplorerComponent {
 
     pub fn handle_key(&mut self, key: KeyEvent) -> FileExplorerAction {
         if self.is_searching {
-            match key.code {
-                KeyCode::Esc => {
-                    self.is_searching = false;
-                    self.search_query.clear();
-                    self.update_search_results();
-                    FileExplorerAction::None
-                }
-                KeyCode::Enter => {
-                    // Execute selection (existing logic)
-                    if let Some(selected) = self.selected_entry() {
-                        if selected.name == ".." {
-                            // ".." usually shouldn't appear in search results unless query is empty
-                            // but let's handle it just in case.
-                            let parent = self
-                                .current_dir
-                                .parent()
-                                .map(PathBuf::from)
-                                .unwrap_or(self.current_dir.clone());
-                            self.current_dir = parent;
-                            let path = self.current_dir.clone();
-                            self.load_entries(&path);
-                            FileExplorerAction::None
-                        } else if selected.is_dir {
-                            self.current_dir = selected.path.clone();
-                            let path = self.current_dir.clone();
-                            self.load_entries(&path);
-                            FileExplorerAction::None
-                        } else {
-                            FileExplorerAction::SelectFile(selected.path.clone())
-                        }
-                    } else {
-                        FileExplorerAction::None
-                    }
-                }
-                KeyCode::Up => {
-                    self.previous();
-                    FileExplorerAction::None
-                }
-                KeyCode::Down => {
-                    self.next();
-                    FileExplorerAction::None
-                }
-                KeyCode::Char('j')
-                    if key
-                        .modifiers
-                        .contains(crossterm::event::KeyModifiers::CONTROL) =>
-                {
-                    self.next();
-                    FileExplorerAction::None
-                }
-                KeyCode::Char('k')
-                    if key
-                        .modifiers
-                        .contains(crossterm::event::KeyModifiers::CONTROL) =>
-                {
-                    self.previous();
-                    FileExplorerAction::None
-                }
-                KeyCode::Backspace => {
-                    self.search_query.pop();
-                    self.update_search_results();
-                    FileExplorerAction::None
-                }
-                KeyCode::Char(c) => {
-                    self.search_query.push(c);
-                    self.update_search_results();
-                    FileExplorerAction::None
-                }
-                _ => FileExplorerAction::None,
-            }
+            self.handle_search_key(key)
         } else {
-            match key.code {
-                KeyCode::Char('/') => {
-                    self.is_searching = true;
-                    self.search_query.clear();
-                    self.update_search_results();
-                    FileExplorerAction::None
-                }
-                KeyCode::Esc => FileExplorerAction::Close,
-                KeyCode::Up | KeyCode::Char('k') => {
-                    self.previous();
-                    FileExplorerAction::None
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    self.next();
-                    FileExplorerAction::None
-                }
-                KeyCode::Char('h') => {
-                    let parent = self
-                        .current_dir
-                        .parent()
-                        .map(PathBuf::from)
-                        .unwrap_or(self.current_dir.clone());
-                    self.current_dir = parent;
-                    let path = self.current_dir.clone();
-                    self.load_entries(&path);
-                    FileExplorerAction::None
-                }
-                KeyCode::Char('l') => {
-                    if let Some(selected) = self.selected_entry() {
-                        if selected.name == ".." {
-                            FileExplorerAction::None
-                        } else if selected.is_dir {
-                            self.current_dir = selected.path.clone();
-                            let path = self.current_dir.clone();
-                            self.load_entries(&path);
-                            FileExplorerAction::None
-                        } else {
-                            FileExplorerAction::SelectFile(selected.path.clone())
-                        }
-                    } else {
-                        FileExplorerAction::None
-                    }
-                }
-                KeyCode::Enter => {
-                    if let Some(selected) = self.selected_entry() {
-                        if selected.name == ".." {
-                            let parent = self
-                                .current_dir
-                                .parent()
-                                .map(PathBuf::from)
-                                .unwrap_or(self.current_dir.clone());
-                            self.current_dir = parent;
-                            let path = self.current_dir.clone();
-                            self.load_entries(&path);
-                            FileExplorerAction::None
-                        } else if selected.is_dir {
-                            self.current_dir = selected.path.clone();
-                            let path = self.current_dir.clone();
-                            self.load_entries(&path);
-                            FileExplorerAction::None
-                        } else {
-                            FileExplorerAction::SelectFile(selected.path.clone())
-                        }
-                    } else {
-                        FileExplorerAction::None
-                    }
-                }
-                _ => FileExplorerAction::None,
+            self.handle_normal_key(key)
+        }
+    }
+
+    fn handle_search_key(&mut self, key: KeyEvent) -> FileExplorerAction {
+        match key.code {
+            KeyCode::Esc => {
+                self.is_searching = false;
+                self.search_query.clear();
+                self.update_search_results();
+                FileExplorerAction::None
             }
+            KeyCode::Enter => {
+                if let Some(selected) = self.selected_entry() {
+                    if selected.name == ".." {
+                        let parent = self
+                            .current_dir
+                            .parent()
+                            .map_or_else(|| self.current_dir.clone(), PathBuf::from);
+                        self.current_dir = parent;
+                        let path = self.current_dir.clone();
+                        self.load_entries(&path);
+                        FileExplorerAction::None
+                    } else if selected.is_dir {
+                        self.current_dir = selected.path.clone();
+                        let path = self.current_dir.clone();
+                        self.load_entries(&path);
+                        FileExplorerAction::None
+                    } else {
+                        FileExplorerAction::SelectFile(selected.path.clone())
+                    }
+                } else {
+                    FileExplorerAction::None
+                }
+            }
+            KeyCode::Up => {
+                self.previous();
+                FileExplorerAction::None
+            }
+            KeyCode::Down => {
+                self.next();
+                FileExplorerAction::None
+            }
+            KeyCode::Char('j')
+                if key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
+            {
+                self.next();
+                FileExplorerAction::None
+            }
+            KeyCode::Char('k')
+                if key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
+            {
+                self.previous();
+                FileExplorerAction::None
+            }
+            KeyCode::Backspace => {
+                self.search_query.pop();
+                self.update_search_results();
+                FileExplorerAction::None
+            }
+            KeyCode::Char(c) => {
+                self.search_query.push(c);
+                self.update_search_results();
+                FileExplorerAction::None
+            }
+            _ => FileExplorerAction::None,
+        }
+    }
+
+    fn handle_normal_key(&mut self, key: KeyEvent) -> FileExplorerAction {
+        match key.code {
+            KeyCode::Char('/') => {
+                self.is_searching = true;
+                self.search_query.clear();
+                self.update_search_results();
+                FileExplorerAction::None
+            }
+            KeyCode::Esc => FileExplorerAction::Close,
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.previous();
+                FileExplorerAction::None
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.next();
+                FileExplorerAction::None
+            }
+            KeyCode::Char('h') => {
+                let parent = self
+                    .current_dir
+                    .parent()
+                    .map_or_else(|| self.current_dir.clone(), PathBuf::from);
+                self.current_dir = parent;
+                let path = self.current_dir.clone();
+                self.load_entries(&path);
+                FileExplorerAction::None
+            }
+            KeyCode::Char('l') => {
+                if let Some(selected) = self.selected_entry() {
+                    if selected.name == ".." {
+                        FileExplorerAction::None
+                    } else if selected.is_dir {
+                        self.current_dir = selected.path.clone();
+                        let path = self.current_dir.clone();
+                        self.load_entries(&path);
+                        FileExplorerAction::None
+                    } else {
+                        FileExplorerAction::SelectFile(selected.path.clone())
+                    }
+                } else {
+                    FileExplorerAction::None
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(selected) = self.selected_entry() {
+                    if selected.name == ".." {
+                        let parent = self
+                            .current_dir
+                            .parent()
+                            .map_or_else(|| self.current_dir.clone(), PathBuf::from);
+                        self.current_dir = parent;
+                        let path = self.current_dir.clone();
+                        self.load_entries(&path);
+                        FileExplorerAction::None
+                    } else if selected.is_dir {
+                        self.current_dir = selected.path.clone();
+                        let path = self.current_dir.clone();
+                        self.load_entries(&path);
+                        FileExplorerAction::None
+                    } else {
+                        FileExplorerAction::SelectFile(selected.path.clone())
+                    }
+                } else {
+                    FileExplorerAction::None
+                }
+            }
+            _ => FileExplorerAction::None,
         }
     }
     fn next(&mut self) {

@@ -249,7 +249,7 @@ impl<'a> InternalRenderer<'a> {
                             String::new()
                         };
 
-                        format!("{}://{}{}{}{}", scheme, host, path, query, fragment)
+                        format!("{scheme}://{host}{path}{query}{fragment}")
                     } else {
                         url_str.clone()
                     };

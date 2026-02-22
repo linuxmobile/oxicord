@@ -485,20 +485,31 @@ impl MessagePaneData {
         self.authors.clear();
         self.authors_generation = 0;
         let resolver = IdentityResolver::with_preference(self.use_display_name);
+
+        let mut new_authors = Vec::new();
         for ui_msg in &self.messages {
             let author = ui_msg.message.author();
             if !self.authors.contains_key(author.id()) {
-                self.authors
-                    .insert(author.id().to_string(), resolver.resolve(author));
+                let id = author.id().to_string();
+                if !new_authors.iter().any(|(new_id, _)| new_id == &id) {
+                    new_authors.push((id, resolver.resolve(author)));
+                }
             }
 
             for mention in ui_msg.message.mentions() {
                 let id_str = mention.id().to_string();
-                if !self.authors.contains_key(&id_str) {
-                    self.update_author(id_str, resolver.resolve(mention));
+                if !self.authors.contains_key(&id_str)
+                    && !new_authors.iter().any(|(new_id, _)| new_id == &id_str)
+                {
+                    new_authors.push((id_str, resolver.resolve(mention)));
                 }
             }
         }
+
+        for (id, name) in new_authors {
+            self.update_author(id, name);
+        }
+
         self.is_dirty = true;
     }
 
@@ -631,6 +642,7 @@ impl MessagePaneData {
                 &resolver,
                 authors,
                 self.use_display_name,
+                current_generation,
             );
             ui_msg.rendered_generation = Some(current_generation);
         }
@@ -652,7 +664,7 @@ impl MessagePaneData {
         resolver: &HashMapResolver<'_>,
         authors: &HashMap<String, String>,
         use_display_name: bool,
-    authors_generation: usize,
+        _authors_generation: usize,
     ) {
         let message = &ui_msg.message;
 
@@ -1719,6 +1731,7 @@ impl<'a> MessagePane<'a> {
                             state,
                             *disable_user_colors,
                             data.use_display_name,
+                            data.authors_generation,
                             *image_preview,
                             timestamp_format,
                             current_user_id.as_deref(),
@@ -2180,7 +2193,7 @@ fn render_ui_message(
     state: &mut MessagePaneState,
     disable_user_colors: bool,
     use_display_name: bool,
-    authors_generation: usize,
+    _authors_generation: usize,
     image_preview: bool,
     timestamp_format: &str,
     current_user_id: Option<&str>,
