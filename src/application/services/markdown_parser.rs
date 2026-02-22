@@ -568,4 +568,69 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_parse_escape() {
+        let cases = [
+            ("\\*", "*"),
+            ("\\_", "_"),
+            ("\\~", "~"),
+            ("\\|", "|"),
+            ("\\`", "`"),
+            ("\\<", "<"),
+            ("\\\\", "\\"),
+            ("\\a", "a"),
+        ];
+
+        for (input, expected) in cases {
+            let blocks = parse_markdown(input);
+            if let MdBlock::Paragraph(inlines) = &blocks[0] {
+                assert_eq!(inlines.len(), 1, "Failed case: {}", input);
+                if let MdInline::Text(t) = &inlines[0] {
+                    assert_eq!(t, expected, "Failed case: {}", input);
+                } else {
+                    panic!("Expected text for case: {}", input);
+                }
+            } else {
+                panic!("Expected paragraph for case: {}", input);
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_trailing_backslash() {
+        let content = "foo\\";
+        let blocks = parse_markdown(content);
+        if let MdBlock::Paragraph(inlines) = &blocks[0] {
+            assert_eq!(inlines.len(), 2);
+            if let MdInline::Text(t1) = &inlines[0] {
+                assert_eq!(t1, "foo");
+            } else {
+                panic!("Expected text 'foo'");
+            }
+            if let MdInline::Text(t2) = &inlines[1] {
+                assert_eq!(t2, "\\");
+            } else {
+                panic!("Expected text '\\'");
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_escape_prevents_styling() {
+        let content = "\\*not italic\\*";
+        let blocks = parse_markdown(content);
+
+        if let MdBlock::Paragraph(inlines) = &blocks[0] {
+            assert_eq!(inlines.len(), 3);
+            match (&inlines[0], &inlines[1], &inlines[2]) {
+                (MdInline::Text(t1), MdInline::Text(t2), MdInline::Text(t3)) => {
+                    assert_eq!(t1, "*");
+                    assert_eq!(t2, "not italic");
+                    assert_eq!(t3, "*");
+                }
+                _ => panic!("Expected three text inlines"),
+            }
+        }
+    }
 }
