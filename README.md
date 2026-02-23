@@ -1,105 +1,87 @@
 <img width="2560" height="1120" alt="oxicordbanner" src="https://github.com/user-attachments/assets/a66b4fe1-2270-459d-957c-d9620365044b" />
 
-Oxicord is a high-performance, memory-safe Discord TUI client written in Rust. It is a spiritual successor to [Discordo](https://github.com/ayn2op/discordo), rewritten from scratch to leverage the performance and safety guarantees of Rust and the Ratatui ecosystem.
+# 錆緒 (Oxicord)
 
-Designed for power users on Linux who demand speed, minimal resource usage, and terminal aesthetics, Oxicord aims to be the definitive CLI experience for Discord.
+> A tether forged in oxide, weaving the digital void.
 
-<p align="center" style="background-color: #2b0000; padding: 20px; border-left: 5px solid #ff0000; border-radius: 5px; color: #ffcccc;">
-  <strong>⚠️ WARNING ⚠️</strong><br><br>
-  Using unofficial clients is against Discord's Terms of Service. Use this client at your own risk. <strong>Never share your token with anyone.</strong>
-</p>
+**Oxicord** (錆緒, _sabio_) translates to "Oxide Cord." It is a high-performance, memory-safe Discord TUI client crafted in Rust. Born from the philosophy of _Sabi_ (錆)—where beauty is found in the weathered and the enduring—it honors the strength of its codebase and the stillness of the terminal.
 
-## Why Oxicord?
+It is an _atelier_ for the modern power user, designed for those who demand the precision of a forged blade and the quietude of a sanctuary.
 
-Oxicord distinguishes itself through a commitment to modern engineering principles and user experience:
+### ⚠ <sup><sub><samp>The use of unofficial clients resides outside the established paths of Discord's Terms of Service. Journey at your own risk. <strong>The sanctity of your token must be guarded.</samp></sub></sup>
 
-- **Uncompromising Performance:** Built with Rust, Oxicord delivers instant startup times and negligible memory footprint compared to Electron or Go-based alternatives.
-- **Clean Architecture:** The codebase follows strict Clean Architecture principles (Domain, Application, Infrastructure), making it robust, testable, and approachable for contributors.
-- **TUI Fidelity:** Utilizing `ratatui` and `tachyonfx`, Oxicord provides a fluid, glitch-free interface with full mouse support and responsive layouts.
+## The Philosophy of Stillness
 
-## Features
+Oxicord is not merely built; it is curated. It adheres to a strict architecture where the logic is pure and the interface recedes to let the dialogue breathe.
 
-Oxicord implements a focused set of "real" features designed for daily drivers, prioritizing stability over bloat:
+- **Oxidized Strength:** Leverages the safety and speed of Rust to ensure a footprint as light as fallen snow.
+- **Architectural Intent:** Follows Clean Architecture principles, ensuring the core logic remains untainted by external noise.
+- **Visual Harmony:** Utilizes `ratatui` and _TachyonFX_ to provide a fluid, artifact-free experience that respects the terminal's aesthetic.
+
+## The Atelier of Features
+
+A comprehensive collection of intentional tools, forged through continuous refinement.
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/4cd1909c-fc0f-419b-8e1f-ec2c0322d1d6" alt="final_showcase">
   <br>
-  <sub><b>small showcase</b></sub>
+  <sub><b>a glimpse of the atelier</b></sub>
 </p>
 
-### Core Experience
+### 織 | The Evolving Loom (Performance & Logic)
 
-- **Vim-like Navigation:** Native `j`/`k` navigation, `g`/`G` scrolling, and intuitive focus management.
-- **Infinite Scrolling:** Seamless history loading. Scroll up, and history fetches automatically without manual "load more" buttons.
-- **Smart "Follow" Mode:** The view automatically snaps to new messages but respects your position when reading history.
+- **O(1) Message Geometry:** A revolutionary layout strategy that ensures appending messages remains instant, regardless of the channel's history weight.
+- **Stealth Transport:** Implements strict identity enforcement to mimic official client behavior, moving silently through the network.
+- **Permission-Based Clarity:** The interface honors your Discord permissions, showing only the paths you are permitted to walk.
+- **Concurrent Integrity:** Powered by `tokio`, ensuring a non-blocking, responsive experience even in the busiest environments.
 
-### Visual Precision
+### 幽 | Visual Fidelity (Interface & Rendering)
 
-- **Rich Text Rendering:** Full Markdown support with syntax highlighting (via `syntect`) for code blocks.
-- **Precision Timestamps:** 6-character timestamps (e.g., `14:05:32`) with automatic **Local Timezone** conversion—no more UTC mental math.
-- **Visual Indicators:**
-  - **Unread Markers:** Bold text and bullet indicators (`●`) for unread channels and guilds.
-  - **Typing Indicators:** Real-time feedback when others are typing.
-  - **Full-Width Selection:** Messages are selected across the full width of the pane for superior readability.
+- **Inline Image Mastery:** High-resolution previews via `ratatui-image` and `chafa`, supporting Sixel, Kitty, iTerm2, and high-fidelity ANSI approximations.
+- **Visual Grouping:** Consecutive messages from the same author are visually gathered, creating a rhythmic and clean dialogue flow.
+- **Dynamic Theming:** A theme engine with HSL support and role-based coloring for usernames, ensuring every voice is distinct.
+- **Animated Rituals:** Subtle, non-intrusive animations powered by _TachyonFX_ for splash screens and state transitions.
 
-### System Integration
+### 間 | Spatial Awareness (Navigation & Search)
 
-- **Built-in File Explorer:** Integrated TUI file picker for attaching files without leaving the terminal.
-- **Secure Authentication:** Options for ephemeral Token login or secure storage using system keyrings (`libsecret`/`keyring`).
-- **Clipboard Integration:** One-key copying of message content or IDs to your system clipboard.
+- **Enhanced Quick Switcher:** A fuzzy-search powerhouse with dynamic sorting that remembers your most frequent paths across sessions.
+- **Server Tree Ritual:** A native custom tree implementation for guilds and channels, designed for spatial intuition without emoji clutter.
+- **Vim-like Fluidity:** Navigation via `j`/`k` and `g`/`G` feels as natural as breathing.
+- **Integrated Explorer:** A modal file picker with fuzzy search for attaching files and media without leaving the terminal.
 
-## Fair Play Comparison
+### 緒 | The Social Cord (Communication)
 
-We stand on the shoulders of giants. Here is how Oxicord compares to existing terminal clients:
+- **Rich Typography:** Full Markdown support with syntax highlighting for code blocks, rendered with precision.
+- **Intelligent Autocomplete:** A context-aware system for `@mentions` that anticipates your intent.
+- **External Reflection:** Use the `o` keybinding to open links and images, or invoke your `$EDITOR` for long-form composition.
+- **Infinite Scroll:** History fetches automatically as you ascend, removing the friction of manual loading.
+- **Presence Indicators:** Real-time typing feedback and unread markers keep you anchored to the present.
 
-- **Endcord (Python):** Endcord is a feature beast (Voice, Plugins, Image previews). However, as a Python application, it carries the runtime overhead of an interpreted language. **Oxicord (Rust)** prioritizes raw performance, memory safety, and type-safe reliability, aiming for a "crash-proof" experience rather than feature parity at the cost of stability.
-- **Discordo (Go):** The original inspiration. While Discordo pioneered this TUI layout, it uses the `tview` library and a flatter Go architecture. **Oxicord** moves to `ratatui` for superior rendering control (no artifacts/flickering) and adopts a strict "Clean Architecture" to prevent the "spaghetti code" issues common in long-lived TUI projects.
-- **Rivet (Rust):** A fellow Rust client. While Rivet offers a solid experience, **Oxicord** specifically targets the "Power User" workflow with deeper Vim integration, specific optimizations for tiling window managers, and a visual style that favors information density (6-char timestamps, full selection) over standard layouts.
+## Fair Play
 
-## Installation & Configuration
+We honor those who paved the way. Oxicord is a single thread in a larger tapestry of terminal excellence.
 
-### Arch
+- **Regarding Endcord:** A venerable beast of features and extensibility. While it offers a vast toolkit, Oxicord chooses a different path—prioritizing the raw performance and "crash-proof" reliability of the Rust language.
+- **Regarding Discordo:** The original spark. Discordo pioneered the TUI layout we admire. Oxicord seeks to evolve this vision through a deeper architectural rigor and the rendering precision of the Ratatui ecosystem.
+- **Regarding Rivet:** A fellow traveler in the Rust landscape. Oxicord distinguishes itself through a focus on high-density information and specific optimizations for those who live within tiling window managers.
+
+## Installation
+
+### The Arch Way
 
 ```bash
 paru -S oxicord-bin
 ```
 
-### Nix
+### The Nix Ritual
 
 ```bash
 nix run github:linuxmobile/oxicord
 ```
 
-For development:
+### Forging from Source
 
-```bash
-nix develop
-```
-
-### Building from Source
-
-**Prerequisites**
-
-Ensure you have the latest stable Rust toolchain installed. You will also need the following system dependencies:
-
-- **Debian/Ubuntu:**
-  ```bash
-  sudo apt install pkg-config libdbus-1-dev libchafa-dev libglib2.0-dev mold clang
-  ```
-- **Fedora:**
-  ```bash
-  sudo dnf install pkgconf-pkg-config dbus-devel chafa-devel glib2-devel mold clang
-  ```
-- **Arch Linux:**
-  ```bash
-  sudo pacman -S pkgconf chafa dbus glib2 mold clang
-  ```
-- **macOS:**
-  ```bash
-  brew install chafa
-  ```
-
-**Build Steps**
+**Prerequisites:** pkg-config, dbus, chafa, glib2, mold, clang.
 
 ```bash
 git clone https://github.com/linuxmobile/oxicord
@@ -108,93 +90,55 @@ cargo build --release
 ./target/release/oxicord
 ```
 
-### Configuration
+## Configuration
 
-Oxicord is currently configured via command-line arguments. Full support for a persistent `config.toml` file adhering to the XDG Base Directory specification is **in development**:
+Oxicord honors the XDG Base Directory specification. Your configuration resides in `~/.config/oxicord/config.toml`.
 
-- **Linux:** `~/.config/oxicord/config.toml` (Planned)
+```toml
+# A fragment of the Oxicord config.toml
+log_level = "info"
+mouse = true
+quick_switcher_order = "recents"
+
+[ui]
+group_guilds = false
+use_display_name = true
+image_preview = true
+timestamp_format = "%H:%M"
+enable_animations = true
+
+[notifications]
+desktop = true
+internal = true
+
+[theme]
+accent_color = "Yellow"
+mode = "dark"
+```
 
 ## Authentication
 
-Oxicord requires a Discord user token to function.
+Authentication is a sacred link. Oxicord provides two paths, but first, you must embark on a ritual of discovery to retrieve your unique token.
 
-### Obtaining the Token
+### Ritual of Discovery
 
-1. Log in to [Discord Web](https://discord.com/app) in your browser.
-2. Open **Developer Tools** (`F12` or `Ctrl+Shift+I`) and go to the **Network** tab.
-3. In the filter box, type `/api`.
-4. Click on any channel to trigger a network request.
-5. Select a request (e.g., `messages`, `typing`) and scroll to **Request Headers**.
-6. Copy the value of the `authorization` header.
+To anchor yourself to the Discord network, you must retrieve your unique signature—your token.
 
-### Usage
+1.  **Enter the Web Interface:** Log in to [Discord](https://discord.com/app) via a web browser.
+2.  **Open the Developer Console:** Press `F12` or `Ctrl+Shift+I` to reveal the inner workings.
+3.  **The Network Path:** Select the **Network** tab and filter for `/api`.
+4.  **A Moment of Interaction:** Click on any channel or trigger a message to create a pulse in the network.
+5.  **Retrieve the Essence:** Inspect any request (e.g., `messages`) and find the `authorization` header. Copy this value—it is your key to the void.
 
-**1. Secure Keyring (Recommended)**
+### The Path to Connection
 
-Run Oxicord without arguments:
-
-```bash
-oxicord
-```
-
-Paste your token when prompted. Oxicord will verify and securely store it in your system's keyring (using `libsecret` on Linux, Keychain on macOS) for automatic future logins.
-
-**2. Environment Variable**
-
-For temporary sessions, testing, or scripts, you can provide the token via the environment. This takes precedence over the keyring and is **not** saved.
-
-```bash
-export OXICORD_TOKEN="your_token_here"
-oxicord
-```
-
-## Roadmap
-
-### Core Features & Stability
-
-- [x] ~~Infinite scrolling / Auto-loading history~~
-- [x] ~~Configurable keybindings~~
-- [x] ~~Edit messages support~~
-- [x] ~~Smart selection behavior on new messages~~
-- [x] ~~Auto-focus message pane on channel selection~~
-- [x] ~~Streamlined authentication (Token/Libsecret only)~~
-- [x] ~~Connection status indicator fixes~~
-- [x] ~~Performance optimizations (reduce CPU spikes)~~
-- [x] ~~Forum channel support~~
-
-### Visuals & UI
-
-- [x] ~~Rich Markdown rendering in message pane~~
-- [x] ~~Message reply previews~~
-- [x] ~~Animated loading screen (TachyonFX)~~
-- [x] ~~Unread indicators for guilds and channels~~
-- [x] ~~Compact file picker UI~~
-- [x] ~~Image previews (Ratatui-image: Sixel/Kitty/iTerm2)~~
-- [x] ~~Guild Folders support~~
-- [x] ~~Forum Channel support~~
-- [ ] ~~Mention indicators for servers/channels and DMs~~
-- [ ] UI Animations (Guild tree, Typing indicators via TachyonFX)
-- [ ] Image modal viewer ('o' binding)
-
-### System & Documentation
-
-- [x] ~~Native file explorer for attachments~~
-- [x] ~~User mention support (@)~~
-- [x] ~~Comprehensive documentation update~~
-- [x] ~~Desktop Notifications~~
-- [ ] XDG-compliant configuration support (`~/.config/oxicord/config.toml`)
-
-## What's Next
-
-- **Navigation:** `Ctrl+K` fuzzy finder for channels and DM users.
-- **Configuration:** Full `config.toml` support for custom keybinds and behavior.
-- **Privacy:** Option to hide messages from blocked users.
-- **Media Interaction:**
-  - 'Y' keybinding to copy images to clipboard.
-  - 'o' keybinding to open images in a High-Res modal.
-- **Bot Support:** Native support for slash commands and bot interactions.
-- **Performance:** Targeting a further +20% improvement in API response parsing.
+1.  **Keyring Storage (Recommended):** Run `oxicord` and provide your token when prompted. It will be securely guarded by your system's keyring (Keychain/libsecret).
+2.  **Environment Variable:** For temporary sessions, use `export OXICORD_TOKEN="..."`.
 
 ## Credits
 
-Oxicord is a fork and full rewrite of [Discordo](https://github.com/ayn2op/discordo). We express our sincere gratitude to the original maintainers for their work, which served as the foundation and inspiration for this project.
+Oxicord is a full rewrite of [Discordo](https://github.com/ayn2op/discordo). We extend our deepest gratitude to the original maintainers; their work provided the foundation upon which this sanctuary was built.
+
+---
+
+_One thread, weathered by time, binding the digital horizon._
