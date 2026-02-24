@@ -103,11 +103,17 @@ impl QuickSwitcher {
         match self.sort_mode {
             QuickSwitcherSortMode::Recents => {
                 self.results.sort_by(|a, b| {
+                    let a_fav = if a.is_favorite { 1 } else { 0 };
+                    let b_fav = if b.is_favorite { 1 } else { 0 };
+
+                    if a_fav != b_fav {
+                        return b_fav.cmp(&a_fav);
+                    }
+
                     let time_a = get_timestamp(a, &self.recents);
                     let time_b = get_timestamp(b, &self.recents);
                     time_b
                         .cmp(&time_a)
-                        .then_with(|| b.is_favorite.cmp(&a.is_favorite))
                         .then_with(|| a.score.cmp(&b.score).reverse())
                 });
             }
@@ -128,6 +134,13 @@ impl QuickSwitcher {
                     .collect();
 
                 self.results.sort_by(|a, b| {
+                    let a_fav = if a.is_favorite { 1 } else { 0 };
+                    let b_fav = if b.is_favorite { 1 } else { 0 };
+
+                    if a_fav != b_fav {
+                        return b_fav.cmp(&a_fav);
+                    }
+
                     let a_is_top = top_recents_ids.contains(&(a.id.clone(), a.kind.clone()));
                     let b_is_top = top_recents_ids.contains(&(b.id.clone(), b.kind.clone()));
 
@@ -140,10 +153,6 @@ impl QuickSwitcher {
                     } else if b_is_top {
                         std::cmp::Ordering::Greater
                     } else {
-                        if a.is_favorite != b.is_favorite {
-                            return b.is_favorite.cmp(&a.is_favorite);
-                        }
-
                         let kind_priority = |k: &SearchKind| match k {
                             SearchKind::DM => 0,
                             SearchKind::Guild => 1,
@@ -326,6 +335,7 @@ impl<'a> QuickSwitcherWidget<'a> {
 
                 if res.is_favorite {
                      spans.push(Span::raw(" "));
+                     // Using Nerd Font star icon as requested
                      spans.push(Span::styled("", Style::default().fg(Color::Yellow)));
                      left_len += 2;
                 }
@@ -429,24 +439,6 @@ impl Widget for QuickSwitcherWidget<'_> {
                 footer_style.label_style,
             ));
             footer_spans.push(Span::styled(format!(" {label} "), footer_style.key_style));
-        }
-
-        // Add favorites keybind
-        footer_spans.push(Span::raw("  "));
-        footer_spans.push(Span::styled(
-            " Ctrl+f ",
-            footer_style.label_style,
-        ));
-        footer_spans.push(Span::styled(" Fav ", footer_style.key_style));
-
-        // Add remove recent keybind if in recents mode
-        if self.switcher.sort_mode == QuickSwitcherSortMode::Recents {
-             footer_spans.push(Span::raw("  "));
-             footer_spans.push(Span::styled(
-                " Ctrl+Del ",
-                footer_style.label_style,
-            ));
-            footer_spans.push(Span::styled(" Remove ", footer_style.key_style));
         }
 
         let footer = Paragraph::new(Line::from(footer_spans));
