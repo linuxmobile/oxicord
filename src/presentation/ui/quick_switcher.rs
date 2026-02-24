@@ -19,6 +19,7 @@ pub struct QuickSwitcher {
     pub list_state: ListState,
     pub sort_mode: QuickSwitcherSortMode,
     pub recents: Vec<RecentItem>,
+    pub favorites: Vec<RecentItem>,
 }
 
 impl Default for QuickSwitcher {
@@ -36,6 +37,7 @@ impl QuickSwitcher {
             list_state: ListState::default(),
             sort_mode,
             recents: Vec::new(),
+            favorites: Vec::new(),
         }
     }
 
@@ -54,6 +56,11 @@ impl QuickSwitcher {
 
     pub fn set_recents(&mut self, recents: Vec<RecentItem>) {
         self.recents = recents;
+        self.apply_sort();
+    }
+
+    pub fn set_favorites(&mut self, favorites: Vec<RecentItem>) {
+        self.favorites = favorites;
         self.apply_sort();
     }
 
@@ -96,6 +103,13 @@ impl QuickSwitcher {
         match self.sort_mode {
             QuickSwitcherSortMode::Recents => {
                 self.results.sort_by(|a, b| {
+                    let a_fav = i32::from(a.is_favorite);
+                    let b_fav = i32::from(b.is_favorite);
+
+                    if a_fav != b_fav {
+                        return b_fav.cmp(&a_fav);
+                    }
+
                     let time_a = get_timestamp(a, &self.recents);
                     let time_b = get_timestamp(b, &self.recents);
                     time_b
@@ -120,6 +134,13 @@ impl QuickSwitcher {
                     .collect();
 
                 self.results.sort_by(|a, b| {
+                    let a_fav = i32::from(a.is_favorite);
+                    let b_fav = i32::from(b.is_favorite);
+
+                    if a_fav != b_fav {
+                        return b_fav.cmp(&a_fav);
+                    }
+
                     let a_is_top = top_recents_ids.contains(&(a.id.clone(), a.kind.clone()));
                     let b_is_top = top_recents_ids.contains(&(b.id.clone(), b.kind.clone()));
 
@@ -179,6 +200,23 @@ impl QuickSwitcher {
                 QuickSwitcherAction::None
             }
             KeyCode::Tab => QuickSwitcherAction::ToggleSortMode,
+            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if let Some(result) = self.selected_result() {
+                    QuickSwitcherAction::ToggleFavorite(result.clone())
+                } else {
+                    QuickSwitcherAction::None
+                }
+            }
+            KeyCode::Delete
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && self.sort_mode == QuickSwitcherSortMode::Recents =>
+            {
+                if let Some(result) = self.selected_result() {
+                    QuickSwitcherAction::RemoveRecent(result.clone())
+                } else {
+                    QuickSwitcherAction::None
+                }
+            }
             KeyCode::Char('h' | 'w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 if let Some(last_space_idx) = self.input.trim_end().rfind(' ') {
                     self.input.truncate(last_space_idx + 1);
@@ -249,6 +287,8 @@ pub enum QuickSwitcherAction {
     Select(SearchResult),
     UpdateSearch(String),
     ToggleSortMode,
+    ToggleFavorite(SearchResult),
+    RemoveRecent(SearchResult),
 }
 
 pub struct QuickSwitcherWidget<'a> {
@@ -295,6 +335,13 @@ impl<'a> QuickSwitcherWidget<'a> {
                     Span::styled(left_part_2, Style::default().fg(self.theme.accent)),
                     Span::styled(left_part_3, self.theme.base_style),
                 ];
+
+                if res.is_favorite {
+                    spans.push(Span::raw(" "));
+                    // Using Nerd Font star icon as requested
+                    spans.push(Span::styled("", Style::default().fg(Color::Yellow)));
+                    left_len += 2;
+                }
 
                 if let Some(parent) = &res.parent_name {
                     let parent_text = format!("({}) ", sanitize_channel_name(parent));
