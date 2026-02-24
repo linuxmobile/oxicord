@@ -443,12 +443,13 @@ impl MessagePaneData {
                 .as_deref()
                 .is_some_and(|id| id == current_author_id);
 
-            if !msg.is_reply() && same_author {
-                if let Some(prev_ts) = previous_timestamp {
-                    let diff = current_timestamp.saturating_sub(prev_ts);
-                    if diff < GROUPING_WINDOW_SECONDS {
-                        ui_msg.group = MessageGroup::Compact;
-                    }
+            if !msg.is_reply()
+                && same_author
+                && let Some(prev_ts) = previous_timestamp
+            {
+                let diff = current_timestamp.saturating_sub(prev_ts);
+                if diff < GROUPING_WINDOW_SECONDS {
+                    ui_msg.group = MessageGroup::Compact;
                 }
             }
 

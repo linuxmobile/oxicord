@@ -2467,21 +2467,21 @@ impl ChatScreenState {
                 self.perform_search(&query);
                 ChatKeyResult::Consumed
             }
-            QuickSwitcherAction::ToggleFavorite(result) => {
-                self.toggle_favorite(result)
-            }
-            QuickSwitcherAction::RemoveRecent(result) => {
-                self.remove_recent(result)
-            }
+            QuickSwitcherAction::ToggleFavorite(result) => self.toggle_favorite(&result),
+            QuickSwitcherAction::RemoveRecent(result) => self.remove_recent(&result),
             QuickSwitcherAction::None => ChatKeyResult::Consumed,
         }
     }
 
-    fn toggle_favorite(&mut self, result: crate::domain::search::SearchResult) -> ChatKeyResult {
-        if let Some(idx) = self.favorites.iter().position(|f| f.id == result.id && f.kind == result.kind) {
+    fn toggle_favorite(&mut self, result: &crate::domain::search::SearchResult) -> ChatKeyResult {
+        if let Some(idx) = self
+            .favorites
+            .iter()
+            .position(|f| f.id == result.id && f.kind == result.kind)
+        {
             self.favorites.remove(idx);
         } else {
-            let item = crate::domain::search::RecentItem::new(&result);
+            let item = crate::domain::search::RecentItem::new(result);
             self.favorites.push(item);
         }
         self.quick_switcher.set_favorites(self.favorites.clone());
@@ -2489,8 +2489,12 @@ impl ChatScreenState {
         ChatKeyResult::SaveState
     }
 
-    fn remove_recent(&mut self, result: crate::domain::search::SearchResult) -> ChatKeyResult {
-        if let Some(idx) = self.recents.iter().position(|r| r.id == result.id && r.kind == result.kind) {
+    fn remove_recent(&mut self, result: &crate::domain::search::SearchResult) -> ChatKeyResult {
+        if let Some(idx) = self
+            .recents
+            .iter()
+            .position(|r| r.id == result.id && r.kind == result.kind)
+        {
             self.recents.remove(idx);
             self.quick_switcher.set_recents(self.recents.clone());
             self.perform_search(&self.quick_switcher.input.clone());
@@ -2630,7 +2634,11 @@ impl ChatScreenState {
             }
 
             for res in &mut results {
-                if self.favorites.iter().any(|f| f.id == res.id && f.kind == res.kind) {
+                if self
+                    .favorites
+                    .iter()
+                    .any(|f| f.id == res.id && f.kind == res.kind)
+                {
                     res.is_favorite = true;
                 }
             }
@@ -2677,7 +2685,11 @@ impl ChatScreenState {
         }
 
         for res in &mut results {
-            if self.favorites.iter().any(|f| f.id == res.id && f.kind == res.kind) {
+            if self
+                .favorites
+                .iter()
+                .any(|f| f.id == res.id && f.kind == res.kind)
+            {
                 res.is_favorite = true;
             }
         }
@@ -3084,7 +3096,6 @@ impl ChatScreenState {
 mod tests {
     use super::*;
     use crate::domain::entities::RoleId;
-    use test_case::test_case;
 
     fn setup_permissive_guild_data(state: &mut ChatScreenState, guild_id: GuildId) {
         let user = state.user().clone();
@@ -3138,43 +3149,6 @@ mod tests {
             vec![],
             vec![],
         )
-    }
-
-    fn create_dummy_role(id: u64) -> Role {
-        Role {
-            id: RoleId(id),
-            name: format!("Role {id}"),
-            color: 0,
-            hoist: false,
-            icon: None,
-            unicode_emoji: None,
-            position: 0,
-            permissions: Permissions::empty(),
-            managed: false,
-            mentionable: false,
-        }
-    }
-
-    fn create_dummy_member() -> Member {
-        Member {
-            user: None,
-            nick: None,
-            avatar: None,
-            roles: vec![],
-            joined_at: String::new(),
-            premium_since: None,
-            deaf: false,
-            mute: false,
-            pending: false,
-            permissions: None,
-            communication_disabled_until: None,
-        }
-    }
-
-    fn create_dummy_member_with_user(user: User) -> Member {
-        let mut m = create_dummy_member();
-        m.user = Some(user);
-        m
     }
 
     #[test]

@@ -103,8 +103,8 @@ impl QuickSwitcher {
         match self.sort_mode {
             QuickSwitcherSortMode::Recents => {
                 self.results.sort_by(|a, b| {
-                    let a_fav = if a.is_favorite { 1 } else { 0 };
-                    let b_fav = if b.is_favorite { 1 } else { 0 };
+                    let a_fav = i32::from(a.is_favorite);
+                    let b_fav = i32::from(b.is_favorite);
 
                     if a_fav != b_fav {
                         return b_fav.cmp(&a_fav);
@@ -134,8 +134,8 @@ impl QuickSwitcher {
                     .collect();
 
                 self.results.sort_by(|a, b| {
-                    let a_fav = if a.is_favorite { 1 } else { 0 };
-                    let b_fav = if b.is_favorite { 1 } else { 0 };
+                    let a_fav = i32::from(a.is_favorite);
+                    let b_fav = i32::from(b.is_favorite);
 
                     if a_fav != b_fav {
                         return b_fav.cmp(&a_fav);
@@ -207,7 +207,10 @@ impl QuickSwitcher {
                     QuickSwitcherAction::None
                 }
             }
-            KeyCode::Delete if key.modifiers.contains(KeyModifiers::CONTROL) && self.sort_mode == QuickSwitcherSortMode::Recents => {
+            KeyCode::Delete
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && self.sort_mode == QuickSwitcherSortMode::Recents =>
+            {
                 if let Some(result) = self.selected_result() {
                     QuickSwitcherAction::RemoveRecent(result.clone())
                 } else {
@@ -334,10 +337,10 @@ impl<'a> QuickSwitcherWidget<'a> {
                 ];
 
                 if res.is_favorite {
-                     spans.push(Span::raw(" "));
-                     // Using Nerd Font star icon as requested
-                     spans.push(Span::styled("", Style::default().fg(Color::Yellow)));
-                     left_len += 2;
+                    spans.push(Span::raw(" "));
+                    // Using Nerd Font star icon as requested
+                    spans.push(Span::styled("", Style::default().fg(Color::Yellow)));
+                    left_len += 2;
                 }
 
                 if let Some(parent) = &res.parent_name {

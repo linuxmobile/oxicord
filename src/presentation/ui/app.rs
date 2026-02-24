@@ -448,7 +448,11 @@ impl App {
 
     fn save_state(&self, guild_id: Option<GuildId>, channel_id: Option<ChannelId>) {
         let (recents, favorites, sort_mode) = if let CurrentScreen::Chat(state) = &self.screen {
-            (state.recents.clone(), state.favorites.clone(), state.quick_switcher_sort_mode())
+            (
+                state.recents.clone(),
+                state.favorites.clone(),
+                state.quick_switcher_sort_mode(),
+            )
         } else {
             (Vec::new(), Vec::new(), QuickSwitcherSortMode::default())
         };
@@ -837,7 +841,9 @@ impl App {
             ChatKeyResult::SaveState => {
                 if let CurrentScreen::Chat(state) = &self.screen {
                     let guild_id = state.selected_guild();
-                    let channel_id = state.selected_channel().map(|c| c.id());
+                    let channel_id = state
+                        .selected_channel()
+                        .map(crate::domain::entities::Channel::id);
                     self.save_state(guild_id, channel_id);
                 }
             }
