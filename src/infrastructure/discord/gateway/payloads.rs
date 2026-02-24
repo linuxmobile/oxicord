@@ -98,7 +98,7 @@ impl GatewayPayload {
             "activities": true,
             "threads": true,
             "channels": {
-                channel_id: [[0, 99]]
+                (channel_id): [[0, 99]]
             }
         });
 
@@ -346,9 +346,12 @@ pub struct MessageDeleteBulkPayload {
 
 #[derive(Debug, Deserialize)]
 pub struct TypingStartPayload {
-    pub channel_id: String,
-    pub guild_id: Option<String>,
-    pub user_id: String,
+    #[serde(with = "crate::domain::serde_utils::string_to_u64")]
+    pub channel_id: u64,
+    #[serde(default, with = "crate::domain::serde_utils::string_to_u64::option")]
+    pub guild_id: Option<u64>,
+    #[serde(with = "crate::domain::serde_utils::string_to_u64")]
+    pub user_id: u64,
     pub timestamp: i64,
     pub member: Option<TypingMemberPayload>,
 }
@@ -703,5 +706,23 @@ mod tests {
             }
             Err(e) => panic!("Should succeed parsing negative string ID: {e}"),
         }
+    }
+
+    #[test]
+    fn test_lazy_request_payload() {
+        let guild_id = "111222";
+        let channel_id = "333444";
+        let payload = GatewayPayload::lazy_request(guild_id, channel_id);
+
+        assert_eq!(payload.op, 14);
+        let obj = payload.d.as_object().unwrap();
+        assert_eq!(obj.get("guild_id").unwrap(), guild_id);
+        assert_eq!(obj.get("typing").unwrap(), true);
+
+        let channels = obj.get("channels").unwrap().as_object().unwrap();
+        assert!(channels.contains_key(channel_id));
+        let ranges = channels.get(channel_id).unwrap().as_array().unwrap();
+        assert_eq!(ranges[0].as_array().unwrap()[0], 0);
+        assert_eq!(ranges[0].as_array().unwrap()[1], 99);
     }
 }

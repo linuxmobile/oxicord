@@ -583,15 +583,9 @@ impl EventParser {
             GatewayError::serialization(format!("Failed to parse TypingStart: {e}"))
         })?;
 
-        let channel_id = payload
-            .channel_id
-            .parse::<u64>()
-            .map_err(|_| GatewayError::protocol("Invalid channel ID"))?;
-
-        let guild_id = payload
-            .guild_id
-            .and_then(|id| id.parse::<u64>().ok())
-            .map(GuildId);
+        let channel_id = ChannelId(payload.channel_id);
+        let guild_id = payload.guild_id.map(GuildId);
+        let user_id = payload.user_id.to_string();
 
         let username = payload.member.and_then(|m| {
             m.nick.or_else(|| {
@@ -607,12 +601,18 @@ impl EventParser {
             })
         });
 
-        let timestamp = DateTime::from_timestamp(payload.timestamp, 0).unwrap_or_else(Utc::now);
+        let timestamp_secs = if payload.timestamp > 1_000_000_000_000 {
+            payload.timestamp / 1000
+        } else {
+            payload.timestamp
+        };
+
+        let timestamp = DateTime::from_timestamp(timestamp_secs, 0).unwrap_or_else(Utc::now);
 
         Ok(DispatchEvent::TypingStart {
-            channel_id: ChannelId(channel_id),
+            channel_id,
             guild_id,
-            user_id: payload.user_id,
+            user_id,
             username,
             timestamp,
         })

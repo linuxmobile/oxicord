@@ -521,7 +521,10 @@ impl MessagePaneData {
     }
 
     pub fn set_typing_indicator(&mut self, indicator: Option<String>) {
-        self.typing_indicator = indicator;
+        if self.typing_indicator != indicator {
+            self.typing_indicator = indicator;
+            self.is_dirty = true;
+        }
     }
 
     pub fn register_channel(&mut self, id: String, name: String) {

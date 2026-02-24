@@ -496,7 +496,7 @@ fn render_footer_bar(state: &ChatScreenState, area: Rect, buf: &mut Buffer) {
         .right_info(if right_info.is_empty() {
             None
         } else {
-            Some(Box::leak(right_info.into_boxed_str()))
+            Some(&right_info)
         });
     Widget::render(footer, area, buf);
 }
@@ -833,23 +833,26 @@ impl ChatScreenState {
         let mut restored = false;
         let recents_backup = self.recents.clone();
         let favorites_backup = self.favorites.clone();
+        let mut result = None;
 
-        if let Some(cid) = channel_id
-            && self.on_channel_selected(cid).is_some()
-        {
-            if let Some(msgs) = messages {
-                self.set_messages(msgs);
-                if let Some(last_msg) = self.message_pane_data.messages().back().map(|m| &m.message)
-                {
-                    self.mark_channel_read(cid, last_msg.id());
+        if let Some(cid) = channel_id {
+            result = self.on_channel_selected(cid);
+            if result.is_some() {
+                if let Some(msgs) = messages {
+                    self.set_messages(msgs);
+                    if let Some(last_msg) =
+                        self.message_pane_data.messages().back().map(|m| &m.message)
+                    {
+                        self.mark_channel_read(cid, last_msg.id());
+                    }
                 }
+                restored = true;
             }
-            restored = true;
         }
 
         if !restored && let Some(first_guild) = self.guilds_tree_data.guilds().first() {
             let guild_id = first_guild.id();
-            let _ = self.on_guild_selected(guild_id);
+            result = self.on_guild_selected(guild_id);
         }
 
         self.recents = recents_backup;
@@ -857,7 +860,7 @@ impl ChatScreenState {
         self.quick_switcher.set_recents(self.recents.clone());
         self.quick_switcher.set_favorites(self.favorites.clone());
 
-        None
+        result
     }
 
     pub fn tick(&mut self, duration: Duration) {

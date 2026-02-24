@@ -1453,6 +1453,7 @@ impl App {
         self.typing_manager
             .add_typing(channel_id, user_id, display_name);
         self.update_typing_indicator(channel_id);
+        self.should_render = true;
     }
 
     fn update_typing_indicator(&mut self, channel_id: ChannelId) {
@@ -1533,6 +1534,13 @@ impl App {
     /// Send a subscription to the gateway to receive typing events for a channel.
     /// This is required for user accounts to receive `TYPING_START` events.
     fn subscribe_to_channel(&mut self, guild_id: GuildId, channel_id: ChannelId) {
+        static LAST_SUB: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        if LAST_SUB.swap(channel_id.as_u64(), std::sync::atomic::Ordering::SeqCst)
+            == channel_id.as_u64()
+        {
+            return;
+        }
+
         if let Some(ref gateway_client) = self.gateway_client {
             debug!(
                 guild_id = %guild_id,
