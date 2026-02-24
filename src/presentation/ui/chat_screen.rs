@@ -2129,7 +2129,7 @@ impl ChatScreenState {
         self.message_input_state.value()
     }
 
-    /// Get the current reply info (`message_id`, author) if in reply mode.
+    /// Get the current reply info (, author) if in reply mode.
     pub fn message_input_reply_info(&self) -> Option<(MessageId, String, bool)> {
         match self.message_input_state.mode() {
             MessageInputMode::Reply {
@@ -2158,7 +2158,7 @@ impl ChatScreenState {
     }
 
     /// Collects all image attachments that need loading within the visible range.
-    /// Returns a list of (`ImageId`, URL) pairs.
+    /// Returns a list of (, URL) pairs.
     #[must_use]
     pub fn collect_needed_image_loads(&self) -> Vec<(crate::domain::entities::ImageId, String)> {
         let mut needed = Vec::new();
@@ -2834,6 +2834,251 @@ impl ChatScreenState {
     }
 }
 
+impl HasCommands for ChatScreenState {
+    fn get_commands(&self, registry: &CommandRegistry) -> Vec<Keybind> {
+        let mut commands = Vec::new();
+
+        if self.show_help {
+            commands.push(Keybind::new(
+                KeyEvent::from(KeyCode::Esc),
+                Action::ToggleHelp,
+                "Close",
+            ));
+            return commands;
+        }
+
+        if self.show_quick_switcher {
+            commands.push(
+                Keybind::new(KeyEvent::from(KeyCode::Up), Action::NavigateUp, "Nav")
+                    .with_display("Ctrl+k/j"),
+            );
+            commands.push(Keybind::new(
+                KeyEvent::from(KeyCode::Enter),
+                Action::Select,
+                "Select",
+            ));
+            commands.push(Keybind::new(
+                KeyEvent::from(KeyCode::Tab),
+                Action::None,
+                format!("Sort ({})", self.quick_switcher.sort_mode),
+            ));
+            commands.push(Keybind::new(
+                KeyEvent::from(KeyCode::Esc),
+                Action::Cancel,
+                "Close",
+            ));
+            commands.push(Keybind::new(
+                KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL),
+                Action::None,
+                "Favorite",
+            ));
+            if self.quick_switcher.sort_mode == QuickSwitcherSortMode::Recents {
+                commands.push(Keybind::new(
+                    KeyEvent::new(KeyCode::Delete, KeyModifiers::CONTROL),
+                    Action::None,
+                    "Remove",
+                ));
+            }
+            return commands;
+        }
+
+        if self.show_file_explorer {
+            if let Some(key) = registry.get_first(Action::Select) {
+                commands.push(Keybind::new(key, Action::Select, "Select"));
+            }
+            if let Some(key) = registry.get_first(Action::ToggleFileExplorer) {
+                commands.push(Keybind::new(key, Action::ToggleFileExplorer, "Close"));
+            }
+            commands.push(Keybind::new(
+                KeyEvent::from(KeyCode::Char('.')),
+                Action::ToggleHiddenFiles,
+                "Hidden",
+            ));
+        } else {
+            match self.focus {
+                ChatFocus::GuildsTree => {
+                    commands.extend(self.get_guilds_tree_commands(registry));
+                }
+                ChatFocus::MessagesList => {
+                    commands.extend(self.get_messages_list_commands(registry));
+                }
+                ChatFocus::MessageInput => {
+                    commands.extend(self.get_message_input_commands(registry));
+                }
+                ChatFocus::ConfirmationModal => {
+                    commands.push(Keybind::new(
+                        KeyEvent::from(KeyCode::Enter),
+                        Action::Select,
+                        "Confirm",
+                    ));
+                    commands.push(Keybind::new(
+                        KeyEvent::from(KeyCode::Esc),
+                        Action::Cancel,
+                        "Cancel",
+                    ));
+                    if let Some(key) = registry.get_first(Action::ToggleHelp) {
+                        commands.push(Keybind::new(key, Action::ToggleHelp, "Help"));
+                    }
+                }
+            }
+        }
+
+        commands
+    }
+}
+
+impl ChatScreenState {
+    #[allow(clippy::unused_self)]
+    fn get_guilds_tree_commands(&self, registry: &CommandRegistry) -> Vec<Keybind> {
+        let mut commands = Vec::new();
+        if let Some(key) = registry.get_first(Action::NavigateDown) {
+            let mut bind = Keybind::new(key, Action::NavigateDown, "Nav");
+            if let KeyCode::Char('j') = key.code {
+                bind = bind.with_display("j/k");
+            }
+            commands.push(bind);
+        }
+
+        if let Some(selected_id) = self.guilds_tree_state.selected() {
+            let is_expanded = self.guilds_tree_state.is_expanded(selected_id);
+            let can_expand = matches!(
+                selected_id,
+                TreeNodeId::Guild(_)
+                    | TreeNodeId::Category(_)
+                    | TreeNodeId::DirectMessages
+                    | TreeNodeId::Folder(_)
+            );
+
+            if can_expand {
+                if is_expanded {
+                    if let Some(key) = registry.get_first(Action::NavigateLeft) {
+                        commands.push(Keybind::new(key, Action::NavigateLeft, "Collapse"));
+                    }
+                } else if let Some(key) = registry.get_first(Action::NavigateRight) {
+                    commands.push(Keybind::new(key, Action::NavigateRight, "Expand"));
+                }
+            } else if let Some(key) = registry.get_first(Action::NavigateLeft) {
+                commands.push(Keybind::new(key, Action::NavigateLeft, "Back"));
+            }
+        } else if let Some(key) = registry.get_first(Action::NavigateRight) {
+            commands.push(Keybind::new(key, Action::NavigateRight, "Expand"));
+        }
+
+        if let Some(key) = registry.get_first(Action::Select) {
+            commands.push(Keybind::new(key, Action::Select, "Select"));
+        }
+        if let Some(key) = registry.get_first(Action::ToggleGuildsTree) {
+            commands.push(Keybind::new(key, Action::ToggleGuildsTree, "Toggle Tree"));
+        }
+        if let Some(key) = registry.get_first(Action::FocusMessages) {
+            commands.push(Keybind::new(key, Action::FocusMessages, "Msgs"));
+        }
+        if let Some(key) = registry.get_first(Action::NextTab) {
+            commands.push(Keybind::new(key, Action::NextTab, "Next"));
+        }
+        if let Some(key) = registry.get_first(Action::ToggleHelp) {
+            commands.push(Keybind::new(key, Action::ToggleHelp, "Help"));
+        }
+        commands
+    }
+
+    fn get_messages_list_commands(&self, registry: &CommandRegistry) -> Vec<Keybind> {
+        let mut commands = Vec::new();
+        if let Some(key) = registry.get_first(Action::NavigateDown) {
+            let mut bind = Keybind::new(key, Action::NavigateDown, "Nav");
+            if let KeyCode::Char('j') = key.code {
+                bind = bind.with_display("j/k");
+            }
+            commands.push(bind);
+        }
+        if let Some(key) = registry.get_first(Action::Reply) {
+            commands.push(Keybind::new(key, Action::Reply, "Reply"));
+        }
+        if let Some(key) = registry.get_first(Action::EditMessage) {
+            let can_edit = self
+                .message_pane_state
+                .selected_index()
+                .and_then(|idx| self.message_pane_data.get_message(idx))
+                .is_some_and(|m| m.can_be_edited_by(&self.user));
+
+            if can_edit {
+                commands.push(Keybind::new(key, Action::EditMessage, "Edit"));
+            }
+        }
+        if let Some(key) = registry.get_first(Action::DeleteMessage) {
+            let can_delete = self
+                .message_pane_state
+                .selected_index()
+                .and_then(|idx| self.message_pane_data.get_message(idx))
+                .is_some_and(|m| m.can_be_edited_by(&self.user));
+
+            if can_delete {
+                commands.push(Keybind::new(key, Action::DeleteMessage, "Delete"));
+            }
+        }
+        if let Some(key) = registry.get_first(Action::OpenAttachments) {
+            let label = self
+                .message_pane_state
+                .selected_index()
+                .and_then(|idx| self.message_pane_data.get_message(idx))
+                .and_then(|m| MessageContentService::resolve(m).label());
+
+            if let Some(label) = label {
+                commands.push(Keybind::new(key, Action::OpenAttachments, label));
+            } else {
+                commands.push(Keybind::new(key, Action::OpenAttachments, "Open"));
+            }
+        }
+        if let Some(key) = registry.get_first(Action::CopyContent) {
+            commands.push(Keybind::new(key, Action::CopyContent, "Copy"));
+        }
+        if let Some(key) = registry.get_first(Action::JumpToReply) {
+            commands.push(Keybind::new(key, Action::JumpToReply, "Jump"));
+        }
+        if let Some(key) = registry.get_first(Action::FocusInput) {
+            commands.push(Keybind::new(key, Action::FocusInput, "Focus Input"));
+        }
+        if let Some(key) = registry.get_first(Action::ToggleHelp) {
+            commands.push(Keybind::new(key, Action::ToggleHelp, "Help"));
+        }
+        commands
+    }
+
+    #[allow(clippy::unused_self)]
+    fn get_message_input_commands(&self, registry: &CommandRegistry) -> Vec<Keybind> {
+        let mut commands = Vec::new();
+        if let Some(key) = registry.get_first(Action::SendMessage) {
+            commands.push(Keybind::new(key, Action::SendMessage, "Send"));
+        }
+        if let Some(key) = registry.get_first(Action::NewLine) {
+            commands.push(Keybind::new(key, Action::NewLine, "NL"));
+        }
+        if let Some(key) = registry.get_first(Action::FocusMessages) {
+            commands.push(Keybind::new(key, Action::FocusMessages, "Msgs"));
+        }
+        if let Some(key) = registry.get_first(Action::OpenEditor) {
+            commands.push(Keybind::new(key, Action::OpenEditor, "Editor"));
+        }
+        if let Some(key) = registry.get_first(Action::ToggleFileExplorer) {
+            commands.push(Keybind::new(key, Action::ToggleFileExplorer, "Attach"));
+        }
+        if let Some(key) = registry.get_first(Action::Paste) {
+            commands.push(Keybind::new(key, Action::Paste, "Paste"));
+        }
+        if let Some(key) = registry.get_first(Action::Cancel) {
+            commands.push(Keybind::new(key, Action::Cancel, "Cancel"));
+        }
+
+        commands.push(Keybind::new(
+            KeyEvent::from(KeyCode::F(1)),
+            Action::ToggleHelp,
+            "Help",
+        ));
+
+        commands
+    }
+}
+
 #[cfg(test)]
 #[cfg(not(windows))]
 mod tests {
@@ -2844,9 +3089,9 @@ mod tests {
     fn setup_permissive_guild_data(state: &mut ChatScreenState, guild_id: GuildId) {
         let user = state.user().clone();
         let role = Role {
-            id: RoleId(guild_id.as_u64()),
+            id: RoleId(guild_id.as_u64()), // @everyone has same ID as guild
             name: "@everyone".to_string(),
-            permissions: Permissions::all(),
+            permissions: Permissions::all(), // Allow everything
             color: 0,
             hoist: false,
             icon: None,
