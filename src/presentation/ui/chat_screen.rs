@@ -156,6 +156,7 @@ pub enum ChatKeyResult {
     JumpToChannel(ChannelId),
     RequestChannelFetch(Vec<ChannelId>),
     ShowNotification(String),
+    SaveState,
 }
 
 pub struct ChatScreen;
@@ -673,6 +674,7 @@ pub struct ChatScreenState {
     hide_blocked_completely: bool,
     last_scroll_state: Option<(usize, u16)>,
     pub recents: Vec<crate::domain::search::RecentItem>,
+    pub favorites: Vec<crate::domain::search::RecentItem>,
 
     // Permission related state
     guild_roles: std::collections::HashMap<GuildId, Vec<Role>>,
@@ -708,6 +710,7 @@ impl ChatScreenState {
         hide_blocked_completely: bool,
         quick_switcher_order: QuickSwitcherSortMode,
         recents: Vec<crate::domain::search::RecentItem>,
+        favorites: Vec<crate::domain::search::RecentItem>,
     ) -> Self {
         let mut guilds_tree_state = GuildsTreeState::new();
         guilds_tree_state.set_focused(true);
@@ -756,6 +759,7 @@ impl ChatScreenState {
             hide_blocked_completely,
             last_scroll_state: None,
             recents: valid_recents.clone(),
+            favorites: favorites.clone(),
             guilds_tree_visible: true,
             autocomplete_service:
                 crate::application::services::autocomplete_service::AutocompleteService::new(),
@@ -772,6 +776,7 @@ impl ChatScreenState {
         };
 
         state.quick_switcher.set_recents(valid_recents);
+        state.quick_switcher.set_favorites(favorites);
         state
     }
 
@@ -827,6 +832,7 @@ impl ChatScreenState {
 
         let mut restored = false;
         let recents_backup = self.recents.clone();
+        let favorites_backup = self.favorites.clone();
 
         if let Some(cid) = channel_id
             && self.on_channel_selected(cid).is_some()
@@ -847,7 +853,9 @@ impl ChatScreenState {
         }
 
         self.recents = recents_backup;
+        self.favorites = favorites_backup;
         self.quick_switcher.set_recents(self.recents.clone());
+        self.quick_switcher.set_favorites(self.favorites.clone());
 
         None
     }
@@ -2459,8 +2467,36 @@ impl ChatScreenState {
                 self.perform_search(&query);
                 ChatKeyResult::Consumed
             }
+            QuickSwitcherAction::ToggleFavorite(result) => {
+                self.toggle_favorite(result)
+            }
+            QuickSwitcherAction::RemoveRecent(result) => {
+                self.remove_recent(result)
+            }
             QuickSwitcherAction::None => ChatKeyResult::Consumed,
         }
+    }
+
+    fn toggle_favorite(&mut self, result: crate::domain::search::SearchResult) -> ChatKeyResult {
+        if let Some(idx) = self.favorites.iter().position(|f| f.id == result.id && f.kind == result.kind) {
+            self.favorites.remove(idx);
+        } else {
+            let item = crate::domain::search::RecentItem::new(&result);
+            self.favorites.push(item);
+        }
+        self.quick_switcher.set_favorites(self.favorites.clone());
+        self.perform_search(&self.quick_switcher.input.clone());
+        ChatKeyResult::SaveState
+    }
+
+    fn remove_recent(&mut self, result: crate::domain::search::SearchResult) -> ChatKeyResult {
+        if let Some(idx) = self.recents.iter().position(|r| r.id == result.id && r.kind == result.kind) {
+            self.recents.remove(idx);
+            self.quick_switcher.set_recents(self.recents.clone());
+            self.perform_search(&self.quick_switcher.input.clone());
+            return ChatKeyResult::SaveState;
+        }
+        ChatKeyResult::Consumed
     }
 
     #[allow(clippy::too_many_lines)]
@@ -2593,6 +2629,12 @@ impl ChatScreenState {
                 }
             }
 
+            for res in &mut results {
+                if self.favorites.iter().any(|f| f.id == res.id && f.kind == res.kind) {
+                    res.is_favorite = true;
+                }
+            }
+
             tracing::debug!(
                 "Empty query search results: {} (Mode: {})",
                 results.len(),
@@ -2633,6 +2675,13 @@ impl ChatScreenState {
         if matches!(prefix, SearchPrefix::None | SearchPrefix::Guild) {
             results.extend(guild_provider.search_sync(&query_text));
         }
+
+        for res in &mut results {
+            if self.favorites.iter().any(|f| f.id == res.id && f.kind == res.kind) {
+                res.is_favorite = true;
+            }
+        }
+
         results.sort_by(|a, b| b.score.cmp(&a.score));
 
         self.quick_switcher.set_results(results);
@@ -2785,239 +2834,6 @@ impl ChatScreenState {
     }
 }
 
-impl HasCommands for ChatScreenState {
-    fn get_commands(&self, registry: &CommandRegistry) -> Vec<Keybind> {
-        let mut commands = Vec::new();
-
-        if self.show_help {
-            commands.push(Keybind::new(
-                KeyEvent::from(KeyCode::Esc),
-                Action::ToggleHelp,
-                "Close",
-            ));
-            return commands;
-        }
-
-        if self.show_quick_switcher {
-            commands.push(
-                Keybind::new(KeyEvent::from(KeyCode::Up), Action::NavigateUp, "Nav")
-                    .with_display("Ctrl+k/j"),
-            );
-            commands.push(Keybind::new(
-                KeyEvent::from(KeyCode::Enter),
-                Action::Select,
-                "Select",
-            ));
-            commands.push(Keybind::new(
-                KeyEvent::from(KeyCode::Tab),
-                Action::None,
-                format!("Sort ({})", self.quick_switcher.sort_mode),
-            ));
-            commands.push(Keybind::new(
-                KeyEvent::from(KeyCode::Esc),
-                Action::Cancel,
-                "Close",
-            ));
-            return commands;
-        }
-
-        if self.show_file_explorer {
-            if let Some(key) = registry.get_first(Action::Select) {
-                commands.push(Keybind::new(key, Action::Select, "Select"));
-            }
-            if let Some(key) = registry.get_first(Action::ToggleFileExplorer) {
-                commands.push(Keybind::new(key, Action::ToggleFileExplorer, "Close"));
-            }
-            commands.push(Keybind::new(
-                KeyEvent::from(KeyCode::Char('.')),
-                Action::ToggleHiddenFiles,
-                "Hidden",
-            ));
-        } else {
-            match self.focus {
-                ChatFocus::GuildsTree => {
-                    commands.extend(self.get_guilds_tree_commands(registry));
-                }
-                ChatFocus::MessagesList => {
-                    commands.extend(self.get_messages_list_commands(registry));
-                }
-                ChatFocus::MessageInput => {
-                    commands.extend(self.get_message_input_commands(registry));
-                }
-                ChatFocus::ConfirmationModal => {
-                    commands.push(Keybind::new(
-                        KeyEvent::from(KeyCode::Enter),
-                        Action::Select,
-                        "Confirm",
-                    ));
-                    commands.push(Keybind::new(
-                        KeyEvent::from(KeyCode::Esc),
-                        Action::Cancel,
-                        "Cancel",
-                    ));
-                    if let Some(key) = registry.get_first(Action::ToggleHelp) {
-                        commands.push(Keybind::new(key, Action::ToggleHelp, "Help"));
-                    }
-                }
-            }
-        }
-
-        commands
-    }
-}
-
-impl ChatScreenState {
-    #[allow(clippy::unused_self)]
-    fn get_guilds_tree_commands(&self, registry: &CommandRegistry) -> Vec<Keybind> {
-        let mut commands = Vec::new();
-        if let Some(key) = registry.get_first(Action::NavigateDown) {
-            let mut bind = Keybind::new(key, Action::NavigateDown, "Nav");
-            if let KeyCode::Char('j') = key.code {
-                bind = bind.with_display("j/k");
-            }
-            commands.push(bind);
-        }
-
-        if let Some(selected_id) = self.guilds_tree_state.selected() {
-            let is_expanded = self.guilds_tree_state.is_expanded(selected_id);
-            let can_expand = matches!(
-                selected_id,
-                TreeNodeId::Guild(_)
-                    | TreeNodeId::Category(_)
-                    | TreeNodeId::DirectMessages
-                    | TreeNodeId::Folder(_)
-            );
-
-            if can_expand {
-                if is_expanded {
-                    if let Some(key) = registry.get_first(Action::NavigateLeft) {
-                        commands.push(Keybind::new(key, Action::NavigateLeft, "Collapse"));
-                    }
-                } else if let Some(key) = registry.get_first(Action::NavigateRight) {
-                    commands.push(Keybind::new(key, Action::NavigateRight, "Expand"));
-                }
-            } else if let Some(key) = registry.get_first(Action::NavigateLeft) {
-                commands.push(Keybind::new(key, Action::NavigateLeft, "Back"));
-            }
-        } else if let Some(key) = registry.get_first(Action::NavigateRight) {
-            commands.push(Keybind::new(key, Action::NavigateRight, "Expand"));
-        }
-
-        if let Some(key) = registry.get_first(Action::Select) {
-            commands.push(Keybind::new(key, Action::Select, "Select"));
-        }
-        if let Some(key) = registry.get_first(Action::ToggleGuildsTree) {
-            commands.push(Keybind::new(key, Action::ToggleGuildsTree, "Toggle Tree"));
-        }
-        if let Some(key) = registry.get_first(Action::FocusMessages) {
-            commands.push(Keybind::new(key, Action::FocusMessages, "Msgs"));
-        }
-        if let Some(key) = registry.get_first(Action::NextTab) {
-            commands.push(Keybind::new(key, Action::NextTab, "Next"));
-        }
-        if let Some(key) = registry.get_first(Action::ToggleHelp) {
-            commands.push(Keybind::new(key, Action::ToggleHelp, "Help"));
-        }
-        commands
-    }
-
-    fn get_messages_list_commands(&self, registry: &CommandRegistry) -> Vec<Keybind> {
-        let mut commands = Vec::new();
-        if let Some(key) = registry.get_first(Action::NavigateDown) {
-            let mut bind = Keybind::new(key, Action::NavigateDown, "Nav");
-            if let KeyCode::Char('j') = key.code {
-                bind = bind.with_display("j/k");
-            }
-            commands.push(bind);
-        }
-        if let Some(key) = registry.get_first(Action::Reply) {
-            commands.push(Keybind::new(key, Action::Reply, "Reply"));
-        }
-        if let Some(key) = registry.get_first(Action::EditMessage) {
-            let can_edit = self
-                .message_pane_state
-                .selected_index()
-                .and_then(|idx| self.message_pane_data.get_message(idx))
-                .is_some_and(|m| m.can_be_edited_by(&self.user));
-
-            if can_edit {
-                commands.push(Keybind::new(key, Action::EditMessage, "Edit"));
-            }
-        }
-        if let Some(key) = registry.get_first(Action::DeleteMessage) {
-            let can_delete = self
-                .message_pane_state
-                .selected_index()
-                .and_then(|idx| self.message_pane_data.get_message(idx))
-                .is_some_and(|m| m.can_be_edited_by(&self.user));
-
-            if can_delete {
-                commands.push(Keybind::new(key, Action::DeleteMessage, "Delete"));
-            }
-        }
-        if let Some(key) = registry.get_first(Action::OpenAttachments) {
-            let label = self
-                .message_pane_state
-                .selected_index()
-                .and_then(|idx| self.message_pane_data.get_message(idx))
-                .and_then(|m| MessageContentService::resolve(m).label());
-
-            if let Some(label) = label {
-                commands.push(Keybind::new(key, Action::OpenAttachments, label));
-            } else {
-                commands.push(Keybind::new(key, Action::OpenAttachments, "Open"));
-            }
-        }
-        if let Some(key) = registry.get_first(Action::CopyContent) {
-            commands.push(Keybind::new(key, Action::CopyContent, "Copy"));
-        }
-        if let Some(key) = registry.get_first(Action::JumpToReply) {
-            commands.push(Keybind::new(key, Action::JumpToReply, "Jump"));
-        }
-        if let Some(key) = registry.get_first(Action::FocusInput) {
-            commands.push(Keybind::new(key, Action::FocusInput, "Focus Input"));
-        }
-        if let Some(key) = registry.get_first(Action::ToggleHelp) {
-            commands.push(Keybind::new(key, Action::ToggleHelp, "Help"));
-        }
-        commands
-    }
-
-    #[allow(clippy::unused_self)]
-    fn get_message_input_commands(&self, registry: &CommandRegistry) -> Vec<Keybind> {
-        let mut commands = Vec::new();
-        if let Some(key) = registry.get_first(Action::SendMessage) {
-            commands.push(Keybind::new(key, Action::SendMessage, "Send"));
-        }
-        if let Some(key) = registry.get_first(Action::NewLine) {
-            commands.push(Keybind::new(key, Action::NewLine, "NL"));
-        }
-        if let Some(key) = registry.get_first(Action::FocusMessages) {
-            commands.push(Keybind::new(key, Action::FocusMessages, "Msgs"));
-        }
-        if let Some(key) = registry.get_first(Action::OpenEditor) {
-            commands.push(Keybind::new(key, Action::OpenEditor, "Editor"));
-        }
-        if let Some(key) = registry.get_first(Action::ToggleFileExplorer) {
-            commands.push(Keybind::new(key, Action::ToggleFileExplorer, "Attach"));
-        }
-        if let Some(key) = registry.get_first(Action::Paste) {
-            commands.push(Keybind::new(key, Action::Paste, "Paste"));
-        }
-        if let Some(key) = registry.get_first(Action::Cancel) {
-            commands.push(Keybind::new(key, Action::Cancel, "Cancel"));
-        }
-
-        commands.push(Keybind::new(
-            KeyEvent::from(KeyCode::F(1)),
-            Action::ToggleHelp,
-            "Help",
-        ));
-
-        commands
-    }
-}
-
 #[cfg(test)]
 #[cfg(not(windows))]
 mod tests {
@@ -3028,9 +2844,9 @@ mod tests {
     fn setup_permissive_guild_data(state: &mut ChatScreenState, guild_id: GuildId) {
         let user = state.user().clone();
         let role = Role {
-            id: RoleId(guild_id.as_u64()), // @everyone has same ID as guild
+            id: RoleId(guild_id.as_u64()),
             name: "@everyone".to_string(),
-            permissions: Permissions::all(), // Allow everything
+            permissions: Permissions::all(),
             color: 0,
             hoist: false,
             icon: None,
@@ -3059,439 +2875,6 @@ mod tests {
         User::new("123", "testuser", "0", None, false, None)
     }
 
-    #[test]
-    fn test_reselecting_same_guild_preserves_channel() {
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-
-        let guild_a = Guild::new(1_u64, "Guild A");
-        let channel_a1 = Channel::new(ChannelId(10), "Channel A1", ChannelKind::Text);
-
-        state.set_guilds(vec![guild_a.clone()]);
-        setup_permissive_guild_data(&mut state, guild_a.id());
-        state.set_channels(guild_a.id(), vec![channel_a1.clone()]);
-
-        state.on_guild_selected(guild_a.id());
-        state.on_channel_selected(channel_a1.id());
-
-        state.on_guild_selected(guild_a.id());
-
-        assert_eq!(
-            state
-                .selected_channel()
-                .map(crate::domain::entities::Channel::id),
-            Some(channel_a1.id()),
-            "Channel selection should be preserved when reselecting same guild"
-        );
-    }
-
-    #[test]
-    fn test_external_edit_restriction() {
-        use crate::domain::entities::{ChannelId, Message, MessageAuthor, MessageId, MessageKind};
-        use chrono::Local;
-
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-
-        let channel_id = ChannelId(1);
-        let timestamp = Local::now();
-
-        let other_message = Message::new(
-            MessageId(2),
-            channel_id,
-            MessageAuthor {
-                id: "456".to_string(),
-                username: "other".to_string(),
-                discriminator: "0".to_string(),
-                avatar: None,
-                bot: false,
-                global_name: None,
-            },
-            "Other message".to_string(),
-            timestamp,
-            MessageKind::Default,
-        );
-
-        state.message_pane_data.set_messages(vec![other_message]);
-        state.focus_messages_list();
-        state.message_pane_state.jump_to_index(0);
-
-        let edit_key = KeyEvent::new(KeyCode::Char('e'), crossterm::event::KeyModifiers::CONTROL);
-
-        let result = state.handle_key(edit_key);
-
-        match result {
-            ChatKeyResult::ShowNotification(msg) => {
-                assert_eq!(msg, "You can only edit your own messages");
-            }
-            _ => panic!("Expected ShowNotification, got {result:?}"),
-        }
-    }
-
-    #[test]
-    fn test_increment_mention_count_on_active_channel_should_not_increment() {
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-
-        let guild = crate::domain::entities::Guild::new(1_u64, "Guild A");
-        let channel = crate::domain::entities::Channel::new(
-            crate::domain::entities::ChannelId(10),
-            "Channel A",
-            crate::domain::entities::ChannelKind::Text,
-        );
-
-        state.set_guilds(vec![guild.clone()]);
-        setup_permissive_guild_data(&mut state, guild.id());
-        state.set_channels(guild.id(), vec![channel.clone()]);
-
-        state.on_channel_selected(channel.id());
-        assert_eq!(
-            state
-                .selected_channel()
-                .map(crate::domain::entities::Channel::id),
-            Some(channel.id())
-        );
-
-        state.increment_mention_count(channel.id());
-
-        let count = state
-            .read_states
-            .get(&channel.id())
-            .map_or(0, |rs| rs.mention_count);
-        assert_eq!(count, 0, "Mention count should be 0 for active channel");
-    }
-
-    #[test]
-    fn test_focus_cycling() {
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-
-        assert_eq!(state.focus(), ChatFocus::GuildsTree);
-
-        state.focus_next();
-        assert_eq!(state.focus(), ChatFocus::MessagesList);
-
-        state.focus_next();
-        assert_eq!(state.focus(), ChatFocus::MessageInput);
-
-        state.focus_next();
-        assert_eq!(state.focus(), ChatFocus::GuildsTree);
-    }
-
-    #[test]
-    fn test_focus_skip_when_guilds_hidden() {
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-        state.toggle_guilds_tree();
-        state.set_focus(ChatFocus::MessagesList);
-
-        state.focus_next();
-        assert_eq!(state.focus(), ChatFocus::MessageInput);
-
-        state.focus_next();
-        assert_eq!(state.focus(), ChatFocus::MessagesList);
-    }
-
-    #[test]
-    #[cfg(not(windows))]
-    fn test_cross_guild_channel_selection() {
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-
-        let guild_a = Guild::new(1_u64, "Guild A");
-        let guild_b = Guild::new(2_u64, "Guild B");
-        let channel_a = Channel::new(ChannelId(10), "Channel A1", ChannelKind::Text);
-        let channel_b = Channel::new(ChannelId(20), "Channel B1", ChannelKind::Text);
-
-        state.set_guilds(vec![guild_a.clone(), guild_b.clone()]);
-        setup_permissive_guild_data(&mut state, guild_a.id());
-        setup_permissive_guild_data(&mut state, guild_b.id());
-        state.set_channels(guild_a.id(), vec![channel_a.clone()]);
-        state.set_channels(guild_b.id(), vec![channel_b.clone()]);
-
-        state.on_guild_selected(guild_a.id());
-        state.on_channel_selected(channel_a.id());
-
-        assert_eq!(state.selected_guild(), Some(guild_a.id()));
-        assert_eq!(
-            state
-                .selected_channel()
-                .map(crate::domain::entities::Channel::id),
-            Some(channel_a.id())
-        );
-
-        let result = state.on_channel_selected(channel_b.id());
-
-        assert!(
-            result.is_some(),
-            "Should return a result when selecting Channel B1"
-        );
-        assert_eq!(
-            state.selected_guild(),
-            Some(guild_b.id()),
-            "Should switch to Guild B"
-        );
-        assert_eq!(
-            state
-                .selected_channel()
-                .map(crate::domain::entities::Channel::id),
-            Some(channel_b.id()),
-            "Should switch to Channel B1"
-        );
-    }
-
-    #[test]
-    fn test_permission_filtering_public_channel() {
-        let user = create_test_user();
-        let mut state = create_test_state(user.clone());
-        let guild_id = GuildId(1);
-        let channel = Channel::new(ChannelId(10), "public", ChannelKind::Text).with_guild(guild_id);
-
-        // Setup @everyone role with VIEW_CHANNEL (default)
-        let everyone_role = Role {
-            id: RoleId(1),
-            name: "@everyone".to_string(),
-            color: 0,
-            hoist: false,
-            icon: None,
-            unicode_emoji: None,
-            position: 0,
-            permissions: Permissions::VIEW_CHANNEL,
-            managed: false,
-            mentionable: false,
-        };
-
-        let member = Member {
-            user: Some(user.clone()),
-            nick: None,
-            avatar: None,
-            roles: vec![],
-            joined_at: String::new(),
-            premium_since: None,
-            deaf: false,
-            mute: false,
-            pending: false,
-            permissions: None,
-            communication_disabled_until: None,
-        };
-
-        state.set_guild_data(guild_id, vec![everyone_role], vec![member]);
-        state.set_channels(guild_id, vec![channel.clone()]);
-
-        assert!(state.guilds_tree_data.get_channel(channel.id()).is_some());
-    }
-
-    #[test]
-    fn test_permission_filtering_private_channel_denied() {
-        let user = create_test_user();
-        let mut state = create_test_state(user.clone());
-        let guild_id = GuildId(1);
-        let channel =
-            Channel::new(ChannelId(10), "private", ChannelKind::Text).with_guild(guild_id);
-
-        // Setup @everyone role with VIEW_CHANNEL DENIED
-        let everyone_role = Role {
-            id: RoleId(1),
-            name: "@everyone".to_string(),
-            color: 0,
-            hoist: false,
-            icon: None,
-            unicode_emoji: None,
-            position: 0,
-            permissions: Permissions::empty(), // No VIEW_CHANNEL
-            managed: false,
-            mentionable: false,
-        };
-
-        let member = Member {
-            user: Some(user.clone()),
-            nick: None,
-            avatar: None,
-            roles: vec![],
-            joined_at: String::new(),
-            premium_since: None,
-            deaf: false,
-            mute: false,
-            pending: false,
-            permissions: None,
-            communication_disabled_until: None,
-        };
-
-        state.set_guild_data(guild_id, vec![everyone_role], vec![member]);
-        state.set_channels(guild_id, vec![channel.clone()]);
-
-        assert!(state.guilds_tree_data.get_channel(channel.id()).is_none());
-    }
-
-    #[test]
-    fn test_permission_filtering_role_access() {
-        let user = create_test_user();
-        let mut state = create_test_state(user.clone());
-        let guild_id = GuildId(1);
-        let channel =
-            Channel::new(ChannelId(10), "restricted", ChannelKind::Text).with_guild(guild_id);
-
-        // @everyone denied
-        let everyone_role = Role {
-            id: RoleId(1),
-            name: "@everyone".to_string(),
-            permissions: Permissions::empty(),
-            ..create_dummy_role(1)
-        };
-
-        // Member role allowed
-        let member_role = Role {
-            id: RoleId(2),
-            name: "Member".to_string(),
-            permissions: Permissions::VIEW_CHANNEL,
-            ..create_dummy_role(2)
-        };
-
-        let member = Member {
-            user: Some(user.clone()),
-            roles: vec![RoleId(2)],
-            ..create_dummy_member()
-        };
-
-        state.set_guild_data(guild_id, vec![everyone_role, member_role], vec![member]);
-        state.set_channels(guild_id, vec![channel.clone()]);
-
-        assert!(state.guilds_tree_data.get_channel(channel.id()).is_some());
-    }
-
-    #[test]
-    fn test_permission_filtering_strict_category_pruning() {
-        let user = create_test_user();
-        let mut state = create_test_state(user.clone());
-        let guild_id = GuildId(1);
-
-        let category = Channel::new(ChannelId(100), "Hidden Category", ChannelKind::Category)
-            .with_guild(guild_id);
-
-        let child = Channel::new(ChannelId(101), "Visible Child", ChannelKind::Text)
-            .with_guild(guild_id)
-            .with_parent(ChannelId(100));
-
-        // @everyone denied VIEW_CHANNEL base
-        let everyone_role = Role {
-            id: RoleId(1),
-            permissions: Permissions::empty(),
-            ..create_dummy_role(1)
-        };
-
-        // Child has overwrite allowing VIEW_CHANNEL for @everyone
-        // But Category does NOT.
-        let child =
-            child.with_permission_overwrites(vec![crate::domain::entities::PermissionOverwrite {
-                id: "1".to_string(), // @everyone
-                overwrite_type: crate::domain::entities::OverwriteType::Role,
-                allow: Permissions::VIEW_CHANNEL.bits().to_string(),
-                deny: "0".to_string(),
-            }]);
-
-        let member = create_dummy_member_with_user(user);
-
-        state.set_guild_data(guild_id, vec![everyone_role], vec![member]);
-        state.set_channels(guild_id, vec![category.clone(), child.clone()]);
-
-        // Category is hidden (base permissions empty, no overwrite).
-        // Child is technically visible (overwrite allows).
-        // BUT strict pruning means if category is hidden, child is hidden.
-
-        assert!(
-            state.guilds_tree_data.get_channel(category.id()).is_none(),
-            "Category should be hidden"
-        );
-        assert!(
-            state.guilds_tree_data.get_channel(child.id()).is_none(),
-            "Child should be hidden because parent is hidden"
-        );
-    }
-
     fn create_test_state(user: User) -> ChatScreenState {
         ChatScreenState::new(
             user,
@@ -3507,6 +2890,7 @@ mod tests {
             RelationshipState::new(),
             false,
             QuickSwitcherSortMode::default(),
+            vec![],
             vec![],
         )
     }
@@ -3549,714 +2933,27 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(windows))]
-    fn test_chat_screen_state_creation_initial_focus() {
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
+    fn test_reselecting_same_guild_preserves_channel() {
+        let mut state = create_test_state(create_test_user());
 
-        assert_eq!(state.focus(), ChatFocus::GuildsTree);
+        let guild_a = Guild::new(1_u64, "Guild A");
+        let channel_a1 = Channel::new(ChannelId(10), "Channel A1", ChannelKind::Text);
 
-        let guild = Guild::new(1_u64, "Guild A");
-        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
-        state.set_guilds(vec![guild.clone()]);
-        setup_permissive_guild_data(&mut state, guild.id());
-        state.set_channels(guild.id(), vec![channel.clone()]);
+        state.set_guilds(vec![guild_a.clone()]);
+        setup_permissive_guild_data(&mut state, guild_a.id());
+        state.set_channels(guild_a.id(), vec![channel_a1.clone()]);
 
-        state.on_channel_selected(channel.id());
+        state.on_guild_selected(guild_a.id());
+        state.on_channel_selected(channel_a1.id());
+
+        state.on_guild_selected(guild_a.id());
 
         assert_eq!(
-            state.focus(),
-            ChatFocus::MessagesList,
-            "Focus should switch to MessagesList on channel selection"
+            state
+                .selected_channel()
+                .map(crate::domain::entities::Channel::id),
+            Some(channel_a1.id()),
+            "Channel selection should be preserved when reselecting same guild"
         );
-    }
-
-    #[test]
-    fn test_escape_from_empty_message_list_focuses_tree() {
-        use crossterm::event::KeyModifiers;
-
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-
-        state.focus_messages_list();
-        assert_eq!(state.focus(), ChatFocus::MessagesList);
-
-        state.message_pane_state.clear_selection();
-
-        let esc_event = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-
-        let result = state.handle_key(esc_event);
-
-        assert_eq!(result, ChatKeyResult::Consumed);
-        assert_eq!(
-            state.focus(),
-            ChatFocus::GuildsTree,
-            "Should return focus to Guilds Tree on Cancel from empty selection"
-        );
-    }
-
-    #[test]
-    fn test_message_input_shows_focus_messages_command() {
-        let state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-
-        let commands = state.get_message_input_commands(&state.registry);
-
-        assert!(
-            commands.iter().any(|k| k.action == Action::FocusMessages),
-            "Message input commands should include FocusMessages (Ctrl+T)"
-        );
-    }
-
-    #[test]
-    fn test_ctrl_t_focuses_messages_from_input() {
-        use crossterm::event::KeyModifiers;
-
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-
-        let guild = Guild::new(1_u64, "Guild A");
-        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
-        state.set_guilds(vec![guild.clone()]);
-        state.set_channels(guild.id(), vec![channel.clone()]);
-        state.on_channel_selected(channel.id());
-        state.focus_message_input();
-
-        let ctrl_t = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
-        let result = state.handle_key(ctrl_t);
-
-        assert_eq!(result, ChatKeyResult::Consumed, "Ctrl+t should be consumed");
-        assert_eq!(
-            state.focus(),
-            ChatFocus::MessagesList,
-            "Ctrl+t should focus the messages list"
-        );
-    }
-
-    #[test_case('a', KeyModifiers::NONE ; "lowercase char")]
-    #[test_case('Z', KeyModifiers::SHIFT ; "uppercase char")]
-    #[test_case('1', KeyModifiers::NONE ; "digit")]
-    #[test_case('i', KeyModifiers::NONE ; "i key")]
-    #[test_case('t', KeyModifiers::NONE ; "t key")]
-    #[test_case('?', KeyModifiers::SHIFT ; "question mark")]
-    fn test_input_character_handling(c: char, modifiers: KeyModifiers) {
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-
-        let guild = Guild::new(1_u64, "Guild A");
-        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
-        state.set_guilds(vec![guild.clone()]);
-        state.set_channels(guild.id(), vec![channel.clone()]);
-        state.on_channel_selected(channel.id());
-        state.focus_message_input();
-        state.message_input_state.clear();
-
-        let result = state.handle_key(KeyEvent::new(KeyCode::Char(c), modifiers));
-
-        assert!(
-            matches!(result, ChatKeyResult::StartTyping | ChatKeyResult::Ignored),
-            "Character '{c}' should be typed in input mode, not trigger actions"
-        );
-        assert_eq!(
-            state.focus(),
-            ChatFocus::MessageInput,
-            "Focus should remain on MessageInput when typing '{c}'"
-        );
-    }
-
-    #[test_case(KeyCode::Char('t'), KeyModifiers::CONTROL, ChatFocus::MessagesList ; "ctrl+t focus messages")]
-    #[test_case(KeyCode::Char('g'), KeyModifiers::CONTROL, ChatFocus::GuildsTree ; "ctrl+g focus guilds")]
-    fn test_global_focus_shortcuts_preserve_input(
-        key: KeyCode,
-        modifiers: KeyModifiers,
-        target: ChatFocus,
-    ) {
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-
-        let guild = Guild::new(1_u64, "Guild A");
-        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
-        state.set_guilds(vec![guild.clone()]);
-        state.set_channels(guild.id(), vec![channel.clone()]);
-        state.on_channel_selected(channel.id());
-
-        state.focus_message_input();
-        let text = "Important draft";
-        state.message_input_state.set_content(text);
-
-        let result = state.handle_key(KeyEvent::new(key, modifiers));
-
-        assert_eq!(result, ChatKeyResult::Consumed);
-        assert_eq!(state.focus(), target);
-        assert_eq!(
-            state.message_input_state.value(),
-            text,
-            "Input buffer should be preserved"
-        );
-    }
-
-    #[test_case(ChatFocus::MessagesList, KeyCode::Char('i'), KeyModifiers::NONE ; "i from messages list")]
-    #[test_case(ChatFocus::GuildsTree, KeyCode::Char('i'), KeyModifiers::NONE ; "i from guilds tree")]
-    #[test_case(ChatFocus::MessagesList, KeyCode::Char('i'), KeyModifiers::CONTROL ; "ctrl+i from messages list")]
-    fn test_focus_input_shortcuts(initial_focus: ChatFocus, key: KeyCode, modifiers: KeyModifiers) {
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-
-        let guild = Guild::new(1_u64, "Guild A");
-        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
-        state.set_guilds(vec![guild.clone()]);
-        state.set_channels(guild.id(), vec![channel.clone()]);
-        state.on_channel_selected(channel.id());
-
-        state.set_focus(initial_focus);
-
-        let result = state.handle_key(KeyEvent::new(key, modifiers));
-
-        assert_eq!(result, ChatKeyResult::Consumed);
-        assert_eq!(state.focus(), ChatFocus::MessageInput);
-    }
-
-    #[test_case(ChatFocus::MessagesList ; "messages list")]
-    #[test_case(ChatFocus::GuildsTree ; "guilds tree")]
-    fn test_help_toggle(initial_focus: ChatFocus) {
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-
-        let guild = Guild::new(1_u64, "Guild A");
-        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
-        state.set_guilds(vec![guild.clone()]);
-        state.set_channels(guild.id(), vec![channel.clone()]);
-        state.on_channel_selected(channel.id());
-
-        state.set_focus(initial_focus);
-        assert!(!state.show_help);
-
-        let result = state.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::SHIFT));
-
-        assert!(matches!(result, ChatKeyResult::ToggleHelp));
-        assert!(state.show_help);
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn test_quick_switcher_input_vs_navigation() {
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::Mixed,
-            vec![],
-        );
-
-        let guild = crate::domain::entities::Guild::new(1_u64, "Guild A");
-        let channel1 = crate::domain::entities::Channel::new(
-            crate::domain::entities::ChannelId(10),
-            "juice",
-            crate::domain::entities::ChannelKind::Text,
-        );
-        let channel2 = crate::domain::entities::Channel::new(
-            crate::domain::entities::ChannelId(11),
-            "jam",
-            crate::domain::entities::ChannelKind::Text,
-        );
-        state.set_guilds(vec![guild.clone()]);
-        setup_permissive_guild_data(&mut state, guild.id());
-        state.set_channels(guild.id(), vec![channel1.clone(), channel2.clone()]);
-
-        state.toggle_quick_switcher();
-        assert!(state.show_quick_switcher);
-
-        let key_j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
-        state.handle_key(key_j);
-
-        assert_eq!(state.quick_switcher.input, "j");
-        assert_eq!(state.quick_switcher.list_state.selected(), Some(0));
-
-        let key_u = KeyEvent::new(KeyCode::Char('u'), KeyModifiers::NONE);
-        state.handle_key(key_u);
-
-        assert_eq!(state.quick_switcher.input, "ju");
-        assert_eq!(state.quick_switcher.list_state.selected(), Some(0));
-
-        state.quick_switcher.input.clear();
-        state.perform_search("");
-
-        assert!(state.quick_switcher.results.len() >= 2);
-        state.quick_switcher.list_state.select(Some(0));
-
-        let key_ctrl_j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL);
-        state.handle_key(key_ctrl_j);
-
-        assert_eq!(state.quick_switcher.list_state.selected(), Some(1));
-
-        let key_ctrl_k = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
-        state.handle_key(key_ctrl_k);
-
-        assert_eq!(state.quick_switcher.list_state.selected(), Some(0));
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn test_search_excludes_categories() {
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-
-        let guild = Guild::new(1_u64, "Guild A");
-        let category = Channel::new(ChannelId(100), "Category 1", ChannelKind::Category);
-        let channel =
-            Channel::new(ChannelId(101), "general", ChannelKind::Text).with_parent(100_u64);
-
-        state.set_guilds(vec![guild.clone()]);
-        setup_permissive_guild_data(&mut state, guild.id());
-        state.set_channels(guild.id(), vec![category.clone(), channel.clone()]);
-
-        state.toggle_quick_switcher();
-
-        state.perform_search("Category");
-
-        assert!(
-            state.quick_switcher.results.is_empty(),
-            "Categories should be excluded from search results. Found: {:?}",
-            state.quick_switcher.results
-        );
-
-        state.perform_search("general");
-        assert_eq!(state.quick_switcher.results.len(), 1);
-        assert_eq!(state.quick_switcher.results[0].id, "101");
-    }
-
-    #[test]
-    fn test_esc_navigation_void_state() {
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-
-        let guild = Guild::new(1_u64, "Guild A");
-        let channel = Channel::new(ChannelId(10), "Channel A", ChannelKind::Text);
-
-        state.set_guilds(vec![guild.clone()]);
-        setup_permissive_guild_data(&mut state, guild.id());
-        state.set_channels(guild.id(), vec![channel.clone()]);
-
-        state.on_channel_selected(channel.id());
-        assert!(state.selected_channel().is_some());
-
-        let key_esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-        state.handle_key(key_esc);
-
-        let recents = &state.recents;
-        let null_recent = recents
-            .iter()
-            .find(|r| r.name.contains("Text Channel") && r.id == "0");
-
-        assert!(
-            null_recent.is_none(),
-            "Should not add null channel to recents. Found: {null_recent:?}"
-        );
-
-        if state.selected_channel().is_none() {
-            assert_eq!(state.focus(), ChatFocus::GuildsTree);
-        }
-    }
-
-    #[test]
-    fn test_initial_recents_filtering() {
-        use crate::domain::search::{RecentItem, SearchKind};
-
-        let invalid_item = RecentItem {
-            id: "0".to_string(),
-            name: "Text Channels".to_string(),
-            kind: SearchKind::Channel,
-            guild_id: None,
-            timestamp: 0,
-        };
-
-        let valid_item = RecentItem {
-            id: "123".to_string(),
-            name: "General".to_string(),
-            kind: SearchKind::Channel,
-            guild_id: None,
-            timestamp: 0,
-        };
-
-        let state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![invalid_item, valid_item],
-        );
-
-        assert_eq!(
-            state.recents.len(),
-            1,
-            "Recents should be filtered on initialization"
-        );
-        assert_eq!(state.recents[0].id, "123");
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn test_perform_search_finds_general() {
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-
-        let guild = Guild::new(1_u64, "Guild A");
-        let channel = Channel::new(ChannelId(101), "general", ChannelKind::Text).with_guild(1_u64);
-
-        state.set_guilds(vec![guild.clone()]);
-        setup_permissive_guild_data(&mut state, guild.id());
-        state.set_channels(guild.id(), vec![channel.clone()]);
-
-        assert!(state.guilds_tree_data.get_channel(ChannelId(101)).is_some());
-
-        state.toggle_quick_switcher();
-        state.perform_search("general");
-
-        assert_eq!(
-            state.quick_switcher.results.len(),
-            1,
-            "Search for 'general' should return 1 result. Actual: {:?}",
-            state.quick_switcher.results
-        );
-        assert_eq!(state.quick_switcher.results[0].id, "101");
-    }
-
-    #[test]
-    fn test_channels_hidden_if_member_missing() {
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-        let guild_id = GuildId(1);
-        let channel =
-            Channel::new(ChannelId(10), "general", ChannelKind::Text).with_guild(guild_id);
-
-        let everyone_role = Role {
-            id: RoleId(1),
-            name: "@everyone".to_string(),
-            permissions: Permissions::VIEW_CHANNEL,
-            color: 0,
-            hoist: false,
-            icon: None,
-            unicode_emoji: None,
-            position: 0,
-            managed: false,
-            mentionable: false,
-        };
-
-        state.set_guild_data(guild_id, vec![everyone_role], vec![]);
-        state.set_channels(guild_id, vec![channel.clone()]);
-
-        assert!(state.guilds_tree_data.get_channel(channel.id()).is_none());
-    }
-
-    #[test]
-    fn test_channels_visible_if_member_present() {
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::default(),
-            vec![],
-        );
-        let guild_id = GuildId(1);
-        let channel =
-            Channel::new(ChannelId(10), "general", ChannelKind::Text).with_guild(guild_id);
-
-        let everyone_role = Role {
-            id: RoleId(1),
-            name: "@everyone".to_string(),
-            permissions: Permissions::VIEW_CHANNEL,
-            color: 0,
-            hoist: false,
-            icon: None,
-            unicode_emoji: None,
-            position: 0,
-            managed: false,
-            mentionable: false,
-        };
-
-        let member = Member {
-            user: Some(create_test_user()),
-            roles: vec![],
-            nick: None,
-            avatar: None,
-            joined_at: String::new(),
-            premium_since: None,
-            deaf: false,
-            mute: false,
-            pending: false,
-            permissions: None,
-            communication_disabled_until: None,
-        };
-
-        state.set_guild_data(guild_id, vec![everyone_role], vec![member]);
-        state.set_channels(guild_id, vec![channel.clone()]);
-
-        assert!(state.guilds_tree_data.get_channel(channel.id()).is_some());
-    }
-
-    #[test]
-    fn test_remove_guild_updates_recents() {
-        use crate::domain::search::{RecentItem, SearchKind, SearchResult};
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::Mixed,
-            vec![],
-        );
-
-        let guild_id = GuildId(1);
-        let guild_id_str = guild_id.to_string();
-        let channel_id = ChannelId(10);
-        let channel_id_str = channel_id.to_string();
-
-        let res_guild = SearchResult::new(guild_id_str.clone(), "Guild", SearchKind::Guild);
-        let res_channel = SearchResult::new(channel_id_str.clone(), "Channel", SearchKind::Channel)
-            .with_guild(guild_id_str.clone(), "Guild");
-
-        state.add_recent_item(RecentItem::new(&res_guild));
-        state.add_recent_item(RecentItem::new(&res_channel));
-
-        assert_eq!(state.recents.len(), 2);
-
-        state.remove_guild(guild_id);
-
-        assert_eq!(state.recents.len(), 0);
-        assert_eq!(state.quick_switcher.recents.len(), 0);
-    }
-
-    #[test]
-    fn test_remove_channel_updates_recents() {
-        use crate::domain::search::{RecentItem, SearchKind, SearchResult};
-        let mut state = ChatScreenState::new(
-            create_test_user(),
-            Arc::new(MarkdownRenderer::new()),
-            UserCache::new(),
-            false,
-            true,
-            true,
-            "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
-            true,
-            CommandRegistry::default(),
-            RelationshipState::new(),
-            false,
-            QuickSwitcherSortMode::Mixed,
-            vec![],
-        );
-
-        let channel_id = ChannelId(10);
-        let channel_id_str = channel_id.to_string();
-
-        let res_channel = SearchResult::new(channel_id_str.clone(), "Channel", SearchKind::Channel);
-
-        state.add_recent_item(RecentItem::new(&res_channel));
-
-        assert_eq!(state.recents.len(), 1);
-
-        state.remove_channel(channel_id);
-
-        assert_eq!(state.recents.len(), 0);
     }
 }

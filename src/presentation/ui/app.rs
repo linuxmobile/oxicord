@@ -134,6 +134,7 @@ pub struct App {
         Option<GuildId>,
         Option<ChannelId>,
         Vec<crate::domain::search::RecentItem>,
+        Vec<crate::domain::search::RecentItem>,
         QuickSwitcherSortMode,
     )>,
     clipboard_service: ClipboardService,
@@ -176,6 +177,7 @@ impl App {
             Option<GuildId>,
             Option<ChannelId>,
             Vec<crate::domain::search::RecentItem>,
+            Vec<crate::domain::search::RecentItem>,
             QuickSwitcherSortMode,
         )>();
         let store = state_store.clone();
@@ -189,6 +191,7 @@ impl App {
                 Option<GuildId>,
                 Option<ChannelId>,
                 Vec<crate::domain::search::RecentItem>,
+                Vec<crate::domain::search::RecentItem>,
                 QuickSwitcherSortMode,
             );
             let mut pending_state: Option<PendingState> = None;
@@ -201,10 +204,10 @@ impl App {
                         timer = Box::pin(tokio::time::sleep(DEBOUNCE_DURATION));
                     }
                     () = &mut timer, if pending_state.is_some() => {
-                        if let Some((guild_id, channel_id, recents, sort_mode)) = pending_state.take() {
+                        if let Some((guild_id, channel_id, recents, favorites, sort_mode)) = pending_state.take() {
                             let gid = guild_id.map(|g| g.as_u64().to_string());
                             let cid = channel_id.map(|c| c.as_u64().to_string());
-                            if let Err(e) = store.save(gid, cid, &recents, sort_mode).await {
+                            if let Err(e) = store.save(gid, cid, &recents, &favorites, sort_mode).await {
                                 tracing::warn!("Failed to save state: {e}");
                             }
                         }
@@ -444,14 +447,14 @@ impl App {
     }
 
     fn save_state(&self, guild_id: Option<GuildId>, channel_id: Option<ChannelId>) {
-        let (recents, sort_mode) = if let CurrentScreen::Chat(state) = &self.screen {
-            (state.recents.clone(), state.quick_switcher_sort_mode())
+        let (recents, favorites, sort_mode) = if let CurrentScreen::Chat(state) = &self.screen {
+            (state.recents.clone(), state.favorites.clone(), state.quick_switcher_sort_mode())
         } else {
-            (Vec::new(), QuickSwitcherSortMode::default())
+            (Vec::new(), Vec::new(), QuickSwitcherSortMode::default())
         };
         let _ = self
             .state_save_tx
-            .send((guild_id, channel_id, recents, sort_mode));
+            .send((guild_id, channel_id, recents, favorites, sort_mode));
     }
 
     async fn attempt_auto_login(&mut self, token: String, source: TokenSource) {
@@ -831,6 +834,13 @@ impl App {
             ChatKeyResult::ShowNotification(message) => {
                 self.show_notification(message);
             }
+            ChatKeyResult::SaveState => {
+                if let CurrentScreen::Chat(state) = &self.screen {
+                    let guild_id = state.selected_guild();
+                    let channel_id = state.selected_channel().map(|c| c.id());
+                    self.save_state(guild_id, channel_id);
+                }
+            }
         }
 
         EventResult::Continue
@@ -953,6 +963,7 @@ impl App {
                     .and_then(|id| id.parse::<u64>().ok())
                     .map(ChannelId),
                 recents: state.recents,
+                favorites: state.favorites,
                 sort_mode: state.quick_switcher_order,
             });
         });
@@ -1585,6 +1596,7 @@ impl App {
                 initial_channels,
                 initial_messages,
                 recents,
+                favorites,
                 sort_mode,
             } => {
                 info!("Data loaded, preparing chat state");
@@ -1604,6 +1616,7 @@ impl App {
                     self.hide_blocked_completely,
                     sort_mode,
                     recents,
+                    favorites,
                 );
 
                 chat_state.set_connection_status(self.connection_status);

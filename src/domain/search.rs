@@ -33,6 +33,8 @@ pub struct SearchResult {
     pub guild_name: Option<String>,
     pub parent_name: Option<String>,
     pub score: i64,
+    #[serde(default)]
+    pub is_favorite: bool,
 }
 
 impl SearchResult {
@@ -45,6 +47,7 @@ impl SearchResult {
             guild_name: None,
             parent_name: None,
             score: 0,
+            is_favorite: false,
         }
     }
 
@@ -64,6 +67,12 @@ impl SearchResult {
     #[must_use]
     pub fn with_score(mut self, score: i64) -> Self {
         self.score = score;
+        self
+    }
+
+    #[must_use]
+    pub fn with_favorite(mut self, is_favorite: bool) -> Self {
+        self.is_favorite = is_favorite;
         self
     }
 }

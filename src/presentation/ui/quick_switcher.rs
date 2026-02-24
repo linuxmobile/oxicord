@@ -19,6 +19,7 @@ pub struct QuickSwitcher {
     pub list_state: ListState,
     pub sort_mode: QuickSwitcherSortMode,
     pub recents: Vec<RecentItem>,
+    pub favorites: Vec<RecentItem>,
 }
 
 impl Default for QuickSwitcher {
@@ -36,6 +37,7 @@ impl QuickSwitcher {
             list_state: ListState::default(),
             sort_mode,
             recents: Vec::new(),
+            favorites: Vec::new(),
         }
     }
 
@@ -54,6 +56,11 @@ impl QuickSwitcher {
 
     pub fn set_recents(&mut self, recents: Vec<RecentItem>) {
         self.recents = recents;
+        self.apply_sort();
+    }
+
+    pub fn set_favorites(&mut self, favorites: Vec<RecentItem>) {
+        self.favorites = favorites;
         self.apply_sort();
     }
 
@@ -100,6 +107,7 @@ impl QuickSwitcher {
                     let time_b = get_timestamp(b, &self.recents);
                     time_b
                         .cmp(&time_a)
+                        .then_with(|| b.is_favorite.cmp(&a.is_favorite))
                         .then_with(|| a.score.cmp(&b.score).reverse())
                 });
             }
@@ -132,6 +140,10 @@ impl QuickSwitcher {
                     } else if b_is_top {
                         std::cmp::Ordering::Greater
                     } else {
+                        if a.is_favorite != b.is_favorite {
+                            return b.is_favorite.cmp(&a.is_favorite);
+                        }
+
                         let kind_priority = |k: &SearchKind| match k {
                             SearchKind::DM => 0,
                             SearchKind::Guild => 1,
@@ -179,6 +191,20 @@ impl QuickSwitcher {
                 QuickSwitcherAction::None
             }
             KeyCode::Tab => QuickSwitcherAction::ToggleSortMode,
+            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if let Some(result) = self.selected_result() {
+                    QuickSwitcherAction::ToggleFavorite(result.clone())
+                } else {
+                    QuickSwitcherAction::None
+                }
+            }
+            KeyCode::Delete if key.modifiers.contains(KeyModifiers::CONTROL) && self.sort_mode == QuickSwitcherSortMode::Recents => {
+                if let Some(result) = self.selected_result() {
+                    QuickSwitcherAction::RemoveRecent(result.clone())
+                } else {
+                    QuickSwitcherAction::None
+                }
+            }
             KeyCode::Char('h' | 'w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 if let Some(last_space_idx) = self.input.trim_end().rfind(' ') {
                     self.input.truncate(last_space_idx + 1);
@@ -249,6 +275,8 @@ pub enum QuickSwitcherAction {
     Select(SearchResult),
     UpdateSearch(String),
     ToggleSortMode,
+    ToggleFavorite(SearchResult),
+    RemoveRecent(SearchResult),
 }
 
 pub struct QuickSwitcherWidget<'a> {
@@ -295,6 +323,12 @@ impl<'a> QuickSwitcherWidget<'a> {
                     Span::styled(left_part_2, Style::default().fg(self.theme.accent)),
                     Span::styled(left_part_3, self.theme.base_style),
                 ];
+
+                if res.is_favorite {
+                     spans.push(Span::raw(" "));
+                     spans.push(Span::styled("", Style::default().fg(Color::Yellow)));
+                     left_len += 2;
+                }
 
                 if let Some(parent) = &res.parent_name {
                     let parent_text = format!("({}) ", sanitize_channel_name(parent));
@@ -395,6 +429,24 @@ impl Widget for QuickSwitcherWidget<'_> {
                 footer_style.label_style,
             ));
             footer_spans.push(Span::styled(format!(" {label} "), footer_style.key_style));
+        }
+
+        // Add favorites keybind
+        footer_spans.push(Span::raw("  "));
+        footer_spans.push(Span::styled(
+            " Ctrl+f ",
+            footer_style.label_style,
+        ));
+        footer_spans.push(Span::styled(" Fav ", footer_style.key_style));
+
+        // Add remove recent keybind if in recents mode
+        if self.switcher.sort_mode == QuickSwitcherSortMode::Recents {
+             footer_spans.push(Span::raw("  "));
+             footer_spans.push(Span::styled(
+                " Ctrl+Del ",
+                footer_style.label_style,
+            ));
+            footer_spans.push(Span::styled(" Remove ", footer_style.key_style));
         }
 
         let footer = Paragraph::new(Line::from(footer_spans));

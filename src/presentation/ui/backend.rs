@@ -23,6 +23,7 @@ pub enum Action {
         initial_channels: Option<Vec<crate::domain::entities::Channel>>,
         initial_messages: Option<Vec<Message>>,
         recents: Vec<crate::domain::search::RecentItem>,
+        favorites: Vec<crate::domain::search::RecentItem>,
         sort_mode: crate::infrastructure::config::app_config::QuickSwitcherSortMode,
     },
     GuildChannelsLoaded {
@@ -128,6 +129,7 @@ pub enum BackendCommand {
         initial_guild_id: Option<GuildId>,
         initial_channel_id: Option<ChannelId>,
         recents: Vec<crate::domain::search::RecentItem>,
+        favorites: Vec<crate::domain::search::RecentItem>,
         sort_mode: crate::infrastructure::config::app_config::QuickSwitcherSortMode,
     },
 }
@@ -352,6 +354,7 @@ impl Backend {
                 initial_guild_id,
                 initial_channel_id,
                 recents,
+                favorites,
                 sort_mode,
             } => {
                 let guilds_future = self.discord_data.fetch_guilds(&token);
@@ -429,6 +432,7 @@ impl Backend {
                     initial_channels,
                     initial_messages,
                     recents,
+                    favorites,
                     sort_mode,
                 });
             }

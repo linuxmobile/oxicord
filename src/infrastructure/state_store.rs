@@ -13,6 +13,8 @@ pub struct AppState {
     #[serde(default)]
     pub recents: Vec<RecentItem>,
     #[serde(default)]
+    pub favorites: Vec<RecentItem>,
+    #[serde(default)]
     pub quick_switcher_order: QuickSwitcherSortMode,
 }
 
@@ -81,6 +83,7 @@ impl StateStore {
         guild_id: Option<String>,
         channel_id: Option<String>,
         recents: &[RecentItem],
+        favorites: &[RecentItem],
         sort_mode: QuickSwitcherSortMode,
     ) -> Result<()> {
         let Some(path) = &self.config_path else {
@@ -91,6 +94,7 @@ impl StateStore {
             last_guild_id: guild_id,
             last_channel_id: channel_id,
             recents: recents.to_vec(),
+            favorites: favorites.to_vec(),
             quick_switcher_order: sort_mode,
         };
 
