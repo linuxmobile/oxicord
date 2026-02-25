@@ -69,8 +69,15 @@ We honor those who paved the way. Oxicord is a single thread in a larger tapestr
 
 ### The Arch Way
 
+Oxicord can be installed from the AUR.
+You can choose between:
+- the latest release version package: [oxicord](https://aur.archlinux.org/packages/oxicord)
+- the git package (to build the latest commit on main branch): [oxicord-git](https://aur.archlinux.org/packages/oxicord-git)
+- the bin package (to avoid compiling): [oxicord-bin](https://aur.archlinux.org/packages/oxicord-bin)
+
+For example:
 ```bash
-paru -S oxicord-bin
+paru -S oxicord
 ```
 
 ### The Nix Ritual
