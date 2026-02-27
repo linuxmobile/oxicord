@@ -610,14 +610,14 @@ mod tests {
         for (input, expected) in cases {
             let blocks = parse_markdown(input);
             if let MdBlock::Paragraph(inlines) = &blocks[0] {
-                assert_eq!(inlines.len(), 1, "Failed case: {}", input);
+                assert_eq!(inlines.len(), 1, "Failed case: {input}");
                 if let MdInline::Text(t) = &inlines[0] {
-                    assert_eq!(t, expected, "Failed case: {}", input);
+                    assert_eq!(t, expected, "Failed case: {input}");
                 } else {
-                    panic!("Expected text for case: {}", input);
+                    panic!("Expected text for case: {input}");
                 }
             } else {
-                panic!("Expected paragraph for case: {}", input);
+                panic!("Expected paragraph for case: {input}");
             }
         }
     }

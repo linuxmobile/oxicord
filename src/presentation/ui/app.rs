@@ -398,7 +398,7 @@ impl App {
                                 initial_content,
                                 message_id,
                             } => {
-                                self.handle_open_editor(terminal, &initial_content, message_id)?;
+                                self.handle_open_editor(terminal, &initial_content, message_id).await?;
                                 self.should_render = true;
                             }
                             _ => {
@@ -1977,21 +1977,23 @@ impl App {
         }
     }
 
-    fn handle_open_editor(
+    async fn handle_open_editor(
         &mut self,
         terminal: &mut DefaultTerminal,
         initial_content: &str,
         target_message_id: Option<MessageId>,
     ) -> color_eyre::Result<()> {
-        use std::io::Write;
-        use tempfile::NamedTempFile;
+        let editor = self.resolve_editor();
+        let result = Self::run_external_editor(editor, initial_content.to_string()).await;
 
-        let mut temp_file = NamedTempFile::new()?;
-        write!(temp_file, "{initial_content}")?;
-        let temp_path = temp_file.path().to_owned();
+        terminal.clear()?;
+        self.apply_editor_result(result, initial_content, target_message_id);
 
-        let editor = self
-            .editor
+        Ok(())
+    }
+
+    fn resolve_editor(&self) -> String {
+        self.editor
             .clone()
             .or_else(|| std::env::var("EDITOR").ok())
             .or_else(|| std::env::var("VISUAL").ok())
@@ -2007,9 +2009,15 @@ impl App {
                     }
                 }
                 "vi".to_string()
-            });
+            })
+    }
 
-        debug!(editor = %editor, path = %temp_path.display(), "Opening external editor");
+    async fn run_external_editor(
+        editor: String,
+        initial_content: String,
+    ) -> color_eyre::Result<Option<String>> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
 
         let parts = crate::presentation::ui::utils::split_command(&editor).ok_or_else(|| {
             std::io::Error::new(
@@ -2018,48 +2026,71 @@ impl App {
             )
         })?;
 
-        let mut parts_iter = parts.into_iter();
-        let cmd = parts_iter.next().ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::InvalidInput, "Empty editor command")
-        })?;
+        tokio::task::spawn_blocking(move || -> color_eyre::Result<Option<String>> {
+            let mut temp_file = NamedTempFile::new()?;
+            write!(temp_file, "{initial_content}")?;
+            let temp_path = temp_file.path().to_owned();
 
-        crossterm::terminal::disable_raw_mode()?;
-        crossterm::execute!(
-            std::io::stdout(),
-            crossterm::terminal::LeaveAlternateScreen,
-            crossterm::cursor::Show
-        )?;
+            debug!(editor = %editor, path = %temp_path.display(), "Opening external editor");
 
-        let status = std::process::Command::new(cmd)
-            .args(parts_iter)
-            .arg(&temp_path)
-            .status();
+            let mut parts_iter = parts.into_iter();
+            let cmd = parts_iter.next().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "Empty editor command")
+            })?;
 
-        crossterm::terminal::enable_raw_mode()?;
-        crossterm::execute!(
-            std::io::stdout(),
-            crossterm::terminal::EnterAlternateScreen,
-            crossterm::cursor::Hide
-        )?;
+            crossterm::terminal::disable_raw_mode()?;
+            if let Err(e) = crossterm::execute!(
+                std::io::stdout(),
+                crossterm::terminal::LeaveAlternateScreen,
+                crossterm::cursor::Show
+            ) {
+                let _ = crossterm::terminal::enable_raw_mode();
+                return Err(e.into());
+            }
 
-        terminal.clear()?;
+            let status = std::process::Command::new(cmd)
+                .args(parts_iter)
+                .arg(&temp_path)
+                .status();
 
-        match status {
-            Ok(exit_status) if exit_status.success() => {
-                let new_content = match std::fs::read_to_string(&temp_path) {
-                    Ok(content) => content,
-                    Err(e) => {
-                        error!(error = %e, "Failed to read from temp file after edit");
-                        if let CurrentScreen::Chat(ref mut state) = self.screen {
-                            state.set_message_error(format!("Failed to read editor output: {e}"));
-                        }
-                        if let Err(e) = std::fs::remove_file(&temp_path) {
-                            debug!(error = %e, "Failed to remove temp file");
-                        }
-                        return Ok(());
-                    }
-                };
+            let _ = crossterm::terminal::enable_raw_mode();
+            let _ = crossterm::execute!(
+                std::io::stdout(),
+                crossterm::terminal::EnterAlternateScreen,
+                crossterm::cursor::Hide
+            );
 
+            match status {
+                Ok(exit_status) if exit_status.success() => {
+                    let new_content = std::fs::read_to_string(&temp_path)?;
+                    let _ = std::fs::remove_file(&temp_path);
+                    Ok(Some(new_content))
+                }
+                Ok(exit_status) => {
+                    let _ = std::fs::remove_file(&temp_path);
+                    warn!(
+                        exit_code = ?exit_status.code(),
+                        "Editor exited with non-zero status"
+                    );
+                    Ok(None)
+                }
+                Err(e) => {
+                    let _ = std::fs::remove_file(&temp_path);
+                    Err(color_eyre::eyre::eyre!("Failed to spawn editor: {e}"))
+                }
+            }
+        })
+        .await?
+    }
+
+    fn apply_editor_result(
+        &mut self,
+        result: color_eyre::Result<Option<String>>,
+        initial_content: &str,
+        target_message_id: Option<MessageId>,
+    ) {
+        match result {
+            Ok(Some(new_content)) => {
                 let new_content = if new_content.ends_with('\n') && !initial_content.ends_with('\n')
                 {
                     new_content[..new_content.len() - 1].to_string()
@@ -2079,21 +2110,14 @@ impl App {
                 info!("Editor closed successfully");
             }
 
-            Ok(exit_status) => {
-                warn!(
-                    exit_code = ?exit_status.code(),
-                    "Editor exited with non-zero status"
-                );
-            }
             Err(e) => {
-                error!(error = %e, editor = %editor, "Failed to spawn editor");
+                error!(error = %e, "Editor error");
                 if let CurrentScreen::Chat(ref mut state) = self.screen {
-                    state.set_message_error(format!("Failed to open editor: {e}"));
+                    state.set_message_error(format!("Editor error: {e}"));
                 }
             }
+            Ok(None) => {}
         }
-
-        Ok(())
     }
 }
 
