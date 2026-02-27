@@ -10,9 +10,9 @@ use crate::application::services::message_content_service::{
 };
 use crate::domain::ConnectionStatus;
 use crate::domain::entities::{
-    CachedUser, Channel, ChannelId, ChannelKind, Guild, GuildFolder, GuildId, Member, Message,
-    MessageId, Permissions, RelationshipState, Role, User, UserCache, CHANNEL_MENTION_RE,
-    CHANNEL_URL_RE,
+    CHANNEL_MENTION_RE, CHANNEL_URL_RE, CachedUser, Channel, ChannelId, ChannelKind, Guild,
+    GuildFolder, GuildId, Member, Message, MessageId, Permissions, RelationshipState, Role, User,
+    UserCache,
 };
 use crate::domain::keybinding::{Action, Keybind};
 use crate::domain::ports::DirectMessageChannel;

@@ -4,7 +4,8 @@ use color_eyre::eyre::{Result, WrapErr};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tokio::fs;
+use tokio::fs::{self, OpenOptions};
+use tokio::io::AsyncWriteExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppState {
@@ -106,7 +107,17 @@ impl StateStore {
 
         let content = toml::to_string(&state).wrap_err("Failed to serialize state")?;
 
-        fs::write(path, content)
+        let mut options = OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+
+        let mut file = options
+            .open(path)
+            .await
+            .wrap_err("Failed to open state file")?;
+
+        file.write_all(content.as_bytes())
             .await
             .wrap_err("Failed to write state file")?;
 

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
-use tokio::fs;
+use tokio::fs::{self, OpenOptions};
 use tokio::io::AsyncWriteExt;
 use tracing::{debug, error, trace, warn};
 
@@ -118,7 +118,13 @@ impl DiskImageCache {
 
         let old_size = fs::metadata(&path).await.map(|m| m.len()).ok();
 
-        let mut file = fs::File::create(&path)
+        let mut options = OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+
+        let mut file = options
+            .open(&path)
             .await
             .map_err(|e| CacheError::IoError(format!("Failed to create cache file: {e}")))?;
 

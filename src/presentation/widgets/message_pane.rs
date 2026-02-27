@@ -719,15 +719,13 @@ impl MessagePaneData {
         if message.is_reply() {
             if let Some(referenced) = message.referenced() {
                 let content = referenced.content();
-                let resolved_content = USER_MENTION_RE.replace_all(
-                    content,
-                    |caps: &regex::Captures| {
+                let resolved_content =
+                    USER_MENTION_RE.replace_all(content, |caps: &regex::Captures| {
                         let id = &caps[1];
                         authors
                             .get(id)
                             .map_or_else(|| format!("@{id}"), |name| format!("@{name}"))
-                    },
-                );
+                    });
 
                 let snippet = truncate_string(&resolved_content, 50);
 

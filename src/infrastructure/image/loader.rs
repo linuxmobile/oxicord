@@ -6,7 +6,10 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use bytes::Bytes;
+use tokio::fs::OpenOptions;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::{RwLock, Semaphore, mpsc};
+
 use tracing::{debug, error, info, trace, warn};
 
 use crate::domain::entities::{ImageId, ImageSource, LoadedImage};
@@ -393,7 +396,17 @@ impl ImageLoader {
         let filename = format!("{}.{}", id.as_str(), ext);
         let path = temp_dir.join(filename);
 
-        tokio::fs::write(&path, &bytes)
+        let mut options = OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+
+        let mut file = options
+            .open(&path)
+            .await
+            .map_err(|e| CacheError::IoError(format!("Failed to create export file: {e}")))?;
+
+        file.write_all(&bytes)
             .await
             .map_err(|e| CacheError::IoError(format!("Failed to write export file: {e}")))?;
 

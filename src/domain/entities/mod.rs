@@ -23,9 +23,9 @@ pub use guild::{Guild, GuildFolder, GuildId, NsfwLevel, PremiumTier, Verificatio
 pub use image::{ImageId, ImageMetadata, ImageSource, ImageStatus, LoadedImage};
 pub use member::Member;
 pub use message::{
-    Attachment, Embed, EmbedAuthor, EmbedField, EmbedFooter, EmbedImage, EmbedProvider,
-    EmbedThumbnail, EmbedVideo, Message, MessageAuthor, MessageFlags, MessageId, MessageKind,
-    MessageReference, Reaction, ReactionEmoji, CHANNEL_MENTION_RE, CHANNEL_URL_RE, USER_MENTION_RE,
+    Attachment, CHANNEL_MENTION_RE, CHANNEL_URL_RE, Embed, EmbedAuthor, EmbedField, EmbedFooter,
+    EmbedImage, EmbedProvider, EmbedThumbnail, EmbedVideo, Message, MessageAuthor, MessageFlags,
+    MessageId, MessageKind, MessageReference, Reaction, ReactionEmoji, USER_MENTION_RE,
 };
 pub use permissions::Permissions;
 pub use read_state::ReadState;
