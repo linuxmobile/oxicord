@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
-use std::sync::LazyLock;
 
 use crate::application::services::identity_resolver::IdentityResolver;
 use crate::application::services::markdown_parser::{
@@ -8,7 +7,7 @@ use crate::application::services::markdown_parser::{
 };
 use crate::application::services::url_extractor::UrlExtractor;
 use crate::domain::entities::{
-    ChannelId, Embed, ForumThread, ImageId, Message, MessageId, RelationshipState,
+    ChannelId, Embed, ForumThread, ImageId, Message, MessageId, RelationshipState, USER_MENTION_RE,
 };
 use crate::domain::keybinding::Action;
 
@@ -23,7 +22,6 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Padding, Paragraph, StatefulWidget, Widget},
 };
-use regex::Regex;
 use tui_scrollbar::{GlyphSet, ScrollBar, ScrollLengths};
 use unicode_width::UnicodeWidthStr;
 
@@ -720,16 +718,16 @@ impl MessagePaneData {
 
         if message.is_reply() {
             if let Some(referenced) = message.referenced() {
-                static MENTION_RE: LazyLock<Regex> =
-                    LazyLock::new(|| Regex::new(r"<@!?(\d+)>").unwrap());
-
                 let content = referenced.content();
-                let resolved_content = MENTION_RE.replace_all(content, |caps: &regex::Captures| {
-                    let id = &caps[1];
-                    authors
-                        .get(id)
-                        .map_or_else(|| format!("@{id}"), |name| format!("@{name}"))
-                });
+                let resolved_content = USER_MENTION_RE.replace_all(
+                    content,
+                    |caps: &regex::Captures| {
+                        let id = &caps[1];
+                        authors
+                            .get(id)
+                            .map_or_else(|| format!("@{id}"), |name| format!("@{name}"))
+                    },
+                );
 
                 let snippet = truncate_string(&resolved_content, 50);
 

@@ -25,7 +25,7 @@ pub use member::Member;
 pub use message::{
     Attachment, Embed, EmbedAuthor, EmbedField, EmbedFooter, EmbedImage, EmbedProvider,
     EmbedThumbnail, EmbedVideo, Message, MessageAuthor, MessageFlags, MessageId, MessageKind,
-    MessageReference, Reaction, ReactionEmoji,
+    MessageReference, Reaction, ReactionEmoji, CHANNEL_MENTION_RE, CHANNEL_URL_RE, USER_MENTION_RE,
 };
 pub use permissions::Permissions;
 pub use read_state::ReadState;

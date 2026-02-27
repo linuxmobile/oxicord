@@ -1,6 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use regex::Regex;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 use std::time::Duration;
 use tachyonfx::{Effect, Interpolation, fx};
 
@@ -12,7 +11,8 @@ use crate::application::services::message_content_service::{
 use crate::domain::ConnectionStatus;
 use crate::domain::entities::{
     CachedUser, Channel, ChannelId, ChannelKind, Guild, GuildFolder, GuildId, Member, Message,
-    MessageId, Permissions, RelationshipState, Role, User, UserCache,
+    MessageId, Permissions, RelationshipState, Role, User, UserCache, CHANNEL_MENTION_RE,
+    CHANNEL_URL_RE,
 };
 use crate::domain::keybinding::{Action, Keybind};
 use crate::domain::ports::DirectMessageChannel;
@@ -1709,20 +1709,18 @@ impl ChatScreenState {
     }
 
     fn register_channel_mentions(&mut self, messages: &[Message]) -> Vec<ChannelId> {
-        static MENTION_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<#(\d+)>").unwrap());
-        static URL_RE: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(r"https?://(?:ptb\.|canary\.)?discord(?:app)?\.com/channels/\d+/(\d+)")
-                .unwrap()
-        });
-
         let mut unknown_ids = Vec::new();
 
         for msg in messages {
             let content = msg.content();
-            let channel_ids = MENTION_RE
+            let channel_ids = CHANNEL_MENTION_RE
                 .captures_iter(content)
-                .filter_map(|c| c.get(1))
-                .chain(URL_RE.captures_iter(content).filter_map(|c| c.get(1)));
+                .filter_map(|c: regex::Captures| c.get(1))
+                .chain(
+                    CHANNEL_URL_RE
+                        .captures_iter(content)
+                        .filter_map(|c: regex::Captures| c.get(1)),
+                );
 
             for id_match in channel_ids {
                 if let Ok(id) = id_match.as_str().parse::<u64>() {

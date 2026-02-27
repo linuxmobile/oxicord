@@ -1,7 +1,20 @@
 use chrono::{DateTime, Local};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 
 use super::{ChannelId, GuildId, User};
+
+/// Regex for matching Discord channel mentions: `<#channel_id>`
+pub static CHANNEL_MENTION_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<#(\d+)>").unwrap());
+
+/// Regex for matching Discord user mentions: `<@user_id>` or `<@!user_id>`
+pub static USER_MENTION_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<@!?(\d+)>").unwrap());
+
+/// Regex for matching Discord channel URLs
+pub static CHANNEL_URL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"https?://(?:ptb\.|canary\.)?discord(?:app)?\.com/channels/\d+/(\d+)").unwrap()
+});
 
 /// Unique identifier for a Discord message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
