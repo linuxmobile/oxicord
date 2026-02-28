@@ -8,7 +8,7 @@
 
 It is an _atelier_ for the modern power user, designed for those who demand the precision of a forged blade and the quietude of a sanctuary.
 
-### ⚠ <sup><sub><samp>The use of unofficial clients resides outside the established paths of Discord's Terms of Service. Journey at your own risk. <strong>The sanctity of your token must be guarded.</samp></sub></sup>
+### ⚠ <sup><sub><samp>The use of unofficial clients resides outside the established paths of Discord's Terms of Service. Journey at your own risk. <strong>The sanctity of your token must be guarded.</strong></samp></sub></sup>
 
 ## The Philosophy of Stillness
 
