@@ -385,10 +385,10 @@ impl ImageLoader {
             "png"
         };
 
-        let temp_dir = std::env::temp_dir().join("oxicord").join("view");
+        let temp_dir = self.disk_cache.cache_dir().join("view");
         tokio::fs::create_dir_all(&temp_dir)
             .await
-            .map_err(|e| CacheError::IoError(format!("Failed to create temp view dir: {e}")))?;
+            .map_err(|e| CacheError::IoError(format!("Failed to create export dir: {e}")))?;
 
         let filename = format!("{}.{}", id.as_str(), ext);
         let path = temp_dir.join(filename);
