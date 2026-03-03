@@ -65,8 +65,16 @@ impl DiskImageCache {
     /// # Errors
     /// Returns error if cache directory cannot be created.
     pub async fn default_location() -> CacheResult<Self> {
-        let cache_dir = dirs_cache_path();
+        let cache_dir = dirs_cache_path().ok_or_else(|| {
+            CacheError::IoError("Failed to determine default cache directory".to_string())
+        })?;
         Self::new(cache_dir, DEFAULT_MAX_CACHE_SIZE).await
+    }
+
+    /// Returns the cache directory.
+    #[must_use]
+    pub fn cache_dir(&self) -> &std::path::Path {
+        &self.cache_dir
     }
 
     /// Returns the path for a cached image.
@@ -283,16 +291,9 @@ impl DiskImageCache {
 }
 
 /// Returns the default cache directory path.
-fn dirs_cache_path() -> PathBuf {
-    directories::ProjectDirs::from("com", "linuxmobile", "oxicord").map_or_else(
-        || {
-            std::env::temp_dir()
-                .join("oxicord")
-                .join("cache")
-                .join("images")
-        },
-        |dirs| dirs.cache_dir().join("images"),
-    )
+fn dirs_cache_path() -> Option<PathBuf> {
+    directories::ProjectDirs::from("com", "linuxmobile", "oxicord")
+        .map(|dirs| dirs.cache_dir().join("images"))
 }
 
 #[cfg(test)]
