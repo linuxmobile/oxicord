@@ -33,17 +33,54 @@ impl FuzzySearcher {
     }
 }
 
+struct ChannelSearchEntry {
+    guild_name: String,
+    channel: Channel,
+    parent_name: Option<String>,
+    search_text: String,
+}
+
 /// Search provider for Guild Channels.
 pub struct ChannelSearchProvider {
-    channels: Vec<(String, Channel, Option<String>)>,
+    entries: Vec<ChannelSearchEntry>,
     searcher: FuzzySearcher,
 }
 
 impl ChannelSearchProvider {
     #[must_use]
     pub fn new(channels: Vec<(String, Channel, Option<String>)>) -> Self {
+        let entries = channels
+            .into_iter()
+            .map(|(guild_name, channel, parent_name)| {
+                let search_text = if guild_name.is_empty() {
+                    if let Some(p_name) = &parent_name {
+                        format!("{} {}", p_name, channel.name())
+                    } else {
+                        channel.name().to_string()
+                    }
+                } else if let Some(p_name) = &parent_name {
+                    format!(
+                        "{} {} {} {}",
+                        guild_name,
+                        p_name,
+                        channel.name(),
+                        guild_name
+                    )
+                } else {
+                    format!("{} {} {}", guild_name, channel.name(), guild_name)
+                };
+
+                ChannelSearchEntry {
+                    guild_name,
+                    channel,
+                    parent_name,
+                    search_text,
+                }
+            })
+            .collect();
+
         Self {
-            channels,
+            entries,
             searcher: FuzzySearcher::new(),
         }
     }
@@ -53,27 +90,10 @@ impl ChannelSearchProvider {
         let mut results = Vec::new();
         let query_lower = query.to_lowercase();
 
-        for (guild_name, channel, parent_name) in &self.channels {
-            let search_text = if guild_name.is_empty() {
-                if let Some(p_name) = parent_name {
-                    format!("{} {}", p_name, channel.name())
-                } else {
-                    channel.name().to_string()
-                }
-            } else if let Some(p_name) = parent_name {
-                format!(
-                    "{} {} {} {}",
-                    guild_name,
-                    p_name,
-                    channel.name(),
-                    guild_name
-                )
-            } else {
-                format!("{} {} {}", guild_name, channel.name(), guild_name)
-            };
-
+        for entry in &self.entries {
+            let channel = &entry.channel;
             let name_score = self.searcher.score(channel.name(), query);
-            let context_score = self.searcher.score(&search_text, query);
+            let context_score = self.searcher.score(&entry.search_text, query);
 
             let mut score = match (name_score, context_score) {
                 (Some(n), Some(c)) => n + (c / 5),
@@ -122,13 +142,13 @@ impl ChannelSearchProvider {
             let mut result =
                 SearchResult::new(channel.id().to_string(), channel.name(), kind).with_score(score);
 
-            if !guild_name.is_empty()
+            if !entry.guild_name.is_empty()
                 && let Some(gid) = channel.guild_id()
             {
-                result = result.with_guild(gid.to_string(), guild_name);
+                result = result.with_guild(gid.to_string(), &entry.guild_name);
             }
 
-            if let Some(p_name) = parent_name {
+            if let Some(p_name) = &entry.parent_name {
                 result = result.with_parent_name(p_name);
             }
 
