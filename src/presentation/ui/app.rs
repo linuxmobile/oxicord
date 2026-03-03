@@ -1992,6 +1992,27 @@ impl App {
         Ok(())
     }
 
+    fn get_editor_temp_dir() -> std::io::Result<std::path::PathBuf> {
+        let temp_dir = directories::ProjectDirs::from("com", "linuxmobile", "oxicord").map_or_else(
+            || std::env::temp_dir().join("oxicord").join("editor"),
+            |dirs| dirs.data_dir().join("editor"),
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            let mut builder = std::fs::DirBuilder::new();
+            builder.recursive(true).mode(0o700);
+            builder.create(&temp_dir)?;
+        }
+        #[cfg(not(unix))]
+        {
+            std::fs::create_dir_all(&temp_dir)?;
+        }
+
+        Ok(temp_dir)
+    }
+
     fn resolve_editor(&self) -> String {
         self.editor
             .clone()
@@ -1999,12 +2020,7 @@ impl App {
             .or_else(|| std::env::var("VISUAL").ok())
             .unwrap_or_else(|| {
                 for editor in &["nvim", "vim", "nano", "vi"] {
-                    if std::process::Command::new("which")
-                        .arg(editor)
-                        .output()
-                        .map(|o| o.status.success())
-                        .unwrap_or(false)
-                    {
+                    if Self::is_executable_in_path(editor) {
                         return (*editor).to_string();
                     }
                 }
@@ -2012,12 +2028,65 @@ impl App {
             })
     }
 
+    fn is_executable_in_path(cmd: &str) -> bool {
+        if std::path::Path::new(cmd).is_absolute() {
+            return std::path::Path::new(cmd).is_file();
+        }
+
+        if let Ok(path_var) = std::env::var("PATH") {
+            for path in std::env::split_paths(&path_var) {
+                let full_path = path.join(cmd);
+                if full_path.is_file() {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        if let Ok(metadata) = std::fs::metadata(&full_path)
+                            && metadata.permissions().mode() & 0o111 != 0
+                        {
+                            return true;
+                        }
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    fn is_dangerous_command(parts: &[String]) -> bool {
+        if let Some(cmd_path) = parts.first() {
+            let cmd_name = std::path::Path::new(cmd_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+
+            let shell_interpreters = [
+                "sh", "bash", "zsh", "dash", "python", "python3", "perl", "ruby", "node",
+            ];
+            if shell_interpreters.contains(&cmd_name) {
+                for arg in parts.iter().skip(1) {
+                    if arg.starts_with('-') && (arg.contains('c') || arg.contains('e')) {
+                        return true;
+                    }
+                }
+            }
+
+            let dangerous_tools = ["curl", "wget", "nc", "netcat", "ncat", "ssh", "scp", "ftp"];
+            if dangerous_tools.contains(&cmd_name) {
+                return true;
+            }
+        }
+        false
+    }
+
     async fn run_external_editor(
         editor: String,
         initial_content: String,
     ) -> color_eyre::Result<Option<String>> {
         use std::io::Write;
-        use tempfile::NamedTempFile;
 
         let parts = crate::presentation::ui::utils::split_command(&editor).ok_or_else(|| {
             std::io::Error::new(
@@ -2026,8 +2095,20 @@ impl App {
             )
         })?;
 
+        if Self::is_dangerous_command(&parts) {
+            return Err(color_eyre::eyre::eyre!(
+                "Blocked potentially dangerous editor command: {}",
+                editor
+            ));
+        }
+
         tokio::task::spawn_blocking(move || -> color_eyre::Result<Option<String>> {
-            let mut temp_file = NamedTempFile::new()?;
+            let temp_dir = Self::get_editor_temp_dir()?;
+            let mut temp_file = tempfile::Builder::new()
+                .prefix("oxicord-editor-")
+                .suffix(".md")
+                .tempfile_in(temp_dir)?;
+
             write!(temp_file, "{initial_content}")?;
             let temp_path = temp_file.path().to_owned();
 
@@ -2050,6 +2131,7 @@ impl App {
 
             let status = std::process::Command::new(cmd)
                 .args(parts_iter)
+                .arg("--")
                 .arg(&temp_path)
                 .status();
 
