@@ -313,6 +313,7 @@ pub struct MessageAuthor {
     pub avatar: Option<String>,
     pub bot: bool,
     pub global_name: Option<String>,
+    pub color: Option<u32>,
 }
 
 impl MessageAuthor {
@@ -327,11 +328,9 @@ impl MessageAuthor {
         }
     }
 
-    // Add color logic here or remove dependency on it for strict DTO separation
-    // For now we assume no color directly on author, it might come from member
     #[must_use]
     pub fn color(&self) -> Option<u32> {
-        None
+        self.color
     }
 
     #[must_use]

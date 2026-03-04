@@ -2764,6 +2764,7 @@ mod tests {
             avatar: None,
             bot: false,
             global_name: None,
+            color: None,
         };
         Message::new(
             id.into(),
@@ -2864,6 +2865,7 @@ mod tests {
             avatar: None,
             bot: false,
             global_name: None,
+            color: None,
         };
         let author2 = MessageAuthor {
             id: "2".to_string(),
@@ -2872,6 +2874,7 @@ mod tests {
             avatar: None,
             bot: false,
             global_name: None,
+            color: None,
         };
 
         let m1 = Message::new(
@@ -2990,6 +2993,7 @@ mod tests {
             avatar: None,
             bot: false,
             global_name: None,
+            color: None,
         };
         let normal_author = MessageAuthor {
             id: "123".to_string(),
@@ -2998,6 +3002,7 @@ mod tests {
             avatar: None,
             bot: false,
             global_name: None,
+            color: None,
         };
 
         let blocked_message = Message::new(

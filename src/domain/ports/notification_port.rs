@@ -13,11 +13,13 @@ pub mod mock {
     use std::sync::{Arc, Mutex};
 
     #[derive(Default)]
+    #[allow(dead_code)]
     pub struct MockNotificationPort {
         pub notifications: Arc<Mutex<Vec<(String, String)>>>,
     }
 
     impl MockNotificationPort {
+        #[allow(dead_code)]
         pub fn new() -> Self {
             Self::default()
         }

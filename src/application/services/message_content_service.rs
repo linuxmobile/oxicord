@@ -64,6 +64,7 @@ mod tests {
                 avatar: None,
                 bot: false,
                 global_name: None,
+                color: None,
             },
             content.to_string(),
             Local::now(),

@@ -172,6 +172,35 @@ impl DiscordClient {
                     channel = channel.with_default_auto_archive_duration(auto_archive);
                 }
 
+                if !c.permission_overwrites.is_empty() {
+                    let overwrites = c
+                        .permission_overwrites
+                        .into_iter()
+                        .map(|o| crate::domain::entities::PermissionOverwrite {
+                            id: o.id,
+                            overwrite_type: o.overwrite_type.into(),
+                            allow: o.allow,
+                            deny: o.deny,
+                        })
+                        .collect();
+                    channel = channel.with_permission_overwrites(overwrites);
+                }
+
+                if let Some(metadata) = c.thread_metadata {
+                    channel = channel.with_thread_metadata(crate::domain::entities::ThreadMetadata {
+                        archived: metadata.archived,
+                        auto_archive_duration: u16::try_from(metadata.auto_archive_duration).unwrap_or(0),
+                        archive_timestamp: metadata.archive_timestamp,
+                        locked: metadata.locked,
+                        invitable: metadata.invitable,
+                        create_timestamp: metadata.create_timestamp,
+                    });
+                }
+
+                if let Some(timestamp) = c.last_pin_timestamp {
+                    channel = channel.with_last_pin_timestamp(timestamp);
+                }
+
                 Some(channel)
             })
             .collect()
@@ -187,6 +216,9 @@ impl DiscordClient {
         if let Some(content_type) = attachment.content_type {
             result = result.with_content_type(content_type);
         }
+        result.width = attachment.width;
+        result.height = attachment.height;
+        result.spoiler = attachment.spoiler;
         result
     }
 
@@ -290,7 +322,7 @@ impl DiscordClient {
             referenced_message,
             pinned,
             mentions,
-            member: _,
+            member,
             reactions,
             flags,
             guild_id,
@@ -298,6 +330,11 @@ impl DiscordClient {
         } = response;
 
         let id: u64 = id.parse().ok()?;
+        let mut author_color = None;
+        if let Some(m) = member {
+            author_color = m.color;
+        }
+
         let message_author = MessageAuthor {
             id: author.id,
             username: author.username,
@@ -305,6 +342,7 @@ impl DiscordClient {
             avatar: author.avatar,
             bot: author.bot,
             global_name: author.global_name,
+            color: author_color,
         };
 
         let timestamp: DateTime<Utc> = timestamp.parse().ok()?;
@@ -504,6 +542,21 @@ impl DiscordDataPort for DiscordClient {
                         if let Some(icon) = g.icon {
                             guild = guild.with_icon(icon);
                         }
+                        if let Some(description) = g.description {
+                            guild = guild.with_description(description);
+                        }
+                        if let Some(splash) = g.splash {
+                            guild = guild.with_splash(splash);
+                        }
+                        if let Some(banner) = g.banner {
+                            guild = guild.with_banner(banner);
+                        }
+                        guild = guild.with_features(g.features)
+                            .with_owner(g.owner);
+
+                        if let Some(permissions) = g.permissions {
+                            guild = guild.with_permissions(permissions);
+                        }
                         Some(guild)
                     }
                     Err(e) => {
@@ -603,6 +656,7 @@ impl DiscordDataPort for DiscordClient {
         let dm_channels = dm_responses
             .into_iter()
             .filter_map(|dm| {
+                let _kind = dm.kind;
                 let recipient = dm.recipients.first()?;
                 Some(DirectMessageChannel {
                     channel_id: dm.id,
@@ -1049,7 +1103,7 @@ impl DiscordDataPort for DiscordClient {
         let guild_id = channel_response
             .guild_id
             .as_deref()
-            .and_then(|g| g.parse::<u64>().ok())
+            .and_then(|g: &str| g.parse::<u64>().ok())
             .unwrap_or(0);
 
         let channels = Self::parse_channels(vec![channel_response], guild_id);
@@ -1104,7 +1158,8 @@ impl DiscordClient {
                     id: ChannelId(thread_id),
                     guild_id: thread_dto
                         .guild_id
-                        .and_then(|id| id.parse::<u64>().ok())
+                        .as_deref()
+                        .and_then(|id: &str| id.parse::<u64>().ok())
                         .map(GuildId),
                     parent_id: thread_dto
                         .parent_id

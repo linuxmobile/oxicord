@@ -133,6 +133,10 @@ pub struct Guild {
     approximate_presence_count: Option<u32>,
     #[serde(default, skip)]
     position: i32,
+    #[serde(default)]
+    owner: bool,
+    #[serde(default)]
+    permissions: Option<String>,
 }
 
 impl Guild {
@@ -158,7 +162,21 @@ impl Guild {
             approximate_member_count: None,
             approximate_presence_count: None,
             position: 0,
+            owner: false,
+            permissions: None,
         }
+    }
+
+    #[must_use]
+    pub const fn with_owner(mut self, owner: bool) -> Self {
+        self.owner = owner;
+        self
+    }
+
+    #[must_use]
+    pub fn with_permissions(mut self, permissions: impl Into<String>) -> Self {
+        self.permissions = Some(permissions.into());
+        self
     }
 
     #[must_use]

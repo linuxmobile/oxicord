@@ -26,11 +26,11 @@ pub struct GuildResponse {
     pub name: String,
     pub icon: Option<String>,
     #[serde(default, rename = "owner")]
-    pub _owner: bool,
+    pub owner: bool,
     #[serde(default, rename = "permissions")]
-    pub _permissions: Option<String>,
+    pub permissions: Option<String>,
     #[serde(default, rename = "features")]
-    pub _features: Vec<String>,
+    pub features: Vec<String>,
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
@@ -56,7 +56,7 @@ pub struct ChannelResponse {
     #[serde(rename = "type")]
     pub kind: u8,
     #[serde(rename = "guild_id")]
-    pub _guild_id: Option<String>,
+    pub guild_id: Option<String>,
     #[serde(default)]
     pub name: Option<String>,
     pub owner_id: Option<String>,
@@ -133,7 +133,7 @@ pub struct DmRecipient {
 pub struct DmChannelResponse {
     pub id: String,
     #[serde(rename = "type")]
-    pub _kind: u8,
+    pub kind: u8,
     #[serde(default)]
     pub recipients: Vec<DmRecipient>,
     pub last_message_id: Option<String>,
@@ -161,11 +161,11 @@ pub struct AttachmentResponse {
     pub url: String,
     pub content_type: Option<String>,
     #[serde(default, rename = "width")]
-    pub _width: Option<u32>,
+    pub width: Option<u32>,
     #[serde(default, rename = "height")]
-    pub _height: Option<u32>,
+    pub height: Option<u32>,
     #[serde(default, rename = "spoiler")]
-    pub _spoiler: bool,
+    pub spoiler: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -245,7 +245,7 @@ pub struct MessageReferenceResponse {
 pub struct MessageResponse {
     pub id: String,
     #[serde(rename = "channel_id")]
-    pub _channel_id: String,
+    pub channel_id: String,
     pub guild_id: Option<String>,
     pub author: MessageAuthorResponse,
     pub content: String,
@@ -268,8 +268,6 @@ pub struct MessageResponse {
     pub member: Option<MemberResponse>,
     #[serde(default)]
     pub flags: Option<u64>,
-    #[serde(default)]
-    pub tts: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -293,21 +291,7 @@ pub struct MentionUserResponse {
 pub struct ThreadsResponse {
     pub threads: Vec<ChannelResponse>,
     #[serde(default)]
-    pub members: Vec<ThreadMemberResponse>,
-    #[serde(default)]
-    pub has_more: bool,
-    #[serde(default)]
     pub first_messages: Option<Vec<MessageResponse>>,
-    #[serde(default)]
-    pub total_results: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ThreadMemberResponse {
-    pub id: Option<String>,
-    pub user_id: Option<String>,
-    pub join_timestamp: String,
-    pub flags: u64,
 }
 
 #[derive(Debug, serde::Serialize)]

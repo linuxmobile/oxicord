@@ -252,6 +252,8 @@ pub struct Channel {
     permission_overwrites: Vec<PermissionOverwrite>,
     #[serde(default)]
     thread_metadata: Option<ThreadMetadata>,
+    #[serde(default)]
+    last_pin_timestamp: Option<String>,
 }
 
 impl Channel {
@@ -278,7 +280,14 @@ impl Channel {
             default_auto_archive_duration: None,
             permission_overwrites: Vec::new(),
             thread_metadata: None,
+            last_pin_timestamp: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_last_pin_timestamp(mut self, timestamp: impl Into<String>) -> Self {
+        self.last_pin_timestamp = Some(timestamp.into());
+        self
     }
 
     #[must_use]

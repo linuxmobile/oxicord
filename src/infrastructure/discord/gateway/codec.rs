@@ -1034,6 +1034,7 @@ impl EventParser {
             avatar: payload.author.avatar,
             bot: payload.author.bot,
             global_name: payload.author.global_name,
+            color: None,
         };
 
         let mut message = Message::new(
