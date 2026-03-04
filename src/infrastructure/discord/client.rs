@@ -420,14 +420,16 @@ impl AuthPort for DiscordClient {
             "Token validated successfully"
         );
 
-        Ok(User::new(
+        let user = User::new(
             user_response.id,
             user_response.username,
             user_response.discriminator,
             user_response.avatar,
             user_response.bot,
             None,
-        ))
+        );
+
+        Ok(user.with_global_name(user_response.global_name.unwrap_or_default()))
     }
 
     async fn health_check(&self) -> Result<(), AuthError> {

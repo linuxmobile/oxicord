@@ -3,7 +3,6 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct UserResponse {
     pub id: String,
     pub username: String,
@@ -21,21 +20,17 @@ pub struct ErrorResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct GuildResponse {
     pub id: String,
     #[serde(default)]
     pub name: String,
     pub icon: Option<String>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub owner: bool,
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub permissions: Option<String>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub features: Vec<String>,
+    #[serde(default, rename = "owner")]
+    pub _owner: bool,
+    #[serde(default, rename = "permissions")]
+    pub _permissions: Option<String>,
+    #[serde(default, rename = "features")]
+    pub _features: Vec<String>,
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
@@ -45,7 +40,6 @@ pub struct GuildResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct PermissionOverwriteDto {
     pub id: String,
     #[serde(rename = "type")]
@@ -57,13 +51,12 @@ pub struct PermissionOverwriteDto {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct ChannelResponse {
     pub id: String,
     #[serde(rename = "type")]
     pub kind: u8,
-    #[allow(dead_code)]
-    pub guild_id: Option<String>,
+    #[serde(rename = "guild_id")]
+    pub _guild_id: Option<String>,
     #[serde(default)]
     pub name: Option<String>,
     pub owner_id: Option<String>,
@@ -103,7 +96,6 @@ pub struct ChannelResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct ThreadMetadataDto {
     pub archived: bool,
     pub auto_archive_duration: i32,
@@ -115,7 +107,6 @@ pub struct ThreadMetadataDto {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct ReactionDto {
     pub count: u32,
     pub me: bool,
@@ -123,7 +114,6 @@ pub struct ReactionDto {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct ReactionEmojiDto {
     pub id: Option<String>,
     pub name: Option<String>,
@@ -143,8 +133,7 @@ pub struct DmRecipient {
 pub struct DmChannelResponse {
     pub id: String,
     #[serde(rename = "type")]
-    #[allow(dead_code)]
-    pub kind: u8,
+    pub _kind: u8,
     #[serde(default)]
     pub recipients: Vec<DmRecipient>,
     pub last_message_id: Option<String>,
@@ -164,7 +153,6 @@ pub struct MessageAuthorResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct AttachmentResponse {
     pub id: String,
     pub filename: String,
@@ -172,12 +160,12 @@ pub struct AttachmentResponse {
     pub size: u64,
     pub url: String,
     pub content_type: Option<String>,
-    #[serde(default)]
-    pub width: Option<u32>,
-    #[serde(default)]
-    pub height: Option<u32>,
-    #[serde(default)]
-    pub spoiler: bool,
+    #[serde(default, rename = "width")]
+    pub _width: Option<u32>,
+    #[serde(default, rename = "height")]
+    pub _height: Option<u32>,
+    #[serde(default, rename = "spoiler")]
+    pub _spoiler: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -254,11 +242,10 @@ pub struct MessageReferenceResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct MessageResponse {
     pub id: String,
-    #[allow(dead_code)]
-    pub channel_id: String,
+    #[serde(rename = "channel_id")]
+    pub _channel_id: String,
     pub guild_id: Option<String>,
     pub author: MessageAuthorResponse,
     pub content: String,
@@ -277,7 +264,6 @@ pub struct MessageResponse {
     #[serde(default)]
     pub mentions: Vec<MentionUserResponse>,
     #[serde(default)]
-    #[allow(dead_code)]
     pub reactions: Vec<ReactionDto>,
     pub member: Option<MemberResponse>,
     #[serde(default)]
@@ -304,7 +290,6 @@ pub struct MentionUserResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct ThreadsResponse {
     pub threads: Vec<ChannelResponse>,
     #[serde(default)]
@@ -318,7 +303,6 @@ pub struct ThreadsResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct ThreadMemberResponse {
     pub id: Option<String>,
     pub user_id: Option<String>,

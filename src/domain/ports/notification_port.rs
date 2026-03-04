@@ -8,7 +8,6 @@ pub trait NotificationPort: Send + Sync {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 pub mod mock {
     use super::*;
     use std::sync::{Arc, Mutex};

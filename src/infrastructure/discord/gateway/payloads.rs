@@ -200,9 +200,13 @@ pub struct HelloPayload {
 
 #[derive(Debug, Deserialize)]
 pub struct ReadyPayload {
+    #[serde(rename = "v")]
+    pub _v: u8,
     pub session_id: String,
     pub resume_gateway_url: Option<String>,
     pub user: ReadyUser,
+    #[serde(rename = "shard")]
+    pub _shard: Option<[u8; 2]>,
     #[serde(default)]
     pub guilds: Vec<ReadyGuild>,
     #[serde(default)]
@@ -247,9 +251,8 @@ pub struct ReadyUser {
 #[derive(Debug, Deserialize)]
 pub struct ReadyGuild {
     pub id: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub name: Option<String>,
+    #[serde(default, rename = "name")]
+    pub _name: Option<String>,
     #[serde(default)]
     pub unavailable: bool,
     #[serde(default)]
@@ -263,7 +266,6 @@ pub struct ReadyGuild {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct MessagePayload {
     pub id: String,
     pub channel_id: String,
@@ -281,7 +283,8 @@ pub struct MessagePayload {
     pub pinned: bool,
     #[serde(default)]
     pub mentions: Vec<MentionUserPayload>,
-    pub member: Option<MemberPayload>,
+    #[serde(rename = "member")]
+    pub _member: Option<MemberPayload>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -450,7 +453,6 @@ pub struct PermissionOverwritePayload {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct GuildCreatePayload {
     pub id: String,
     pub name: String,
@@ -526,13 +528,13 @@ pub struct UserUpdatePayload {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct VoiceStateUpdatePayload {
     pub guild_id: Option<String>,
     pub channel_id: Option<String>,
     pub user_id: String,
-    pub member: Option<MemberPayload>,
+    #[serde(rename = "member")]
+    pub _member: Option<MemberPayload>,
     pub session_id: String,
     pub deaf: bool,
     pub mute: bool,
@@ -540,11 +542,11 @@ pub struct VoiceStateUpdatePayload {
     pub self_mute: bool,
     pub self_video: bool,
     pub suppress: bool,
-    pub request_to_speak_timestamp: Option<String>,
+    #[serde(rename = "request_to_speak_timestamp")]
+    pub _request_to_speak_timestamp: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct VoiceServerUpdatePayload {
     pub token: String,
     pub guild_id: String,
