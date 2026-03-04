@@ -6,31 +6,3 @@ pub trait NotificationPort: Send + Sync {
     /// Shows a system notification.
     fn send(&self, title: &str, body: &str);
 }
-
-#[cfg(test)]
-pub mod mock {
-    use super::*;
-    use std::sync::{Arc, Mutex};
-
-    #[derive(Default)]
-    #[allow(dead_code)]
-    pub struct MockNotificationPort {
-        pub notifications: Arc<Mutex<Vec<(String, String)>>>,
-    }
-
-    impl MockNotificationPort {
-        #[allow(dead_code)]
-        pub fn new() -> Self {
-            Self::default()
-        }
-    }
-
-    impl NotificationPort for MockNotificationPort {
-        fn send(&self, title: &str, body: &str) {
-            self.notifications
-                .lock()
-                .unwrap()
-                .push((title.to_string(), body.to_string()));
-        }
-    }
-}
