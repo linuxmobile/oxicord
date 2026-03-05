@@ -1,7 +1,7 @@
 use crate::domain::search::{RecentItem, SearchKind, SearchResult};
 use crate::infrastructure::config::app_config::QuickSwitcherSortMode;
 use crate::presentation::theme::Theme;
-use crate::presentation::ui::utils::sanitize_channel_name;
+use crate::presentation::ui::utils::{centered_rect, sanitize_channel_name};
 use crate::presentation::widgets::FooterBarStyle;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -452,25 +452,6 @@ impl Widget for QuickSwitcherWidget<'_> {
     }
 }
 
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(r);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1]
-}
 
 #[cfg(test)]
 mod tests {
