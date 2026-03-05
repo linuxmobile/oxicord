@@ -762,8 +762,11 @@ impl App {
 
                 tokio::task::spawn_blocking(move || {
                     if let Some(image) = clipboard.get_image() {
-                        let temp_dir = directories::ProjectDirs::from("com", "linuxmobile", "oxicord")
-                            .map_or_else(std::env::temp_dir, |dirs| dirs.cache_dir().join("pasted"));
+                        let temp_dir =
+                            directories::ProjectDirs::from("com", "linuxmobile", "oxicord")
+                                .map_or_else(std::env::temp_dir, |dirs| {
+                                    dirs.cache_dir().join("pasted")
+                                });
 
                         if let Err(e) = std::fs::create_dir_all(&temp_dir) {
                             tracing::warn!("Failed to create pasted images directory: {e}");
