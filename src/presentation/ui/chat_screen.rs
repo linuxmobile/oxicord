@@ -2512,6 +2512,13 @@ impl ChatScreenState {
         if query_text.is_empty() {
             let mut results = Vec::new();
 
+            let guild_names: std::collections::HashMap<GuildId, &str> = self
+                .guilds_tree_data
+                .guilds()
+                .iter()
+                .map(|g| (g.id(), g.name()))
+                .collect();
+
             if self.quick_switcher.sort_mode == QuickSwitcherSortMode::Recents {
                 results = self
                     .recents
@@ -2523,13 +2530,9 @@ impl ChatScreenState {
 
                         if let Some(gid) = &r.guild_id
                             && let Ok(id) = gid.parse::<u64>()
-                            && let Some(guild) = self
-                                .guilds_tree_data
-                                .guilds()
-                                .iter()
-                                .find(|g| g.id() == GuildId(id))
+                            && let Some(guild_name) = guild_names.get(&GuildId(id))
                         {
-                            res = res.with_guild(gid, guild.name());
+                            res = res.with_guild(gid, *guild_name);
                         }
                         res
                     })
@@ -2541,13 +2544,9 @@ impl ChatScreenState {
 
                     if let Some(gid) = &r.guild_id
                         && let Ok(id) = gid.parse::<u64>()
-                        && let Some(guild) = self
-                            .guilds_tree_data
-                            .guilds()
-                            .iter()
-                            .find(|g| g.id() == GuildId(id))
+                        && let Some(guild_name) = guild_names.get(&GuildId(id))
                     {
-                        res = res.with_guild(gid, guild.name());
+                        res = res.with_guild(gid, *guild_name);
                     }
                     results.push(res);
                 }
