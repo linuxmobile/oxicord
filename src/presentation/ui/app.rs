@@ -760,33 +760,50 @@ impl App {
                 let clipboard = self.clipboard_service.clone();
                 let tx = self.action_tx.clone();
 
-                tokio::task::spawn_blocking(move || {
-                    if let Some(image) = clipboard.get_image() {
-                        let temp_dir =
-                            directories::ProjectDirs::from("com", "linuxmobile", "oxicord")
-                                .map_or_else(std::env::temp_dir, |dirs| {
-                                    dirs.cache_dir().join("pasted")
-                                });
+                tokio::spawn(async move {
+                    let image = tokio::task::spawn_blocking({
+                        let clipboard = clipboard.clone();
+                        move || clipboard.get_image()
+                    })
+                    .await
+                    .unwrap_or_default();
 
-                        if let Err(e) = std::fs::create_dir_all(&temp_dir) {
+                    if let Some(image) = image {
+                        let temp_dir = directories::ProjectDirs::from("com", "linuxmobile", "oxicord")
+                            .map_or_else(std::env::temp_dir, |dirs| dirs.cache_dir().join("pasted"));
+
+                        if let Err(e) = tokio::fs::create_dir_all(&temp_dir).await {
                             tracing::warn!("Failed to create pasted images directory: {e}");
                         }
 
                         let filename = format!("paste_{}.png", uuid::Uuid::new_v4());
                         let path = temp_dir.join(filename);
 
-                        if let Some(img) = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
-                            u32::try_from(image.width).unwrap_or_default(),
-                            u32::try_from(image.height).unwrap_or_default(),
-                            image.bytes.into_owned(),
-                        ) && img.save(&path).is_ok()
-                        {
+                        let success = tokio::task::spawn_blocking(move || {
+                            if let Some(img) = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
+                                u32::try_from(image.width).unwrap_or_default(),
+                                u32::try_from(image.height).unwrap_or_default(),
+                                image.bytes.into_owned(),
+                            ) && img.save(&path).is_ok()
+                            {
+                                return Some(path);
+                            }
+                            None
+                        })
+                        .await
+                        .unwrap_or_default();
+
+                        if let Some(path) = success {
                             let _ = tx.send(Action::PasteImageLoaded(path));
                             return;
                         }
                     }
 
-                    if let Some(text) = clipboard.get_text() {
+                    let text = tokio::task::spawn_blocking(move || clipboard.get_text())
+                        .await
+                        .unwrap_or_default();
+
+                    if let Some(text) = text {
                         let _ = tx.send(Action::PasteTextLoaded(text));
                     }
                 });
