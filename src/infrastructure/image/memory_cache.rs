@@ -67,13 +67,16 @@ impl MemoryImageCache {
     }
 
     /// Gets multiple images at once, reducing lock contention.
-    pub async fn get_batch(&self, ids: &[ImageId]) -> Vec<(ImageId, Arc<image::DynamicImage>)> {
+    pub async fn get_batch<'a>(
+        &self,
+        ids: &'a [ImageId],
+    ) -> Vec<(&'a ImageId, Arc<image::DynamicImage>)> {
         let mut cache = self.cache.write().await;
         let mut results = Vec::with_capacity(ids.len());
 
         for id in ids {
             if let Some(img) = cache.get(id) {
-                results.push((id.clone(), img.clone()));
+                results.push((id, img.clone()));
             }
         }
 
