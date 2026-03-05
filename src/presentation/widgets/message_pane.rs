@@ -2629,10 +2629,8 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
                         split_width += w;
                     }
 
-                    if split_idx == 0 {
-                        if let Some((idx, c)) = remaining_word.char_indices().next() {
-                            split_idx = idx + c.len_utf8();
-                        }
+                    if split_idx == 0 && let Some((idx, c)) = remaining_word.char_indices().next() {
+                        split_idx = idx + c.len_utf8();
                     }
 
                     lines.push(remaining_word[..split_idx].to_string());
@@ -2712,10 +2710,8 @@ fn wrap_styled_text(text: Text<'static>, width: u16) -> Text<'static> {
                                 split_idx = idx + c.len_utf8();
                             }
 
-                            if split_idx == 0 {
-                                if let Some((idx, c)) = remaining_word.char_indices().next() {
-                                    split_idx = idx + c.len_utf8();
-                                }
+                            if split_idx == 0 && let Some((idx, c)) = remaining_word.char_indices().next() {
+                                split_idx = idx + c.len_utf8();
                             }
 
                             if split_idx > 0 {
