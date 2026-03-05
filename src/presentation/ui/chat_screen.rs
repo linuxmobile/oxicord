@@ -3097,7 +3097,6 @@ impl ChatScreenState {
 #[cfg(not(windows))]
 mod tests {
     use super::*;
-    use crate::domain::entities::RoleId;
 
     fn setup_permissive_guild_data(state: &mut ChatScreenState, guild_id: GuildId) {
         let user = state.user().clone();

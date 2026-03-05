@@ -96,11 +96,8 @@ impl LoginUseCase {
 mod tests {
     use super::*;
     use crate::application::dto::TokenSource;
+    use crate::domain::entities::AuthToken;
     use crate::domain::ports::mocks::{MockAuthPort, MockTokenStorage};
-
-    fn make_valid_token() -> String {
-        "MTIzNDU2Nzg5MDEyMzQ1Njc4OQ.XXXXXX.YYYYYYYYYYYYYYYYYYYYYYYYYYYY".to_string()
-    }
 
     #[tokio::test]
     async fn test_successful_login() {
@@ -108,7 +105,7 @@ mod tests {
         let storage_port = Arc::new(MockTokenStorage::new());
 
         let use_case = LoginUseCase::new(auth_port, storage_port.clone());
-        let request = LoginRequest::new(make_valid_token(), TokenSource::Environment);
+        let request = LoginRequest::new(AuthToken::dummy(), TokenSource::Environment);
 
         let result = use_case.execute(request).await;
 
@@ -139,7 +136,7 @@ mod tests {
         let storage_port = Arc::new(MockTokenStorage::new());
 
         let use_case = LoginUseCase::new(auth_port, storage_port);
-        let request = LoginRequest::new(make_valid_token(), TokenSource::UserInput);
+        let request = LoginRequest::new(AuthToken::dummy(), TokenSource::UserInput);
 
         let result = use_case.execute(request).await;
 
@@ -153,7 +150,7 @@ mod tests {
 
         let use_case = LoginUseCase::new(auth_port, storage_port.clone());
         let request =
-            LoginRequest::new(make_valid_token(), TokenSource::Environment).without_persistence();
+            LoginRequest::new(AuthToken::dummy(), TokenSource::Environment).without_persistence();
 
         let result = use_case.execute(request).await;
 

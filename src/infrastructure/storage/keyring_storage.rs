@@ -141,9 +141,7 @@ mod tests {
     #[ignore = "requires system keyring"]
     async fn test_store_and_retrieve_token() {
         let storage = KeyringTokenStorage::with_names("oxicord-test", "test-token");
-        let token = AuthToken::new_unchecked(
-            "MTIzNDU2Nzg5MDEyMzQ1Njc4OQ.XXXXXX.YYYYYYYYYYYYYYYYYYYYYYYYYYYY",
-        );
+        let token = AuthToken::new_unchecked(AuthToken::dummy());
 
         storage.store_token(&token).await.unwrap();
 
