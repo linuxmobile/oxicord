@@ -52,6 +52,13 @@ impl AuthToken {
         self.value.clone()
     }
 
+    /// Returns dummy token for testing.
+    #[cfg(test)]
+    #[must_use]
+    pub fn dummy() -> String {
+        "MTIzNDU2Nzg5MDEyMzQ1Njc4OQ.XXXXXX.YYYYYYYYYYYYYYYYYYYYYYYYYYYY".to_string()
+    }
+
     /// Returns masked token for display.
     #[must_use]
     pub fn masked(&self) -> String {
@@ -83,13 +90,9 @@ impl fmt::Display for AuthToken {
 mod tests {
     use super::*;
 
-    fn make_valid_token() -> String {
-        "MTIzNDU2Nzg5MDEyMzQ1Njc4OQ.XXXXXX.YYYYYYYYYYYYYYYYYYYYYYYYYYYY".to_string()
-    }
-
     #[test]
     fn test_valid_token_creation() {
-        let token = AuthToken::new(make_valid_token());
+        let token = AuthToken::new(AuthToken::dummy());
         assert!(token.is_some());
     }
 
@@ -107,18 +110,20 @@ mod tests {
 
     #[test]
     fn test_token_masking() {
-        let token = AuthToken::new_unchecked(make_valid_token());
+        let dummy = AuthToken::dummy();
+        let token = AuthToken::new_unchecked(AuthToken::dummy());
         let masked = token.masked();
 
         assert!(masked.contains("..."));
-        assert!(!masked.contains(&make_valid_token()));
+        assert!(!masked.contains(&dummy));
     }
 
     #[test]
     fn test_debug_does_not_leak_token() {
-        let token = AuthToken::new_unchecked(make_valid_token());
+        let dummy = AuthToken::dummy();
+        let token = AuthToken::new_unchecked(AuthToken::dummy());
         let debug_output = format!("{token:?}");
 
-        assert!(!debug_output.contains(&make_valid_token()));
+        assert!(!debug_output.contains(&dummy));
     }
 }

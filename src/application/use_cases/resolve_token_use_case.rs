@@ -87,18 +87,14 @@ mod tests {
     use super::*;
     use crate::domain::ports::mocks::MockTokenStorage;
 
-    fn make_valid_token() -> String {
-        "MTIzNDU2Nzg5MDEyMzQ1Njc4OQ.XXXXXX.YYYYYYYYYYYYYYYYYYYYYYYYYYYY".to_string()
-    }
-
     #[tokio::test]
     async fn test_external_token_priority() {
         let storage = Arc::new(MockTokenStorage::with_token(AuthToken::new_unchecked(
-            make_valid_token(),
+            AuthToken::dummy(),
         )));
         let use_case = ResolveTokenUseCase::new(storage);
 
-        let env_token = make_valid_token();
+        let env_token = AuthToken::dummy();
         let result = use_case
             .execute(Some((env_token, TokenSource::Environment)))
             .await
@@ -111,7 +107,7 @@ mod tests {
     #[tokio::test]
     async fn test_keyring_fallback() {
         let storage = Arc::new(MockTokenStorage::with_token(AuthToken::new_unchecked(
-            make_valid_token(),
+            AuthToken::dummy(),
         )));
         let use_case = ResolveTokenUseCase::new(storage);
 
