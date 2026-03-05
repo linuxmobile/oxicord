@@ -8,16 +8,16 @@ impl PermissionCalculator {
         guild_id: u64,
         channel: &Channel,
         member: &Member,
-        guild_roles: &[Role],
+        roles_map: &std::collections::HashMap<crate::domain::entities::RoleId, Role>,
     ) -> Permissions {
         let mut permissions = Permissions::empty();
 
-        if let Some(everyone_role) = guild_roles.iter().find(|r| r.id.as_u64() == guild_id) {
+        if let Some(everyone_role) = roles_map.get(&crate::domain::entities::RoleId(guild_id)) {
             permissions = everyone_role.permissions;
         }
 
         for role_id in &member.roles {
-            if let Some(role) = guild_roles.iter().find(|r| r.id == *role_id) {
+            if let Some(role) = roles_map.get(role_id) {
                 permissions |= role.permissions;
             }
         }

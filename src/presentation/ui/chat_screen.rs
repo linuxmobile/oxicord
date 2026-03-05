@@ -677,7 +677,7 @@ pub struct ChatScreenState {
     pub favorites: Vec<crate::domain::search::RecentItem>,
 
     // Permission related state
-    guild_roles: std::collections::HashMap<GuildId, Vec<Role>>,
+    guild_roles: std::collections::HashMap<GuildId, std::collections::HashMap<crate::domain::entities::RoleId, Role>>,
     guild_members: std::collections::HashMap<GuildId, Member>,
     raw_channels: std::collections::HashMap<GuildId, Vec<Channel>>,
 }
@@ -965,7 +965,8 @@ impl ChatScreenState {
         roles: Vec<Role>,
         mut members: Vec<Member>,
     ) {
-        self.guild_roles.insert(guild_id, roles);
+        let roles_map = roles.into_iter().map(|r| (r.id, r)).collect();
+        self.guild_roles.insert(guild_id, roles_map);
 
         // Find the member corresponding to self.user.id
         if let Some(member) = members
@@ -986,13 +987,14 @@ impl ChatScreenState {
             channels_ref.iter().map(|c| (c.id(), c)).collect();
 
         let cached_member = self.guild_members.get(&guild_id);
-        let guild_roles = self.guild_roles.get(&guild_id).map(std::vec::Vec::as_slice);
+        let roles_map = self.guild_roles.get(&guild_id);
 
         let member = cached_member;
 
         let mut visible_ids = std::collections::HashSet::new();
+
         for c in channels_ref {
-            let perms = if let (Some(member), Some(roles)) = (member, guild_roles) {
+            let perms = if let (Some(member), Some(roles)) = (member, roles_map) {
                 let mut perms =
                     PermissionCalculator::compute_permissions(guild_id.as_u64(), c, member, roles);
 
@@ -3100,7 +3102,7 @@ mod tests {
     fn setup_permissive_guild_data(state: &mut ChatScreenState, guild_id: GuildId) {
         let user = state.user().clone();
         let role = Role {
-            id: RoleId(guild_id.as_u64()), // @everyone has same ID as guild
+            id: crate::domain::entities::RoleId(guild_id.as_u64()), // @everyone has same ID as guild
             name: "@everyone".to_string(),
             permissions: Permissions::all(), // Allow everything
             color: 0,
