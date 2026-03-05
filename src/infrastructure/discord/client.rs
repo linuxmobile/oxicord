@@ -187,14 +187,16 @@ impl DiscordClient {
                 }
 
                 if let Some(metadata) = c.thread_metadata {
-                    channel = channel.with_thread_metadata(crate::domain::entities::ThreadMetadata {
-                        archived: metadata.archived,
-                        auto_archive_duration: u16::try_from(metadata.auto_archive_duration).unwrap_or(0),
-                        archive_timestamp: metadata.archive_timestamp,
-                        locked: metadata.locked,
-                        invitable: metadata.invitable,
-                        create_timestamp: metadata.create_timestamp,
-                    });
+                    channel =
+                        channel.with_thread_metadata(crate::domain::entities::ThreadMetadata {
+                            archived: metadata.archived,
+                            auto_archive_duration: u16::try_from(metadata.auto_archive_duration)
+                                .unwrap_or(0),
+                            archive_timestamp: metadata.archive_timestamp,
+                            locked: metadata.locked,
+                            invitable: metadata.invitable,
+                            create_timestamp: metadata.create_timestamp,
+                        });
                 }
 
                 if let Some(timestamp) = c.last_pin_timestamp {

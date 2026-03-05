@@ -2620,7 +2620,8 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
                     let mut split_width = 0;
 
                     for (idx, c) in remaining_word.char_indices() {
-                        let w = UnicodeWidthStr::width(c.to_string().as_str());
+                        let mut buf = [0u8; 4];
+                        let w = UnicodeWidthStr::width(c.encode_utf8(&mut buf));
                         if split_width + w > width {
                             split_idx = idx;
                             break;
@@ -2628,8 +2629,7 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
                         split_width += w;
                     }
 
-                    if split_idx == 0 && !remaining_word.is_empty() {
-                        let (idx, c) = remaining_word.char_indices().next().unwrap();
+                    if split_idx == 0 && let Some((idx, c)) = remaining_word.char_indices().next() {
                         split_idx = idx + c.len_utf8();
                     }
 
@@ -2707,6 +2707,10 @@ fn wrap_styled_text(text: Text<'static>, width: u16) -> Text<'static> {
                                     break;
                                 }
                                 split_w += cw;
+                                split_idx = idx + c.len_utf8();
+                            }
+
+                            if split_idx == 0 && let Some((idx, c)) = remaining_word.char_indices().next() {
                                 split_idx = idx + c.len_utf8();
                             }
 
