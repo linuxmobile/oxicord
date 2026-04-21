@@ -617,4 +617,137 @@ impl Message {
     pub fn can_be_edited_by(&self, user: &User) -> bool {
         self.author.id == user.id_str()
     }
+
+    /// Increments the reaction count for the given emoji, or inserts a new entry.
+    /// When `is_me` is true, flags the reaction as authored by the current user.
+    pub fn add_reaction(&mut self, emoji: ReactionEmoji, is_me: bool) {
+        if let Some(existing) = self.reactions.iter_mut().find(|r| r.emoji == emoji) {
+            existing.count = existing.count.saturating_add(1);
+            if is_me {
+                existing.me = true;
+            }
+        } else {
+            self.reactions.push(Reaction {
+                count: 1,
+                me: is_me,
+                emoji,
+            });
+        }
+    }
+
+    /// Decrements the reaction count for the given emoji. Removes the entry when
+    /// it reaches zero.
+    pub fn remove_reaction(&mut self, emoji: &ReactionEmoji, is_me: bool) {
+        if let Some(pos) = self.reactions.iter().position(|r| &r.emoji == emoji) {
+            let r = &mut self.reactions[pos];
+            r.count = r.count.saturating_sub(1);
+            if is_me {
+                r.me = false;
+            }
+            if r.count == 0 {
+                self.reactions.remove(pos);
+            }
+        }
+    }
+
+    /// Removes all reactions from the message.
+    pub fn clear_reactions(&mut self) {
+        self.reactions.clear();
+    }
+}
+
+impl ReactionEmoji {
+    /// Returns a display string for the emoji: the unicode character for
+    /// standard emoji, or `:name:` for custom guild emoji.
+    #[must_use]
+    pub fn display(&self) -> String {
+        match (&self.id, &self.name) {
+            (Some(_), Some(name)) => format!(":{name}:"),
+            (Some(id), None) => format!(":{id}:"),
+            (None, Some(name)) => name.clone(),
+            (None, None) => "?".to_string(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod reaction_tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    fn make_message() -> Message {
+        Message::new(
+            MessageId(1),
+            super::super::ChannelId(1),
+            MessageAuthor {
+                id: "1".into(),
+                username: "u".into(),
+                discriminator: "0".into(),
+                avatar: None,
+                bot: false,
+                global_name: None,
+                color: None,
+            },
+            String::new(),
+            Local.timestamp_opt(0, 0).unwrap(),
+            MessageKind::Default,
+        )
+    }
+
+    fn unicode(name: &str) -> ReactionEmoji {
+        ReactionEmoji {
+            id: None,
+            name: Some(name.to_string()),
+        }
+    }
+
+    #[test]
+    fn add_reaction_inserts_new_entry() {
+        let mut msg = make_message();
+        msg.add_reaction(unicode("❤"), false);
+        assert_eq!(msg.reactions().len(), 1);
+        assert_eq!(msg.reactions()[0].count, 1);
+        assert!(!msg.reactions()[0].me);
+    }
+
+    #[test]
+    fn add_reaction_increments_existing_and_sets_me() {
+        let mut msg = make_message();
+        msg.add_reaction(unicode("❤"), false);
+        msg.add_reaction(unicode("❤"), true);
+        assert_eq!(msg.reactions().len(), 1);
+        assert_eq!(msg.reactions()[0].count, 2);
+        assert!(msg.reactions()[0].me);
+    }
+
+    #[test]
+    fn remove_reaction_decrements_and_drops_at_zero() {
+        let mut msg = make_message();
+        msg.add_reaction(unicode("👍"), true);
+        msg.add_reaction(unicode("👍"), false);
+        msg.remove_reaction(&unicode("👍"), true);
+        assert_eq!(msg.reactions()[0].count, 1);
+        assert!(!msg.reactions()[0].me);
+        msg.remove_reaction(&unicode("👍"), false);
+        assert!(msg.reactions().is_empty());
+    }
+
+    #[test]
+    fn clear_reactions_empties_list() {
+        let mut msg = make_message();
+        msg.add_reaction(unicode("a"), true);
+        msg.add_reaction(unicode("b"), false);
+        msg.clear_reactions();
+        assert!(msg.reactions().is_empty());
+    }
+
+    #[test]
+    fn display_formats_custom_and_unicode() {
+        assert_eq!(unicode("❤").display(), "❤");
+        let custom = ReactionEmoji {
+            id: Some("123".into()),
+            name: Some("wave".into()),
+        };
+        assert_eq!(custom.display(), ":wave:");
+    }
 }
