@@ -7,7 +7,8 @@ use crate::application::services::markdown_parser::{
 };
 use crate::application::services::url_extractor::UrlExtractor;
 use crate::domain::entities::{
-    ChannelId, Embed, ForumThread, ImageId, Message, MessageId, RelationshipState, USER_MENTION_RE,
+    ChannelId, Embed, ForumThread, ImageId, Message, MessageId, Reaction, RelationshipState,
+    USER_MENTION_RE,
 };
 use crate::domain::keybinding::Action;
 
@@ -83,6 +84,8 @@ pub struct UiMessage {
     pub rendered_embeds: Vec<RenderedEmbed>,
     /// Cached reply preview line
     pub reply_preview: Option<Line<'static>>,
+    /// Cached reaction chip lines, one or more rows depending on wrap.
+    pub reaction_lines: Vec<Line<'static>>,
     pub group: MessageGroup,
     pub rendered_generation: Option<usize>,
 }
@@ -113,6 +116,7 @@ impl UiMessage {
             image_attachments,
             rendered_embeds: Vec::new(),
             reply_preview: None,
+            reaction_lines: Vec::new(),
             group: MessageGroup::Start,
             rendered_generation: None,
         }
@@ -165,6 +169,81 @@ impl MentionResolver for HashMapResolver<'_> {
     fn resolve_channel(&self, channel_id: &str) -> Option<String> {
         self.channels.get(channel_id).cloned()
     }
+}
+
+const REACTION_CHIP_GAP: usize = 2;
+
+fn reaction_chip_width(reaction: &Reaction) -> usize {
+    let emoji = reaction.emoji.display();
+    let count = reaction.count.to_string();
+    UnicodeWidthStr::width(emoji.as_str())
+        .saturating_add(1)
+        .saturating_add(UnicodeWidthStr::width(count.as_str()))
+}
+
+fn chip_spans(reaction: &Reaction, me_style: Style, other_style: Style) -> Vec<Span<'static>> {
+    let style = if reaction.me { me_style } else { other_style };
+    vec![Span::styled(
+        format!("{} {}", reaction.emoji.display(), reaction.count),
+        style,
+    )]
+}
+
+/// Lays out reaction chips into one or more indented lines, wrapping when a
+/// chip would overflow the given content width. Returns an empty vec when the
+/// message has no reactions or when the available width is too small to render
+/// even a single chip.
+fn format_reaction_lines(
+    reactions: &[Reaction],
+    content_width: u16,
+    me_style: Style,
+    other_style: Style,
+) -> Vec<Line<'static>> {
+    if reactions.is_empty() || content_width == 0 {
+        return Vec::new();
+    }
+
+    let width = content_width as usize;
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let mut current: Vec<Span<'static>> = Vec::new();
+    let mut current_width = 0usize;
+
+    for reaction in reactions {
+        let chip_w = reaction_chip_width(reaction);
+        if chip_w == 0 {
+            continue;
+        }
+
+        let needs_gap = !current.is_empty();
+        let projected = if needs_gap {
+            current_width.saturating_add(REACTION_CHIP_GAP).saturating_add(chip_w)
+        } else {
+            chip_w
+        };
+
+        if projected > width && !current.is_empty() {
+            lines.push(Line::from(std::mem::take(&mut current)));
+            current_width = 0;
+        }
+
+        if !current.is_empty() {
+            current.push(Span::raw(" ".repeat(REACTION_CHIP_GAP)));
+            current_width = current_width.saturating_add(REACTION_CHIP_GAP);
+        }
+
+        current.extend(chip_spans(reaction, me_style, other_style));
+        current_width = current_width.saturating_add(chip_w);
+    }
+
+    if !current.is_empty() {
+        lines.push(Line::from(current));
+    }
+
+    for line in &mut lines {
+        line.spans.insert(0, Span::raw(" ".repeat(CONTENT_INDENT)));
+    }
+
+    lines
 }
 
 fn calculate_embed_layout(
@@ -414,6 +493,50 @@ impl MessagePaneData {
         self.is_dirty = true;
     }
 
+    /// Applies a reaction-add gateway event to the cached message, if present.
+    /// Returns true when a matching message was found and mutated.
+    pub fn apply_reaction_add(
+        &mut self,
+        message_id: MessageId,
+        emoji: crate::domain::entities::ReactionEmoji,
+        is_me: bool,
+    ) -> bool {
+        self.apply_reaction_change(message_id, |msg| msg.add_reaction(emoji, is_me))
+    }
+
+    /// Applies a reaction-remove gateway event to the cached message, if present.
+    pub fn apply_reaction_remove(
+        &mut self,
+        message_id: MessageId,
+        emoji: &crate::domain::entities::ReactionEmoji,
+        is_me: bool,
+    ) -> bool {
+        self.apply_reaction_change(message_id, |msg| msg.remove_reaction(emoji, is_me))
+    }
+
+    /// Clears every reaction from the cached message, if present.
+    pub fn apply_reaction_remove_all(&mut self, message_id: MessageId) -> bool {
+        self.apply_reaction_change(message_id, Message::clear_reactions)
+    }
+
+    fn apply_reaction_change<F>(&mut self, message_id: MessageId, mutate: F) -> bool
+    where
+        F: FnOnce(&mut Message),
+    {
+        let Some(ui_msg) = self
+            .messages
+            .iter_mut()
+            .find(|m| m.message.id() == message_id)
+        else {
+            return false;
+        };
+
+        mutate(Arc::make_mut(&mut ui_msg.message));
+        ui_msg.rendered_generation = None;
+        self.is_dirty = true;
+        true
+    }
+
     fn update_author<'a>(&mut self, id: impl Into<std::borrow::Cow<'a, str>>, name: String) {
         let id = id.into();
         if self.authors.get(id.as_ref()) != Some(&name) {
@@ -599,6 +722,7 @@ impl MessagePaneData {
         &mut self.messages
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn update_layout(
         &mut self,
         width: u16,
@@ -606,6 +730,8 @@ impl MessagePaneData {
         default_color: Color,
         show_spoilers: bool,
         image_preview: bool,
+        reaction_me_style: Style,
+        reaction_other_style: Style,
     ) {
         let full_invalidation = self.last_layout_width != Some(width)
             || self.last_show_spoilers != Some(show_spoilers)
@@ -651,6 +777,8 @@ impl MessagePaneData {
                 authors,
                 self.use_display_name,
                 current_generation,
+                reaction_me_style,
+                reaction_other_style,
             );
             ui_msg.rendered_generation = Some(current_generation);
         }
@@ -673,6 +801,8 @@ impl MessagePaneData {
         authors: &HashMap<String, String>,
         use_display_name: bool,
         _authors_generation: usize,
+        reaction_me_style: Style,
+        reaction_other_style: Style,
     ) {
         let message = &ui_msg.message;
 
@@ -715,6 +845,15 @@ impl MessagePaneData {
             rendered_embeds.push(layout);
         }
         ui_msg.rendered_embeds = rendered_embeds;
+
+        let reaction_lines = format_reaction_lines(
+            message.reactions(),
+            content_width,
+            reaction_me_style,
+            reaction_other_style,
+        );
+        height += u16::try_from(reaction_lines.len()).unwrap_or(0);
+        ui_msg.reaction_lines = reaction_lines;
 
         if message.is_reply() {
             if let Some(referenced) = message.referenced() {
@@ -1319,6 +1458,10 @@ pub struct MessagePaneStyle {
     pub scrollbar_track_style: Style,
     pub scrollbar_thumb_style: Style,
     pub blocked_style: Style,
+    /// Style for reactions authored by the current user.
+    pub reaction_me_style: Style,
+    /// Style for reactions authored by others.
+    pub reaction_other_style: Style,
 }
 
 impl MessagePaneStyle {
@@ -1351,6 +1494,10 @@ impl MessagePaneStyle {
             blocked_style: Style::default()
                 .fg(blocked_fg)
                 .add_modifier(Modifier::ITALIC),
+            reaction_me_style: Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+            reaction_other_style: theme.dimmed_style,
             ..Self::default()
         }
     }
@@ -1393,6 +1540,10 @@ impl Default for MessagePaneStyle {
             blocked_style: Style::default()
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::ITALIC),
+            reaction_me_style: Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+            reaction_other_style: Style::default().fg(Color::DarkGray),
         }
     }
 }
@@ -1532,6 +1683,14 @@ impl<'a> MessagePane<'a> {
                 .height;
         }
 
+        let reaction_lines = format_reaction_lines(
+            message.reactions(),
+            content_width,
+            self.style.reaction_me_style,
+            self.style.reaction_other_style,
+        );
+        height += u16::try_from(reaction_lines.len()).unwrap_or(0);
+
         height
     }
 
@@ -1628,6 +1787,8 @@ impl<'a> MessagePane<'a> {
             style.content_style.fg.unwrap_or(Color::White),
             state.show_spoilers,
             *image_preview,
+            style.reaction_me_style,
+            style.reaction_other_style,
         );
 
         if let Some(error_msg) = &data.error_message
@@ -2535,6 +2696,21 @@ fn render_ui_message(
         let height = render_embed(embed, current_msg_y, area, buf);
         current_msg_y += height;
     }
+
+    for reaction_line in &ui_msg.reaction_lines {
+        if current_msg_y >= 0 && current_msg_y < i32::from(area.height) {
+            let para = Paragraph::new(reaction_line.clone()).style(base_style);
+            let line_area = Rect::new(
+                area.x,
+                area.y
+                    .saturating_add(u16::try_from(current_msg_y).unwrap_or(0)),
+                area.width,
+                1,
+            );
+            para.render(line_area, buf);
+        }
+        current_msg_y += 1;
+    }
 }
 
 fn truncate_string(s: &str, max_len: usize) -> String {
@@ -2756,9 +2932,117 @@ fn wrap_styled_text(text: Text<'static>, width: u16) -> Text<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::entities::MessageAuthor;
+    use crate::domain::entities::{MessageAuthor, ReactionEmoji};
     use chrono::Local;
     use test_case::test_case;
+
+    fn unicode_reaction(name: &str, count: u32, me: bool) -> Reaction {
+        Reaction {
+            count,
+            me,
+            emoji: ReactionEmoji {
+                id: None,
+                name: Some(name.to_string()),
+            },
+        }
+    }
+
+    #[test]
+    fn reaction_lines_empty_when_no_reactions() {
+        let lines = format_reaction_lines(&[], 80, Style::default(), Style::default());
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn reaction_lines_wrap_when_exceeding_width() {
+        let reactions = vec![
+            unicode_reaction("a", 1, false),
+            unicode_reaction("b", 1, false),
+            unicode_reaction("c", 1, false),
+            unicode_reaction("d", 1, false),
+        ];
+        let narrow = format_reaction_lines(&reactions, 10, Style::default(), Style::default());
+        assert!(narrow.len() > 1, "expected wrap into multiple lines");
+
+        let wide = format_reaction_lines(&reactions, 80, Style::default(), Style::default());
+        assert_eq!(wide.len(), 1, "wide width should fit on one line");
+    }
+
+    /// Renders a set of reactions into a ratatui Buffer and returns it as a plain
+    /// string (one row per buffer line). Used by `reaction_lines_buffer_snapshot`
+    /// to produce a textual render of the feature for review.
+    fn render_reactions_to_text(reactions: &[Reaction], width: u16) -> String {
+        use ratatui::buffer::Buffer;
+        use ratatui::widgets::{Paragraph, Widget};
+
+        let me_style = Style::default().add_modifier(Modifier::BOLD);
+        let other = Style::default().fg(Color::DarkGray);
+        let lines = format_reaction_lines(reactions, width, me_style, other);
+        let height = u16::try_from(lines.len().max(1)).unwrap_or(1);
+        let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
+
+        for (row, line) in lines.into_iter().enumerate() {
+            let area = Rect::new(0, u16::try_from(row).unwrap_or(0), width, 1);
+            Paragraph::new(line).render(area, &mut buf);
+        }
+
+        let mut out = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                let cell = &buf[(x, y)];
+                out.push_str(cell.symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    #[test]
+    fn reaction_lines_buffer_snapshot() {
+        let reactions = vec![
+            unicode_reaction("\u{2764}", 3, true),
+            unicode_reaction("\u{1F44D}", 1, false),
+            Reaction {
+                count: 2,
+                me: false,
+                emoji: ReactionEmoji {
+                    id: Some("123".into()),
+                    name: Some("wave".into()),
+                },
+            },
+        ];
+
+        let snapshot = render_reactions_to_text(&reactions, 40);
+        println!("--- reactions (width 40) ---\n{snapshot}--- end ---");
+        assert!(snapshot.contains('\u{2764}'));
+        assert!(snapshot.contains('3'));
+        assert!(snapshot.contains(":wave:"));
+        assert!(snapshot.starts_with("      "));
+
+        let wrapped = render_reactions_to_text(&reactions, 16);
+        println!("--- reactions (width 16, wrapped) ---\n{wrapped}--- end ---");
+        let line_count = wrapped.trim_end_matches('\n').split('\n').count();
+        assert!(line_count >= 2, "expected wrap, got {line_count} line(s)");
+    }
+
+    #[test]
+    fn reaction_lines_apply_me_style_only_to_self_chip() {
+        let reactions = vec![
+            unicode_reaction("x", 1, true),
+            unicode_reaction("y", 1, false),
+        ];
+        let me = Style::default().add_modifier(Modifier::BOLD);
+        let other = Style::default().add_modifier(Modifier::ITALIC);
+        let lines = format_reaction_lines(&reactions, 80, me, other);
+        assert_eq!(lines.len(), 1);
+        let styles: Vec<Modifier> = lines[0]
+            .spans
+            .iter()
+            .map(|s| s.style.add_modifier)
+            .collect();
+        assert!(styles.iter().any(|m| m.contains(Modifier::BOLD)));
+        assert!(styles.iter().any(|m| m.contains(Modifier::ITALIC)));
+    }
 
     fn create_test_message(id: u64, content: &str) -> Message {
         let author = MessageAuthor {
@@ -2840,7 +3124,15 @@ mod tests {
         data.set_messages(messages);
 
         let markdown = MarkdownRenderer::new();
-        data.update_layout(100, &markdown, Color::Yellow, false, true);
+        data.update_layout(
+            100,
+            &markdown,
+            Color::Yellow,
+            false,
+            true,
+            Style::default(),
+            Style::default(),
+        );
 
         let mut state = MessagePaneState::new();
         state.flags.is_following = true;

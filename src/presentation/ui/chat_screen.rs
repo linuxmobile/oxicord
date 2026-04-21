@@ -547,6 +547,8 @@ fn render_message_pane(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer
     let relationship_state = state.relationship_state.clone();
     let hide_blocked_completely = state.hide_blocked_completely;
 
+    let style = MessagePaneStyle::from_theme(&state.theme);
+
     let inner_width = area.width.saturating_sub(2);
     state.message_pane_data.update_layout(
         inner_width,
@@ -554,11 +556,11 @@ fn render_message_pane(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer
         state.theme.accent,
         state.message_pane_state.show_spoilers,
         image_preview,
+        style.reaction_me_style,
+        style.reaction_other_style,
     );
 
     state.update_visible_image_protocols(inner_width);
-
-    let style = MessagePaneStyle::from_theme(&state.theme);
     let current_user_id = state.user().id().to_string();
     let (data, pane_state) = state.message_pane_parts_mut();
 
@@ -2064,6 +2066,30 @@ impl ChatScreenState {
 
     pub fn remove_message(&mut self, message_id: crate::domain::entities::MessageId) {
         self.message_pane_data.remove_message(message_id);
+    }
+
+    pub fn apply_reaction_add(
+        &mut self,
+        message_id: crate::domain::entities::MessageId,
+        emoji: crate::domain::entities::ReactionEmoji,
+        is_me: bool,
+    ) {
+        self.message_pane_data
+            .apply_reaction_add(message_id, emoji, is_me);
+    }
+
+    pub fn apply_reaction_remove(
+        &mut self,
+        message_id: crate::domain::entities::MessageId,
+        emoji: &crate::domain::entities::ReactionEmoji,
+        is_me: bool,
+    ) {
+        self.message_pane_data
+            .apply_reaction_remove(message_id, emoji, is_me);
+    }
+
+    pub fn apply_reaction_remove_all(&mut self, message_id: crate::domain::entities::MessageId) {
+        self.message_pane_data.apply_reaction_remove_all(message_id);
     }
 
     pub fn set_message_error(&mut self, error: String) {

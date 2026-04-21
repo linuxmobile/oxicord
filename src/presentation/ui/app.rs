@@ -1118,14 +1118,42 @@ impl App {
                 debug!(user_id = %user_id, status = ?status, "Presence updated");
             }
             DispatchEvent::MessageReactionAdd {
-                message_id, emoji, ..
+                user_id,
+                message_id,
+                emoji,
+                ..
             } => {
                 debug!(message_id = %message_id, emoji = %emoji.display(), "Reaction added");
+                let is_me = self.current_user_id.as_deref() == Some(user_id.as_str());
+                let domain_emoji = crate::domain::entities::ReactionEmoji {
+                    id: emoji.id,
+                    name: emoji.name,
+                };
+                if let CurrentScreen::Chat(ref mut state) = self.screen {
+                    state.apply_reaction_add(message_id, domain_emoji, is_me);
+                }
             }
             DispatchEvent::MessageReactionRemove {
-                message_id, emoji, ..
+                user_id,
+                message_id,
+                emoji,
+                ..
             } => {
                 debug!(message_id = %message_id, emoji = %emoji.display(), "Reaction removed");
+                let is_me = self.current_user_id.as_deref() == Some(user_id.as_str());
+                let domain_emoji = crate::domain::entities::ReactionEmoji {
+                    id: emoji.id,
+                    name: emoji.name,
+                };
+                if let CurrentScreen::Chat(ref mut state) = self.screen {
+                    state.apply_reaction_remove(message_id, &domain_emoji, is_me);
+                }
+            }
+            DispatchEvent::MessageReactionRemoveAll { message_id, .. } => {
+                debug!(message_id = %message_id, "All reactions removed");
+                if let CurrentScreen::Chat(ref mut state) = self.screen {
+                    state.apply_reaction_remove_all(message_id);
+                }
             }
             DispatchEvent::ChannelCreate {
                 channel_id, name, ..
