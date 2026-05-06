@@ -87,8 +87,13 @@ impl Theme {
 }
 
 fn parse_color(s: &str) -> Color {
-    if let Ok(c) = Color::from_str(s) {
+    let s_lower = s.to_lowercase();
+    if let Ok(c) = Color::from_str(&s_lower) {
         return c;
+    }
+
+    if s_lower == "transparent" {
+        return Color::Reset;
     }
 
     if s.starts_with('#')
@@ -97,7 +102,7 @@ fn parse_color(s: &str) -> Color {
         return Color::Rgb(r, g, b);
     }
 
-    match s.to_lowercase().as_str() {
+    match s_lower.as_str() {
         "orange" => Color::Indexed(208),
         _ => Color::Yellow,
     }
