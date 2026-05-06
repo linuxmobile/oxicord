@@ -2358,7 +2358,7 @@ mod tests {
         let auth = Arc::new(MockAuthPort::new(true));
         let data = Arc::new(MockDiscordData);
         let storage = Arc::new(MockTokenStorage::new());
-        let theme = Theme::new("Orange", None, false);
+        let theme = Theme::new("Orange", None, None, false);
         let identity = Arc::new(ClientIdentity::new());
         let config = AppConfig {
             disable_user_colors: false,

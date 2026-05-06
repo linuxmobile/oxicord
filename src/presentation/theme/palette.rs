@@ -4,7 +4,7 @@ use ratatui::style::{Color, Modifier, Style};
 pub trait Palette {
     fn accent(&self, base: Color) -> Color;
     fn mention_style(&self, base: Color) -> Style;
-    fn selection_style(&self, base: Color) -> Style;
+    fn selection_style(&self, base: Color, override_color: Option<Color>) -> Style;
     fn dimmed_style(&self) -> Style;
     fn base_style(&self) -> Style;
     fn error_style(&self) -> Style;
@@ -35,18 +35,22 @@ impl Palette for DarkPalette {
         let bg = ColorConverter::to_ratatui(bg_hsl);
         Style::default().bg(bg).fg(Color::White)
     }
-    fn selection_style(&self, base: Color) -> Style {
-        let mut bg_hsl = ColorConverter::to_hsl(base);
-        bg_hsl.l = 0.2;
-        bg_hsl.s = 0.3;
-        let bg = ColorConverter::to_ratatui(bg_hsl);
+    fn selection_style(&self, base: Color, override_color: Option<Color>) -> Style {
+        let bg = if let Some(c) = override_color {
+            c
+        } else {
+            let mut bg_hsl = ColorConverter::to_hsl(base);
+            bg_hsl.l = 0.2;
+            bg_hsl.s = 0.3;
+            ColorConverter::to_ratatui(bg_hsl)
+        };
         Style::default().bg(bg).fg(Color::White)
     }
     fn dimmed_style(&self) -> Style {
         Style::default().fg(Color::DarkGray)
     }
     fn base_style(&self) -> Style {
-        Style::default().fg(Color::Reset)
+        Style::default().fg(Color::White)
     }
     fn error_style(&self) -> Style {
         Style::default().fg(Color::Red)
@@ -118,18 +122,22 @@ impl Palette for LightPalette {
         let bg = ColorConverter::to_ratatui(bg_hsl);
         Style::default().bg(bg).fg(Color::White)
     }
-    fn selection_style(&self, base: Color) -> Style {
-        let mut bg_hsl = ColorConverter::to_hsl(base);
-        bg_hsl.l = 0.8;
-        bg_hsl.s = 0.5;
-        let bg = ColorConverter::to_ratatui(bg_hsl);
+    fn selection_style(&self, base: Color, override_color: Option<Color>) -> Style {
+        let bg = if let Some(c) = override_color {
+            c
+        } else {
+            let mut bg_hsl = ColorConverter::to_hsl(base);
+            bg_hsl.l = 0.8;
+            bg_hsl.s = 0.5;
+            ColorConverter::to_ratatui(bg_hsl)
+        };
         Style::default().bg(bg).fg(Color::White)
     }
     fn dimmed_style(&self) -> Style {
         Style::default().fg(Color::DarkGray)
     }
     fn base_style(&self) -> Style {
-        Style::default().fg(Color::White)
+        Style::default().fg(Color::Black)
     }
     fn error_style(&self) -> Style {
         Style::default().bg(Color::Red).fg(Color::White)

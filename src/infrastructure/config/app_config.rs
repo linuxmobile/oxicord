@@ -217,6 +217,10 @@ pub struct ThemeConfig {
     #[serde(default)]
     pub mention_color: Option<String>,
 
+    /// Selection background color (name or hex code).
+    #[serde(default)]
+    pub selection_color: Option<String>,
+
     /// Theme mode (Dark, Light, Auto).
     #[serde(default)]
     pub mode: ThemeMode,
@@ -243,6 +247,7 @@ impl Default for ThemeConfig {
         Self {
             accent_color: default_accent_color(),
             mention_color: None,
+            selection_color: None,
             mode: ThemeMode::default(),
         }
     }
@@ -282,6 +287,9 @@ impl AppConfig {
         }
         if let Some(accent_color) = args.accent_color {
             self.theme.accent_color = accent_color;
+        }
+        if let Some(selection_color) = args.selection_color {
+            self.theme.selection_color = Some(selection_color);
         }
         if let Some(show_typing) = args.show_typing {
             self.ui.show_typing = show_typing;

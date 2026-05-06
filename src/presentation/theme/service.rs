@@ -25,7 +25,7 @@ pub struct Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::new("Yellow", None, false)
+        Self::new("Yellow", None, None, false)
     }
 }
 
@@ -33,15 +33,17 @@ impl Theme {
     pub fn new(
         accent_color_str: &str,
         mention_color_str: Option<&str>,
+        selection_color_str: Option<&str>,
         is_light_mode: bool,
     ) -> Self {
         let accent = parse_color(accent_color_str);
         let mention = mention_color_str.map(parse_color);
+        let selection = selection_color_str.map(parse_color);
 
         if is_light_mode {
-            Self::from_palette(&LightPalette, accent, mention)
+            Self::from_palette(&LightPalette, accent, mention, selection)
         } else {
-            Self::from_palette(&DarkPalette, accent, mention)
+            Self::from_palette(&DarkPalette, accent, mention, selection)
         }
     }
 
@@ -49,6 +51,7 @@ impl Theme {
         palette: &P,
         accent: Color,
         mention_color: Option<Color>,
+        selection_color: Option<Color>,
     ) -> Self {
         let mention_base = mention_color.unwrap_or(Color::Blue);
 
@@ -61,7 +64,7 @@ impl Theme {
             statusbar_style: palette.statusbar_style(),
             accent: palette.accent(accent),
             mention_style: palette.mention_style(mention_base),
-            selection_style: palette.selection_style(accent),
+            selection_style: palette.selection_style(accent, selection_color),
             dimmed_style: palette.dimmed_style(),
             base_style: palette.base_style(),
             error_style: palette.error_style(),
@@ -74,8 +77,12 @@ impl Theme {
     }
 
     #[must_use]
-    pub fn from_color(accent: Color, mention_color: Option<Color>) -> Self {
-        Self::from_palette(&DarkPalette, accent, mention_color)
+    pub fn from_color(
+        accent: Color,
+        mention_color: Option<Color>,
+        selection_color: Option<Color>,
+    ) -> Self {
+        Self::from_palette(&DarkPalette, accent, mention_color, selection_color)
     }
 }
 

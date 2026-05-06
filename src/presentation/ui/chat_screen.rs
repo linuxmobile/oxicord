@@ -3141,7 +3141,7 @@ mod tests {
             true,
             true,
             "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
+            Theme::new("Orange", None, None, false),
             true,
             CommandRegistry::default(),
             RelationshipState::new(),

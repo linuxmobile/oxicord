@@ -61,4 +61,8 @@ pub struct CliArgs {
     /// Accent color (name or hex code).
     #[arg(long)]
     pub accent_color: Option<String>,
+
+    /// Selection background color (name or hex code).
+    #[arg(long)]
+    pub selection_color: Option<String>,
 }
