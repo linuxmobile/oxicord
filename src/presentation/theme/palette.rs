@@ -15,7 +15,7 @@ pub trait Palette {
     fn timestamp_style(&self) -> Style;
     fn keybind_style(&self, base: Color) -> Style;
     fn keybind_description_style(&self, override_color: Option<Color>) -> Style;
-    fn title_style(&self, base: Color) -> Style;
+    fn title_style(&self, base: Color, override_color: Option<Color>) -> Style;
     fn tab_style(&self) -> Style;
     fn tab_selected_style(&self) -> Style;
     fn statusbar_style(&self) -> Style;
@@ -83,10 +83,10 @@ impl Palette for DarkPalette {
         self.base_style(override_color)
     }
 
-    fn title_style(&self, base: Color) -> Style {
+    fn title_style(&self, base: Color, override_color: Option<Color>) -> Style {
         Style::default()
             .bg(base)
-            .fg(Color::Black)
+            .fg(override_color.unwrap_or(Color::Black))
             .add_modifier(Modifier::BOLD)
     }
 
@@ -170,10 +170,10 @@ impl Palette for LightPalette {
         self.base_style(override_color)
     }
 
-    fn title_style(&self, base: Color) -> Style {
+    fn title_style(&self, base: Color, override_color: Option<Color>) -> Style {
         Style::default()
             .bg(base)
-            .fg(Color::Black)
+            .fg(override_color.unwrap_or(Color::Black))
             .add_modifier(Modifier::BOLD)
     }
 

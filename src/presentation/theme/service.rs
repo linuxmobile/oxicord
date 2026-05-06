@@ -25,7 +25,7 @@ pub struct Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::new("Yellow", None, None, None, false)
+        Self::new("Yellow", None, None, None, None, false)
     }
 }
 
@@ -35,17 +35,19 @@ impl Theme {
         mention_color_str: Option<&str>,
         selection_color_str: Option<&str>,
         base_color_str: Option<&str>,
+        header_text_color_str: Option<&str>,
         is_light_mode: bool,
     ) -> Self {
         let accent = parse_color(accent_color_str);
         let mention = mention_color_str.map(parse_color);
         let selection = selection_color_str.map(parse_color);
         let base = base_color_str.map(parse_color);
+        let header = header_text_color_str.map(parse_color);
 
         if is_light_mode {
-            Self::from_palette(&LightPalette, accent, mention, selection, base)
+            Self::from_palette(&LightPalette, accent, mention, selection, base, header)
         } else {
-            Self::from_palette(&DarkPalette, accent, mention, selection, base)
+            Self::from_palette(&DarkPalette, accent, mention, selection, base, header)
         }
     }
 
@@ -55,13 +57,14 @@ impl Theme {
         mention_color: Option<Color>,
         selection_color: Option<Color>,
         base_color: Option<Color>,
+        header_text_color: Option<Color>,
     ) -> Self {
         let mention_base = mention_color.unwrap_or(Color::Blue);
 
         Self {
             keybind_style: palette.keybind_style(accent),
             keybind_description_style: palette.keybind_description_style(base_color),
-            title_style: palette.title_style(accent),
+            title_style: palette.title_style(accent, header_text_color),
             tab_style: palette.tab_style(),
             tab_selected_style: palette.tab_selected_style(),
             statusbar_style: palette.statusbar_style(),
@@ -85,8 +88,16 @@ impl Theme {
         mention_color: Option<Color>,
         selection_color: Option<Color>,
         base_color: Option<Color>,
+        header_text_color: Option<Color>,
     ) -> Self {
-        Self::from_palette(&DarkPalette, accent, mention_color, selection_color, base_color)
+        Self::from_palette(
+            &DarkPalette,
+            accent,
+            mention_color,
+            selection_color,
+            base_color,
+            header_text_color,
+        )
     }
 }
 

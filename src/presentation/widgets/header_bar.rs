@@ -47,10 +47,7 @@ impl HeaderBarStyle {
     #[must_use]
     pub fn from_theme(theme: &Theme) -> Self {
         Self {
-            app_name: Style::default()
-                .bg(theme.accent)
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
+            app_name: theme.title_style,
             version: theme.dimmed_style,
             status_connected: theme.success_style.add_modifier(Modifier::BOLD),
             status_disconnected: theme.error_style.add_modifier(Modifier::BOLD),

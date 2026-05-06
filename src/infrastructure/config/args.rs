@@ -69,4 +69,8 @@ pub struct CliArgs {
     /// Base text color (name or hex code).
     #[arg(long)]
     pub base_color: Option<String>,
+
+    /// Text color inside accented headers/blocks (name or hex code).
+    #[arg(long)]
+    pub header_text_color: Option<String>,
 }

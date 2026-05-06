@@ -225,6 +225,10 @@ pub struct ThemeConfig {
     #[serde(default)]
     pub base_color: Option<String>,
 
+    /// Text color inside accented headers/blocks (name or hex code).
+    #[serde(default)]
+    pub header_text_color: Option<String>,
+
     /// Theme mode (Dark, Light, Auto).
     #[serde(default)]
     pub mode: ThemeMode,
@@ -253,6 +257,7 @@ impl Default for ThemeConfig {
             mention_color: None,
             selection_color: None,
             base_color: None,
+            header_text_color: None,
             mode: ThemeMode::default(),
         }
     }
@@ -298,6 +303,9 @@ impl AppConfig {
         }
         if let Some(base_color) = args.base_color {
             self.theme.base_color = Some(base_color);
+        }
+        if let Some(header_text_color) = args.header_text_color {
+            self.theme.header_text_color = Some(header_text_color);
         }
         if let Some(show_typing) = args.show_typing {
             self.ui.show_typing = show_typing;

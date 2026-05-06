@@ -171,7 +171,7 @@ fn calculate_embed_layout(
     embed: &Embed,
     width: u16,
     markdown_service: &MarkdownRenderer,
-    default_color: Color,
+    content_style: Style,
 ) -> RenderedEmbed {
     let mut height = 0;
     let width = width.saturating_sub(2);
@@ -195,7 +195,7 @@ fn calculate_embed_layout(
     }
 
     if let Some(description) = &embed.description {
-        let text = markdown_service.render_markdown(description, None, false);
+        let text = markdown_service.render_markdown(description, None, false, content_style);
 
         let wrapped_text = wrap_styled_text(text, width);
         let content_lines = u16::try_from(wrapped_text.lines.len()).unwrap_or(0);
@@ -216,7 +216,7 @@ fn calculate_embed_layout(
             u8::try_from(c & 0xFF).unwrap_or(0),
         )
     } else {
-        default_color
+        content_style.fg.unwrap_or(Color::Reset)
     };
 
     RenderedEmbed {
@@ -603,7 +603,7 @@ impl MessagePaneData {
         &mut self,
         width: u16,
         markdown_service: &MarkdownRenderer,
-        default_color: Color,
+        content_style: Style,
         show_spoilers: bool,
         image_preview: bool,
     ) {
@@ -644,7 +644,7 @@ impl MessagePaneData {
                 ui_msg,
                 content_width,
                 markdown_service,
-                default_color,
+                content_style,
                 show_spoilers,
                 image_preview,
                 &resolver,
@@ -666,7 +666,7 @@ impl MessagePaneData {
         ui_msg: &mut UiMessage,
         content_width: u16,
         markdown_service: &MarkdownRenderer,
-        default_color: Color,
+        content_style: Style,
         show_spoilers: bool,
         image_preview: bool,
         resolver: &HashMapResolver<'_>,
@@ -677,7 +677,12 @@ impl MessagePaneData {
         let message = &ui_msg.message;
 
         let text =
-            markdown_service.render(ui_msg.parsed_content.clone(), Some(resolver), show_spoilers);
+            markdown_service.render(
+                ui_msg.parsed_content.clone(),
+                Some(resolver),
+                show_spoilers,
+                content_style,
+            );
 
         let wrapped_text = wrap_styled_text(text, content_width);
         let content_lines = u16::try_from(wrapped_text.lines.len()).unwrap_or(0);
@@ -710,7 +715,7 @@ impl MessagePaneData {
         let mut rendered_embeds = Vec::new();
         for embed in message.embeds() {
             let layout =
-                calculate_embed_layout(embed, content_width, markdown_service, default_color);
+                calculate_embed_layout(embed, content_width, markdown_service, content_style);
             height += layout.height;
             rendered_embeds.push(layout);
         }
@@ -1338,9 +1343,11 @@ impl MessagePaneStyle {
             title_style: Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
+            topic_style: theme.dimmed_style,
             author_style: Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
+            content_style: theme.base_style,
             selected_style: theme.selection_style,
             mention_style: theme.mention_style,
             reply_style: theme.dimmed_style.add_modifier(Modifier::ITALIC),
@@ -1478,7 +1485,7 @@ impl<'a> MessagePane<'a> {
         message: &Message,
         width: u16,
         markdown_service: &MarkdownRenderer,
-        default_color: Color,
+        content_style: Style,
     ) -> u16 {
         let indent_width = u16::try_from(CONTENT_INDENT).unwrap_or(0);
         let content_width = width
@@ -1488,7 +1495,7 @@ impl<'a> MessagePane<'a> {
         let authors = &self.data.authors;
         let channels = &self.data.channels;
         let resolver = HashMapResolver { authors, channels };
-        let text = markdown_service.render_markdown(message.content(), Some(&resolver), false);
+        let text = markdown_service.render_markdown(message.content(), Some(&resolver), false, content_style);
 
         let mut content_lines = 0;
         for line in &text.lines {
@@ -1528,7 +1535,7 @@ impl<'a> MessagePane<'a> {
         }
 
         for embed in message.embeds() {
-            height += calculate_embed_layout(embed, content_width, markdown_service, default_color)
+            height += calculate_embed_layout(embed, content_width, markdown_service, content_style)
                 .height;
         }
 
@@ -1622,11 +1629,13 @@ impl<'a> MessagePane<'a> {
             return;
         }
 
+        let show_spoilers = state.show_spoilers;
+
         data.update_layout(
-            inner_area.width,
+            area.width,
             markdown_service,
-            style.content_style.fg.unwrap_or(Color::White),
-            state.show_spoilers,
+            style.content_style,
+            show_spoilers,
             *image_preview,
         );
 
@@ -2840,7 +2849,7 @@ mod tests {
         data.set_messages(messages);
 
         let markdown = MarkdownRenderer::new();
-        data.update_layout(100, &markdown, Color::Yellow, false, true);
+        data.update_layout(100, &markdown, Style::default(), false, true);
 
         let mut state = MessagePaneState::new();
         state.flags.is_following = true;
@@ -2976,7 +2985,7 @@ mod tests {
 
         let message = create_test_message(1, "Content").with_embeds(vec![embed]);
 
-        let height = pane.calculate_message_height(&message, 100, &markdown, Color::Yellow);
+        let height = pane.calculate_message_height(&message, 100, &markdown, Style::default());
         assert_eq!(height, 6, "Height should be 6 with padding changes");
     }
 
