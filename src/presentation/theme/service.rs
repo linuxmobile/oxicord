@@ -25,7 +25,7 @@ pub struct Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::new("Yellow", None, false)
+        Self::new("Yellow", None, None, None, None, false)
     }
 }
 
@@ -33,15 +33,21 @@ impl Theme {
     pub fn new(
         accent_color_str: &str,
         mention_color_str: Option<&str>,
+        selection_color_str: Option<&str>,
+        base_color_str: Option<&str>,
+        header_text_color_str: Option<&str>,
         is_light_mode: bool,
     ) -> Self {
         let accent = parse_color(accent_color_str);
         let mention = mention_color_str.map(parse_color);
+        let selection = selection_color_str.map(parse_color);
+        let base = base_color_str.map(parse_color);
+        let header = header_text_color_str.map(parse_color);
 
         if is_light_mode {
-            Self::from_palette(&LightPalette, accent, mention)
+            Self::from_palette(&LightPalette, accent, mention, selection, base, header)
         } else {
-            Self::from_palette(&DarkPalette, accent, mention)
+            Self::from_palette(&DarkPalette, accent, mention, selection, base, header)
         }
     }
 
@@ -49,21 +55,24 @@ impl Theme {
         palette: &P,
         accent: Color,
         mention_color: Option<Color>,
+        selection_color: Option<Color>,
+        base_color: Option<Color>,
+        header_text_color: Option<Color>,
     ) -> Self {
         let mention_base = mention_color.unwrap_or(Color::Blue);
 
         Self {
             keybind_style: palette.keybind_style(accent),
-            keybind_description_style: palette.keybind_description_style(),
-            title_style: palette.title_style(accent),
+            keybind_description_style: palette.keybind_description_style(base_color),
+            title_style: palette.title_style(accent, header_text_color),
             tab_style: palette.tab_style(),
             tab_selected_style: palette.tab_selected_style(),
             statusbar_style: palette.statusbar_style(),
             accent: palette.accent(accent),
             mention_style: palette.mention_style(mention_base),
-            selection_style: palette.selection_style(accent),
+            selection_style: palette.selection_style(accent, selection_color),
             dimmed_style: palette.dimmed_style(),
-            base_style: palette.base_style(),
+            base_style: palette.base_style(base_color),
             error_style: palette.error_style(),
             warning_style: palette.warning_style(),
             success_style: palette.success_style(),
@@ -74,14 +83,32 @@ impl Theme {
     }
 
     #[must_use]
-    pub fn from_color(accent: Color, mention_color: Option<Color>) -> Self {
-        Self::from_palette(&DarkPalette, accent, mention_color)
+    pub fn from_color(
+        accent: Color,
+        mention_color: Option<Color>,
+        selection_color: Option<Color>,
+        base_color: Option<Color>,
+        header_text_color: Option<Color>,
+    ) -> Self {
+        Self::from_palette(
+            &DarkPalette,
+            accent,
+            mention_color,
+            selection_color,
+            base_color,
+            header_text_color,
+        )
     }
 }
 
 fn parse_color(s: &str) -> Color {
-    if let Ok(c) = Color::from_str(s) {
+    let s_lower = s.to_lowercase();
+    if let Ok(c) = Color::from_str(&s_lower) {
         return c;
+    }
+
+    if s_lower == "transparent" {
+        return Color::Reset;
     }
 
     if s.starts_with('#')
@@ -90,7 +117,7 @@ fn parse_color(s: &str) -> Color {
         return Color::Rgb(r, g, b);
     }
 
-    match s.to_lowercase().as_str() {
+    match s_lower.as_str() {
         "orange" => Color::Indexed(208),
         _ => Color::Yellow,
     }

@@ -77,6 +77,9 @@ fn create_app() -> Result<(App, Option<(String, TokenSource)>)> {
     let theme = Theme::new(
         &config.theme.accent_color,
         config.theme.mention_color.as_deref(),
+        config.theme.selection_color.as_deref(),
+        config.theme.base_color.as_deref(),
+        config.theme.header_text_color.as_deref(),
         is_light_mode,
     );
 

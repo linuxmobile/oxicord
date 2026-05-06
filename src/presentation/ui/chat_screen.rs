@@ -33,7 +33,7 @@ use crate::presentation::widgets::{
     ForumState, GuildsTree, GuildsTreeAction, GuildsTreeData, GuildsTreeState, HeaderBar,
     ImageManager, MentionPopup, MessageInput, MessageInputAction, MessageInputMode,
     MessageInputState, MessagePane, MessagePaneAction, MessagePaneData, MessagePaneState,
-    TreeNodeId, ViewMode,
+    MessagePaneStyle, TreeNodeId, ViewMode,
 };
 use ratatui::{
     buffer::Buffer,
@@ -548,17 +548,14 @@ fn render_message_pane(state: &mut ChatScreenState, area: Rect, buf: &mut Buffer
     let hide_blocked_completely = state.hide_blocked_completely;
 
     let inner_width = area.width.saturating_sub(2);
+    let style = MessagePaneStyle::from_theme(&state.theme);
     state.message_pane_data.update_layout(
         inner_width,
         &service,
-        state.theme.accent,
+        style.content_style,
         state.message_pane_state.show_spoilers,
         image_preview,
     );
-
-    state.update_visible_image_protocols(inner_width);
-
-    let style = MessagePaneStyle::from_theme(&state.theme);
     let current_user_id = state.user().id().to_string();
     let (data, pane_state) = state.message_pane_parts_mut();
 
@@ -2032,10 +2029,11 @@ impl ChatScreenState {
             .with_image_preview(self.image_preview)
             .with_timestamp_format(&self.timestamp_format)
             .with_current_user_id(self.user.id().to_string());
+        let style = MessagePaneStyle::from_theme(&self.theme);
         let added_height: u16 = new_messages
             .iter()
             .map(|m| {
-                pane.calculate_message_height(m, width, &self.markdown_service, self.theme.accent)
+                pane.calculate_message_height(m, width, &self.markdown_service, style.content_style)
             })
             .sum();
 
@@ -3141,7 +3139,7 @@ mod tests {
             true,
             true,
             "%H:%M".to_string(),
-            Theme::new("Orange", None, false),
+            Theme::new("Orange", None, None, None, false),
             true,
             CommandRegistry::default(),
             RelationshipState::new(),

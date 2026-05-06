@@ -30,9 +30,10 @@ impl MarkdownRenderer {
         blocks: Vec<MdBlock>,
         resolver: Option<&dyn MentionResolver>,
         show_spoilers: bool,
+        parent_style: Style,
     ) -> Text<'static> {
         let mut renderer = InternalRenderer::new(resolver, &self.highlighter, show_spoilers);
-        renderer.render(blocks)
+        renderer.render(blocks, parent_style)
     }
 
     #[must_use]
@@ -41,9 +42,10 @@ impl MarkdownRenderer {
         content: &str,
         resolver: Option<&dyn MentionResolver>,
         show_spoilers: bool,
+        parent_style: Style,
     ) -> Text<'static> {
         let blocks = crate::application::services::markdown_parser::parse_markdown(content);
-        self.render(blocks, resolver, show_spoilers)
+        self.render(blocks, resolver, show_spoilers, parent_style)
     }
 }
 
@@ -72,10 +74,10 @@ impl<'a> InternalRenderer<'a> {
         }
     }
 
-    fn render(&mut self, blocks: Vec<MdBlock>) -> Text<'static> {
+    fn render(&mut self, blocks: Vec<MdBlock>, parent_style: Style) -> Text<'static> {
         let mut lines = Vec::new();
         for block in blocks {
-            self.render_block(block, &mut lines, Style::default());
+            self.render_block(block, &mut lines, parent_style);
         }
         Text::from(lines)
     }
