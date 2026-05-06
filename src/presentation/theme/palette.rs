@@ -6,7 +6,7 @@ pub trait Palette {
     fn mention_style(&self, base: Color) -> Style;
     fn selection_style(&self, base: Color, override_color: Option<Color>) -> Style;
     fn dimmed_style(&self) -> Style;
-    fn base_style(&self) -> Style;
+    fn base_style(&self, override_color: Option<Color>) -> Style;
     fn error_style(&self) -> Style;
     fn warning_style(&self) -> Style;
     fn success_style(&self) -> Style;
@@ -14,7 +14,7 @@ pub trait Palette {
     fn border_style(&self) -> Style;
     fn timestamp_style(&self) -> Style;
     fn keybind_style(&self, base: Color) -> Style;
-    fn keybind_description_style(&self) -> Style;
+    fn keybind_description_style(&self, override_color: Option<Color>) -> Style;
     fn title_style(&self, base: Color) -> Style;
     fn tab_style(&self) -> Style;
     fn tab_selected_style(&self) -> Style;
@@ -49,8 +49,8 @@ impl Palette for DarkPalette {
     fn dimmed_style(&self) -> Style {
         Style::default().fg(Color::DarkGray)
     }
-    fn base_style(&self) -> Style {
-        Style::default().fg(Color::White)
+    fn base_style(&self, override_color: Option<Color>) -> Style {
+        Style::default().fg(override_color.unwrap_or(Color::Reset))
     }
     fn error_style(&self) -> Style {
         Style::default().fg(Color::Red)
@@ -79,8 +79,8 @@ impl Palette for DarkPalette {
         Style::default().bg(bg).fg(Color::White)
     }
 
-    fn keybind_description_style(&self) -> Style {
-        self.base_style()
+    fn keybind_description_style(&self, override_color: Option<Color>) -> Style {
+        self.base_style(override_color)
     }
 
     fn title_style(&self, base: Color) -> Style {
@@ -136,8 +136,8 @@ impl Palette for LightPalette {
     fn dimmed_style(&self) -> Style {
         Style::default().fg(Color::DarkGray)
     }
-    fn base_style(&self) -> Style {
-        Style::default().fg(Color::Black)
+    fn base_style(&self, override_color: Option<Color>) -> Style {
+        Style::default().fg(override_color.unwrap_or(Color::White))
     }
     fn error_style(&self) -> Style {
         Style::default().bg(Color::Red).fg(Color::White)
@@ -166,8 +166,8 @@ impl Palette for LightPalette {
         Style::default().bg(bg).fg(Color::Black)
     }
 
-    fn keybind_description_style(&self) -> Style {
-        self.base_style()
+    fn keybind_description_style(&self, override_color: Option<Color>) -> Style {
+        self.base_style(override_color)
     }
 
     fn title_style(&self, base: Color) -> Style {

@@ -25,7 +25,7 @@ pub struct Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::new("Yellow", None, None, false)
+        Self::new("Yellow", None, None, None, false)
     }
 }
 
@@ -34,16 +34,18 @@ impl Theme {
         accent_color_str: &str,
         mention_color_str: Option<&str>,
         selection_color_str: Option<&str>,
+        base_color_str: Option<&str>,
         is_light_mode: bool,
     ) -> Self {
         let accent = parse_color(accent_color_str);
         let mention = mention_color_str.map(parse_color);
         let selection = selection_color_str.map(parse_color);
+        let base = base_color_str.map(parse_color);
 
         if is_light_mode {
-            Self::from_palette(&LightPalette, accent, mention, selection)
+            Self::from_palette(&LightPalette, accent, mention, selection, base)
         } else {
-            Self::from_palette(&DarkPalette, accent, mention, selection)
+            Self::from_palette(&DarkPalette, accent, mention, selection, base)
         }
     }
 
@@ -52,12 +54,13 @@ impl Theme {
         accent: Color,
         mention_color: Option<Color>,
         selection_color: Option<Color>,
+        base_color: Option<Color>,
     ) -> Self {
         let mention_base = mention_color.unwrap_or(Color::Blue);
 
         Self {
             keybind_style: palette.keybind_style(accent),
-            keybind_description_style: palette.keybind_description_style(),
+            keybind_description_style: palette.keybind_description_style(base_color),
             title_style: palette.title_style(accent),
             tab_style: palette.tab_style(),
             tab_selected_style: palette.tab_selected_style(),
@@ -66,7 +69,7 @@ impl Theme {
             mention_style: palette.mention_style(mention_base),
             selection_style: palette.selection_style(accent, selection_color),
             dimmed_style: palette.dimmed_style(),
-            base_style: palette.base_style(),
+            base_style: palette.base_style(base_color),
             error_style: palette.error_style(),
             warning_style: palette.warning_style(),
             success_style: palette.success_style(),
@@ -81,8 +84,9 @@ impl Theme {
         accent: Color,
         mention_color: Option<Color>,
         selection_color: Option<Color>,
+        base_color: Option<Color>,
     ) -> Self {
-        Self::from_palette(&DarkPalette, accent, mention_color, selection_color)
+        Self::from_palette(&DarkPalette, accent, mention_color, selection_color, base_color)
     }
 }
 
