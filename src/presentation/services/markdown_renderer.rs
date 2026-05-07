@@ -105,7 +105,7 @@ impl<'a> InternalRenderer<'a> {
                 lines.push(Line::raw(""));
             }
             MdBlock::Subtext(inlines) => {
-                let style = parent_style.fg(Color::DarkGray).add_modifier(Modifier::DIM);
+                let style = parent_style.add_modifier(Modifier::DIM);
                 let mut spans = Vec::new();
                 spans.push(Span::styled("-# ", style));
                 spans.extend(self.render_inlines(inlines, style));
