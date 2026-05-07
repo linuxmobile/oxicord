@@ -1358,6 +1358,8 @@ impl MessagePaneStyle {
             blocked_style: Style::default()
                 .fg(blocked_fg)
                 .add_modifier(Modifier::ITALIC),
+            scrollbar_track_style: theme.dimmed_style,
+            scrollbar_thumb_style: theme.border_style,
             ..Self::default()
         }
     }
@@ -1939,9 +1941,9 @@ impl<'a> MessagePane<'a> {
 
         let mut meta_spans = vec![
             Span::styled(format!("@{author_name}"), self.style.author_style),
-            Span::styled(" • ", Style::default().fg(Color::Gray)),
-            Span::styled(time_str, Style::default().fg(Color::Gray)),
-            Span::styled(" | ", Style::default().fg(Color::Gray)),
+            Span::styled(" • ", self.style.timestamp_style),
+            Span::styled(time_str, self.style.timestamp_style),
+            Span::styled(" | ", self.style.timestamp_style),
         ];
 
         for tag_id in &thread.applied_tags {
@@ -2018,7 +2020,13 @@ fn draw_embed_border(
 }
 
 #[allow(clippy::too_many_lines)]
-fn render_embed(embed: &RenderedEmbed, start_y: i32, area: Rect, buf: &mut Buffer) -> i32 {
+fn render_embed(
+    embed: &RenderedEmbed,
+    start_y: i32,
+    area: Rect,
+    buf: &mut Buffer,
+    style: &MessagePaneStyle,
+) -> i32 {
     let mut current_y = start_y;
     let indent = u16::try_from(EMBED_INDENT).unwrap_or(0);
     let border_color = embed.color;
@@ -2035,11 +2043,11 @@ fn render_embed(embed: &RenderedEmbed, start_y: i32, area: Rect, buf: &mut Buffe
     }
 
     if let Some(name) = &embed.provider {
-        let span = Span::styled(name, Style::default().fg(Color::DarkGray));
+        let span = Span::styled(name, style.topic_style);
         draw_embed_border(buf, content_x, current_y, area.y, area.height, border_color);
         if current_y >= 0 && current_y < i32::from(area.height) {
             let y = u16::try_from(current_y).unwrap_or(0);
-            let para = Paragraph::new(Line::from(span)).style(Style::default());
+            let para = Paragraph::new(Line::from(span)).style(style.content_style);
             let text_area = Rect::new(content_x + 2, area.y + y, content_width, 1);
             para.render(text_area, buf);
         }
@@ -2047,19 +2055,17 @@ fn render_embed(embed: &RenderedEmbed, start_y: i32, area: Rect, buf: &mut Buffe
     }
 
     if !embed.title.is_empty() {
-        let mut style = Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD);
+        let mut title_style = style.title_style;
         if embed.url.is_some() {
-            style = style.add_modifier(Modifier::UNDERLINED);
+            title_style = title_style.add_modifier(Modifier::UNDERLINED);
         }
         for line in &embed.title {
-            let span = Span::styled(line, style);
+            let span = Span::styled(line, title_style);
             draw_embed_border(buf, content_x, current_y, area.y, area.height, border_color);
             if current_y >= 0 && current_y < i32::from(area.height) {
                 let y = u16::try_from(current_y).unwrap_or(0);
                 let para = Paragraph::new(Line::from(span))
-                    .style(Style::default().add_modifier(Modifier::BOLD));
+                    .style(style.title_style);
                 let text_area = Rect::new(content_x + 2, area.y + y, content_width, 1);
                 para.render(text_area, buf);
             }
@@ -2098,7 +2104,7 @@ fn render_embed(embed: &RenderedEmbed, start_y: i32, area: Rect, buf: &mut Buffe
             if effective_height > 0 {
                 let para = Paragraph::new(text.clone())
                     .wrap(ratatui::widgets::Wrap { trim: false })
-                    .style(Style::default().fg(Color::Gray))
+                    .style(style.content_style)
                     .scroll((top_clip, 0));
 
                 let text_area = Rect::new(
@@ -2541,10 +2547,9 @@ fn render_ui_message(
     }
 
     for embed in &ui_msg.rendered_embeds {
-        let height = render_embed(embed, current_msg_y, area, buf);
+        let height = render_embed(embed, current_msg_y, area, buf, style);
         current_msg_y += height;
-    }
-}
+    }}
 
 fn truncate_string(s: &str, max_len: usize) -> String {
     if UnicodeWidthStr::width(s) <= max_len {
