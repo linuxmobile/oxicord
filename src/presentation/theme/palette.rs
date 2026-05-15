@@ -5,20 +5,20 @@ pub trait Palette {
     fn accent(&self, base: Color) -> Color;
     fn mention_style(&self, base: Color) -> Style;
     fn selection_style(&self, base: Color, override_color: Option<Color>) -> Style;
-    fn dimmed_style(&self) -> Style;
+    fn dimmed_style(&self, override_color: Option<Color>) -> Style;
     fn base_style(&self, override_color: Option<Color>) -> Style;
     fn error_style(&self) -> Style;
     fn warning_style(&self) -> Style;
     fn success_style(&self) -> Style;
     fn info_style(&self) -> Style;
-    fn border_style(&self) -> Style;
-    fn timestamp_style(&self) -> Style;
+    fn border_style(&self, override_color: Option<Color>) -> Style;
+    fn timestamp_style(&self, override_color: Option<Color>) -> Style;
     fn keybind_style(&self, base: Color) -> Style;
     fn keybind_description_style(&self, override_color: Option<Color>) -> Style;
     fn title_style(&self, base: Color, override_color: Option<Color>) -> Style;
-    fn tab_style(&self) -> Style;
+    fn tab_style(&self, override_color: Option<Color>) -> Style;
     fn tab_selected_style(&self) -> Style;
-    fn statusbar_style(&self) -> Style;
+    fn statusbar_style(&self, override_color: Option<Color>) -> Style;
     fn username_style(&self, base: Color) -> Style;
 }
 
@@ -46,8 +46,14 @@ impl Palette for DarkPalette {
         };
         Style::default().bg(bg).fg(Color::White)
     }
-    fn dimmed_style(&self) -> Style {
-        Style::default().fg(Color::DarkGray)
+    fn dimmed_style(&self, override_color: Option<Color>) -> Style {
+        if let Some(c) = override_color {
+            let mut hsl = ColorConverter::to_hsl(c);
+            hsl.l = (hsl.l * 0.5).clamp(0.0, 1.0);
+            Style::default().fg(ColorConverter::to_ratatui(hsl))
+        } else {
+            Style::default().fg(Color::DarkGray)
+        }
     }
     fn base_style(&self, override_color: Option<Color>) -> Style {
         Style::default().fg(override_color.unwrap_or(Color::Reset))
@@ -64,11 +70,17 @@ impl Palette for DarkPalette {
     fn info_style(&self) -> Style {
         Style::default().fg(Color::Cyan)
     }
-    fn border_style(&self) -> Style {
-        Style::default().fg(Color::Gray)
+    fn border_style(&self, override_color: Option<Color>) -> Style {
+        if let Some(c) = override_color {
+            let mut hsl = ColorConverter::to_hsl(c);
+            hsl.l = (hsl.l * 0.3).clamp(0.0, 1.0);
+            Style::default().fg(ColorConverter::to_ratatui(hsl))
+        } else {
+            Style::default().fg(Color::Gray)
+        }
     }
-    fn timestamp_style(&self) -> Style {
-        Style::default().fg(Color::DarkGray)
+    fn timestamp_style(&self, override_color: Option<Color>) -> Style {
+        self.dimmed_style(override_color)
     }
 
     fn keybind_style(&self, base: Color) -> Style {
@@ -90,8 +102,8 @@ impl Palette for DarkPalette {
             .add_modifier(Modifier::BOLD)
     }
 
-    fn tab_style(&self) -> Style {
-        self.dimmed_style()
+    fn tab_style(&self, override_color: Option<Color>) -> Style {
+        self.dimmed_style(override_color)
     }
 
     fn tab_selected_style(&self) -> Style {
@@ -100,8 +112,8 @@ impl Palette for DarkPalette {
             .add_modifier(Modifier::BOLD)
     }
 
-    fn statusbar_style(&self) -> Style {
-        Style::default().fg(Color::DarkGray)
+    fn statusbar_style(&self, override_color: Option<Color>) -> Style {
+        self.dimmed_style(override_color)
     }
 
     fn username_style(&self, base: Color) -> Style {
@@ -133,8 +145,14 @@ impl Palette for LightPalette {
         };
         Style::default().bg(bg).fg(Color::White)
     }
-    fn dimmed_style(&self) -> Style {
-        Style::default().fg(Color::DarkGray)
+    fn dimmed_style(&self, override_color: Option<Color>) -> Style {
+        if let Some(c) = override_color {
+            let mut hsl = ColorConverter::to_hsl(c);
+            hsl.l = (hsl.l * 1.5).clamp(0.0, 1.0);
+            Style::default().fg(ColorConverter::to_ratatui(hsl))
+        } else {
+            Style::default().fg(Color::DarkGray)
+        }
     }
     fn base_style(&self, override_color: Option<Color>) -> Style {
         Style::default().fg(override_color.unwrap_or(Color::White))
@@ -151,11 +169,17 @@ impl Palette for LightPalette {
     fn info_style(&self) -> Style {
         Style::default().fg(Color::Blue)
     }
-    fn border_style(&self) -> Style {
-        Style::default().fg(Color::DarkGray)
+    fn border_style(&self, override_color: Option<Color>) -> Style {
+        if let Some(c) = override_color {
+            let mut hsl = ColorConverter::to_hsl(c);
+            hsl.l = (hsl.l * 0.7).clamp(0.0, 1.0);
+            Style::default().fg(ColorConverter::to_ratatui(hsl))
+        } else {
+            Style::default().fg(Color::DarkGray)
+        }
     }
-    fn timestamp_style(&self) -> Style {
-        Style::default().fg(Color::DarkGray)
+    fn timestamp_style(&self, override_color: Option<Color>) -> Style {
+        self.dimmed_style(override_color)
     }
 
     fn keybind_style(&self, base: Color) -> Style {
@@ -177,8 +201,8 @@ impl Palette for LightPalette {
             .add_modifier(Modifier::BOLD)
     }
 
-    fn tab_style(&self) -> Style {
-        self.dimmed_style()
+    fn tab_style(&self, override_color: Option<Color>) -> Style {
+        self.dimmed_style(override_color)
     }
 
     fn tab_selected_style(&self) -> Style {
@@ -187,8 +211,8 @@ impl Palette for LightPalette {
             .add_modifier(Modifier::BOLD)
     }
 
-    fn statusbar_style(&self) -> Style {
-        Style::default().fg(Color::Black)
+    fn statusbar_style(&self, override_color: Option<Color>) -> Style {
+        self.base_style(override_color)
     }
 
     fn username_style(&self, base: Color) -> Style {
